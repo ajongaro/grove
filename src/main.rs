@@ -2,6 +2,7 @@ mod config;
 mod hook;
 mod launch;
 mod log;
+mod mcp;
 mod model;
 mod runfiles;
 mod state;
@@ -26,6 +27,8 @@ struct Cli {
 enum Cmd {
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     Hook,
+    /// Internal: stdio MCP server for projects and the wiki.
+    Mcp,
 }
 
 fn main() {
@@ -45,6 +48,13 @@ fn main() {
                 Ok(Some(out)) => print!("{out}"),
                 Ok(None) => {}
                 Err(_) => log::error(&store.paths, "hook", "panic while handling hook"),
+            }
+        }
+        Some(Cmd::Mcp) => {
+            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
+            if let Err(e) = rt.block_on(mcp::serve(Store::new(paths.clone()))) {
+                log::error(&paths, "mcp", &format!("{e:#}"));
+                std::process::exit(1);
             }
         }
         None => {}
