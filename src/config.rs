@@ -106,11 +106,16 @@ pub fn editor(cfg: &Config) -> String {
     if !cfg.editor.is_empty() {
         return cfg.editor.clone();
     }
-    std::env::var("EDITOR").ok().filter(|e| !e.is_empty()).unwrap_or_else(|| "vi".into())
+    std::env::var("EDITOR")
+        .ok()
+        .filter(|e| !e.is_empty())
+        .unwrap_or_else(|| "vi".into())
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 #[cfg(test)]
@@ -156,14 +161,20 @@ mod tests {
 
     #[test]
     fn tilde_expands_to_home() {
-        assert_eq!(expand_tilde("~/.claude-play"), PathBuf::from(home()).join(".claude-play"));
+        assert_eq!(
+            expand_tilde("~/.claude-play"),
+            PathBuf::from(home()).join(".claude-play")
+        );
         assert_eq!(expand_tilde("~"), PathBuf::from(home()));
         assert_eq!(expand_tilde("/abs/path"), PathBuf::from("/abs/path"));
     }
 
     #[test]
     fn claude_dir_errors_when_missing() {
-        let c = Config { claude_config_dir: "/definitely/not/here".into(), ..Config::default() };
+        let c = Config {
+            claude_config_dir: "/definitely/not/here".into(),
+            ..Config::default()
+        };
         let err = claude_dir(&c).unwrap_err().to_string();
         assert!(err.contains("/definitely/not/here"), "{err}");
     }
@@ -171,7 +182,10 @@ mod tests {
     #[test]
     fn claude_dir_ok_when_present() {
         let dir = tempfile::tempdir().unwrap();
-        let c = Config { claude_config_dir: dir.path().to_string_lossy().into(), ..Config::default() };
+        let c = Config {
+            claude_config_dir: dir.path().to_string_lossy().into(),
+            ..Config::default()
+        };
         assert_eq!(claude_dir(&c).unwrap(), dir.path());
     }
 
@@ -198,7 +212,10 @@ mod tests {
 
     #[test]
     fn editor_prefers_config() {
-        let c = Config { editor: "nvim".into(), ..Config::default() };
+        let c = Config {
+            editor: "nvim".into(),
+            ..Config::default()
+        };
         assert_eq!(editor(&c), "nvim");
     }
 }

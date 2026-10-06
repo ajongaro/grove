@@ -32,7 +32,14 @@ fn store_with(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, St
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(Paths::new(dir.path().join("home")));
     for p in projects {
-        store.add_project(&Project { name: p.to_string(), path: format!("/code/{p}").into(), color: None, summary: None }).unwrap();
+        store
+            .add_project(&Project {
+                name: p.to_string(),
+                path: format!("/code/{p}").into(),
+                color: None,
+                summary: None,
+            })
+            .unwrap();
     }
     for s in sessions {
         store.save_session(s).unwrap();
@@ -49,10 +56,15 @@ fn ch(c: char) -> KeyEvent {
 
 fn screen(app: &App, w: u16, h: u16) -> String {
     let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-    term.draw(|f| render(f, app, t0() + Duration::minutes(2))).unwrap();
+    term.draw(|f| render(f, app, t0() + Duration::minutes(2)))
+        .unwrap();
     let buf = term.backend().buffer().clone();
     (0..h)
-        .map(|y| (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>())
+        .map(|y| {
+            (0..w)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect::<String>()
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -70,7 +82,10 @@ fn loaded(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, Store,
 fn reload_reads_projects_and_sessions() {
     let (_d, _s, app) = loaded(
         &["alpha", "beta"],
-        &[session("1", "alpha", "s1", State::Working, Some("@1")), session("2", "beta", "s1", State::NeedsYou, Some("@2"))],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "beta", "s1", State::NeedsYou, Some("@2")),
+        ],
     );
     assert_eq!(app.projects.len(), 2);
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
@@ -83,14 +98,23 @@ fn reload_reads_projects_and_sessions() {
 fn reload_keeps_selection_on_same_project() {
     let (_d, s, mut app) = loaded(&["beta", "gamma"], &[]);
     app.proj_idx = 1; // gamma
-    s.add_project(&Project { name: "alpha".into(), path: "/a".into(), color: None, summary: None }).unwrap();
+    s.add_project(&Project {
+        name: "alpha".into(),
+        path: "/a".into(),
+        color: None,
+        summary: None,
+    })
+    .unwrap();
     app.reload(&s);
     assert_eq!(app.selected_project().unwrap().slug, "gamma");
 }
 
 #[test]
 fn reload_clamps_selection_when_list_shrinks() {
-    let (_d, s, mut app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Working, Some("@1"))]);
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
     app.pane = Pane::Sessions;
     app.sess_idx = 0;
     s.delete_session("1").unwrap();
@@ -160,19 +184,36 @@ fn tab_switches_panes() {
 #[test]
 fn enter_on_project_starts_session() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
-    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::NewSession { slug: "alpha".into(), name: None });
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::NewSession {
+            slug: "alpha".into(),
+            name: None
+        }
+    );
 }
 
 #[test]
 fn enter_on_session_jumps_to_its_window() {
-    let (_d, _s, mut app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Working, Some("@7"))]);
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@7"))],
+    );
     app.pane = Pane::Sessions;
-    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::Jump { window: "@7".into() });
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@7".into()
+        }
+    );
 }
 
 #[test]
 fn enter_on_ended_session_does_nothing() {
-    let (_d, _s, mut app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Ended, Some("@7"))]);
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Ended, Some("@7"))],
+    );
     app.pane = Pane::Sessions;
     assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
 }
@@ -181,7 +222,13 @@ fn enter_on_ended_session_does_nothing() {
 fn n_prompts_for_name_then_starts_named_session() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     assert_eq!(handle_key(&mut app, ch('n')), Action::None);
-    assert!(matches!(app.mode, Mode::Prompt { kind: PromptKind::NewSession, .. }));
+    assert!(matches!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::NewSession,
+            ..
+        }
+    ));
     for c in "auth fix".chars() {
         handle_key(&mut app, ch(c));
     }
@@ -189,7 +236,10 @@ fn n_prompts_for_name_then_starts_named_session() {
     handle_key(&mut app, ch('x'));
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
-        Action::NewSession { slug: "alpha".into(), name: Some("auth fix".into()) }
+        Action::NewSession {
+            slug: "alpha".into(),
+            name: Some("auth fix".into())
+        }
     );
     assert_eq!(app.mode, Mode::Normal);
 }
@@ -198,7 +248,13 @@ fn n_prompts_for_name_then_starts_named_session() {
 fn n_with_empty_name_uses_default() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('n'));
-    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::NewSession { slug: "alpha".into(), name: None });
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::NewSession {
+            slug: "alpha".into(),
+            name: None
+        }
+    );
 }
 
 #[test]
@@ -221,23 +277,41 @@ fn q_inside_prompt_is_text_not_quit() {
 fn a_prompts_with_cwd_default() {
     let (_d, _s, mut app) = loaded(&[], &[]);
     handle_key(&mut app, ch('a'));
-    assert!(matches!(&app.mode, Mode::Prompt { kind: PromptKind::AddProject, input } if input == "/home/me/code/newproj"));
-    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::AddProject { path: "/home/me/code/newproj".into() });
+    assert!(
+        matches!(&app.mode, Mode::Prompt { kind: PromptKind::AddProject, input } if input == "/home/me/code/newproj")
+    );
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::AddProject {
+            path: "/home/me/code/newproj".into()
+        }
+    );
 }
 
 #[test]
 fn x_asks_then_kills_on_y() {
-    let (_d, _s, mut app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Working, Some("@7"))]);
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@7"))],
+    );
     app.pane = Pane::Sessions;
     assert_eq!(handle_key(&mut app, ch('x')), Action::None);
     assert!(matches!(app.mode, Mode::Confirm { .. }));
-    assert_eq!(handle_key(&mut app, ch('y')), Action::Kill { session_id: "1".into() });
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::Kill {
+            session_id: "1".into()
+        }
+    );
     assert_eq!(app.mode, Mode::Normal);
 }
 
 #[test]
 fn x_then_n_cancels() {
-    let (_d, _s, mut app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Working, Some("@7"))]);
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@7"))],
+    );
     app.pane = Pane::Sessions;
     handle_key(&mut app, ch('x'));
     assert_eq!(handle_key(&mut app, ch('n')), Action::None);
@@ -257,9 +331,24 @@ fn project_keys_need_a_project() {
 #[test]
 fn edit_wiki_clear_and_quit() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
-    assert_eq!(handle_key(&mut app, ch('e')), Action::EditProject { slug: "alpha".into() });
-    assert_eq!(handle_key(&mut app, ch('w')), Action::OpenWiki { slug: "alpha".into() });
-    assert_eq!(handle_key(&mut app, ch('c')), Action::ClearEnded { slug: "alpha".into() });
+    assert_eq!(
+        handle_key(&mut app, ch('e')),
+        Action::EditProject {
+            slug: "alpha".into()
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('w')),
+        Action::OpenWiki {
+            slug: "alpha".into()
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('c')),
+        Action::ClearEnded {
+            slug: "alpha".into()
+        }
+    );
     assert_eq!(handle_key(&mut app, ch('q')), Action::Quit);
 }
 
@@ -290,10 +379,24 @@ fn renders_projects_sessions_states_and_counts() {
     needy.message = Some("Claude needs your permission to use Bash".into());
     let (_d, _s, app) = loaded(
         &["alpha", "beta"],
-        &[session("1", "alpha", "s1", State::Working, Some("@1")), needy],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            needy,
+        ],
     );
     let s = screen(&app, 100, 20);
-    for needle in ["Projects", "alpha", "beta", "s1", "working", "auth-fix", "needs you", "2m", "permission to use Bash", "1 needs you"] {
+    for needle in [
+        "Projects",
+        "alpha",
+        "beta",
+        "s1",
+        "working",
+        "auth-fix",
+        "needs you",
+        "2m",
+        "permission to use Bash",
+        "1 needs you",
+    ] {
         assert!(s.contains(needle), "missing {needle:?}\n{s}");
     }
 }
@@ -316,6 +419,9 @@ fn footer_message_is_shown() {
 
 #[test]
 fn tiny_terminal_does_not_panic() {
-    let (_d, _s, app) = loaded(&["alpha"], &[session("1", "alpha", "s1", State::Working, Some("@1"))]);
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
     screen(&app, 10, 3);
 }

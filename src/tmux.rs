@@ -14,8 +14,12 @@ pub struct Tmux {
 }
 
 impl Tmux {
+    #[cfg(test)]
     pub fn new(socket: impl Into<String>) -> Self {
-        Self { socket: Some(socket.into()), config: None }
+        Self {
+            socket: Some(socket.into()),
+            config: None,
+        }
     }
 
     pub fn cmd(&self) -> Command {
@@ -31,17 +35,31 @@ impl Tmux {
 
     /// Runs tmux with `args`; errors carry tmux's stderr.
     fn run(&self, args: &[&str]) -> Result<String> {
-        let out = self.cmd().args(args).stdin(Stdio::null()).output().context("running tmux")?;
+        let out = self
+            .cmd()
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .context("running tmux")?;
         check(&out, args)
     }
 
     pub fn has_session(&self, name: &str) -> bool {
-        self.run(&["has-session", "-t", &format!("={name}")]).is_ok()
+        self.run(&["has-session", "-t", &format!("={name}")])
+            .is_ok()
     }
 
-    pub fn new_session_detached(&self, name: &str, window_name: &str, cwd: &Path, argv: &[String]) -> Result<()> {
+    pub fn new_session_detached(
+        &self,
+        name: &str,
+        window_name: &str,
+        cwd: &Path,
+        argv: &[String],
+    ) -> Result<()> {
         let mut c = self.cmd();
-        c.args(["new-session", "-d", "-s", name, "-n", window_name, "-c"]).arg(cwd).args(argv);
+        c.args(["new-session", "-d", "-s", name, "-n", window_name, "-c"])
+            .arg(cwd)
+            .args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
         check(&out, &["new-session"]).map(|_| ())
     }
@@ -57,8 +75,19 @@ impl Tmux {
     ) -> Result<String> {
         let mut c = self.cmd();
         // Trailing ':' targets the session; tmux picks the next free index.
-        c.args(["new-window", "-d", "-P", "-F", "#{window_id}", "-t", &format!("={session}:"), "-n", name, "-c"])
-            .arg(cwd);
+        c.args([
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{window_id}",
+            "-t",
+            &format!("={session}:"),
+            "-n",
+            name,
+            "-c",
+        ])
+        .arg(cwd);
         for (k, v) in env {
             c.arg("-e").arg(format!("{k}={v}"));
         }
@@ -69,7 +98,13 @@ impl Tmux {
 
     /// Window ids (`@N`) in `session`.
     pub fn list_windows(&self, session: &str) -> Result<Vec<String>> {
-        let out = self.run(&["list-windows", "-t", &format!("={session}"), "-F", "#{window_id}"])?;
+        let out = self.run(&[
+            "list-windows",
+            "-t",
+            &format!("={session}"),
+            "-F",
+            "#{window_id}",
+        ])?;
         Ok(out.lines().map(str::to_string).collect())
     }
 
@@ -82,21 +117,28 @@ impl Tmux {
     }
 
     pub fn set_window_option(&self, id: &str, option: &str, value: &str) -> Result<()> {
-        self.run(&["set-window-option", "-t", id, option, value]).map(|_| ())
+        self.run(&["set-window-option", "-t", id, option, value])
+            .map(|_| ())
     }
 
     pub fn display_popup(&self, cwd: &Path, argv: &[String]) -> Result<()> {
         let mut c = self.cmd();
-        c.args(["display-popup", "-E", "-w", "80%", "-h", "80%", "-d"]).arg(cwd).args(argv);
+        c.args(["display-popup", "-E", "-w", "80%", "-h", "80%", "-d"])
+            .arg(cwd)
+            .args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
         check(&out, &["display-popup"]).map(|_| ())
     }
 
+    #[cfg(test)]
     /// Kills the server and removes its socket file (tmux leaves it behind).
     pub fn kill_server(&self) {
         let socket = self.run(&["display-message", "-p", "#{socket_path}"]).ok();
         let _ = self.cmd().arg("kill-server").stderr(Stdio::null()).status();
-        if let Some(path) = socket.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        if let Some(path) = socket
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+        {
             let _ = std::fs::remove_file(path);
         }
     }
@@ -107,7 +149,11 @@ fn check(out: &Output, args: &[&str]) -> Result<String> {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     } else {
         let err = String::from_utf8_lossy(&out.stderr);
-        bail!("tmux {} failed: {}", args.first().unwrap_or(&""), err.trim())
+        bail!(
+            "tmux {} failed: {}",
+            args.first().unwrap_or(&""),
+            err.trim()
+        )
     }
 }
 
@@ -117,12 +163,19 @@ pub fn parse_version(s: &str) -> Option<(u32, u32)> {
     let v = v.rsplit('-').next()?;
     let mut parts = v.split('.');
     let major = parts.next()?.parse().ok()?;
-    let minor: String = parts.next()?.chars().take_while(char::is_ascii_digit).collect();
+    let minor: String = parts
+        .next()?
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
     Some((major, minor.parse().ok()?))
 }
 
 pub fn version() -> Result<(u32, u32)> {
-    let out = Command::new("tmux").arg("-V").output().context("tmux is not installed or not on PATH")?;
+    let out = Command::new("tmux")
+        .arg("-V")
+        .output()
+        .context("tmux is not installed or not on PATH")?;
     let text = String::from_utf8_lossy(&out.stdout);
     parse_version(&text).ok_or_else(|| anyhow!("can't parse tmux version from {text:?}"))
 }
@@ -139,7 +192,10 @@ mod tests {
         }
     }
     fn server(tag: &str) -> TestServer {
-        TestServer(Tmux::new(format!("grove-test-{}-{tag}", std::process::id())))
+        TestServer(Tmux::new(format!(
+            "grove-test-{}-{tag}",
+            std::process::id()
+        )))
     }
     fn sh(cmd: &str) -> Vec<String> {
         vec!["sh".into(), "-c".into(), cmd.into()]
@@ -164,7 +220,8 @@ mod tests {
         let t = &s.0;
         let dir = tempfile::tempdir().unwrap();
         assert!(!t.has_session("g"));
-        t.new_session_detached("g", "dash", dir.path(), &sh("sleep 30")).unwrap();
+        t.new_session_detached("g", "dash", dir.path(), &sh("sleep 30"))
+            .unwrap();
         assert!(t.has_session("g"));
 
         let cwd = dir.path().join("with space");
@@ -176,7 +233,10 @@ mod tests {
                 "proj:s1",
                 &cwd,
                 &[("CLAUDE_CONFIG_DIR".into(), "/x/.claude-play".into())],
-                &sh(&format!("echo \"$CLAUDE_CONFIG_DIR|$PWD\" > '{}'; sleep 30", out.display())),
+                &sh(&format!(
+                    "echo \"$CLAUDE_CONFIG_DIR|$PWD\" > '{}'; sleep 30",
+                    out.display()
+                )),
             )
             .unwrap();
         assert!(id.starts_with('@'), "{id}");
@@ -185,16 +245,22 @@ mod tests {
 
         // The window got its env and cwd.
         for _ in 0..50 {
-            if out.exists() { break; }
+            if out.exists() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         let got = std::fs::read_to_string(&out).unwrap();
         let (account, pwd) = got.trim().split_once('|').unwrap();
         assert_eq!(account, "/x/.claude-play");
         // $PWD may or may not resolve macOS's /var → /private/var symlink.
-        assert_eq!(Path::new(pwd).canonicalize().unwrap(), cwd.canonicalize().unwrap());
+        assert_eq!(
+            Path::new(pwd).canonicalize().unwrap(),
+            cwd.canonicalize().unwrap()
+        );
 
-        t.set_window_option(&id, "window-status-style", "fg=red").unwrap();
+        t.set_window_option(&id, "window-status-style", "fg=red")
+            .unwrap();
         t.select_window(&id).unwrap();
         t.kill_window(&id).unwrap();
         assert!(!t.list_windows("g").unwrap().contains(&id));

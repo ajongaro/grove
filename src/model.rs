@@ -84,6 +84,9 @@ mod tests {
 
     #[test]
     fn state_serializes_snake_case() {
-        assert_eq!(serde_json::to_string(&State::NeedsYou).unwrap(), "\"needs_you\"");
+        assert_eq!(
+            serde_json::to_string(&State::NeedsYou).unwrap(),
+            "\"needs_you\""
+        );
     }
 }

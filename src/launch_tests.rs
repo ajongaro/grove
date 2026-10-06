@@ -16,29 +16,60 @@ fn env() -> Env {
     std::fs::create_dir_all(&proj_dir).unwrap();
     let paths = Paths::new(dir.path().join("grove home"));
     paths.ensure().unwrap();
-    Env { _dir: dir, claude_dir, proj_dir, paths }
+    Env {
+        _dir: dir,
+        claude_dir,
+        proj_dir,
+        paths,
+    }
 }
 
 fn cfg(e: &Env) -> Config {
-    Config { claude_config_dir: e.claude_dir.to_string_lossy().into(), claude_args: vec!["--model".into(), "opus".into()], ..Config::default() }
+    Config {
+        claude_config_dir: e.claude_dir.to_string_lossy().into(),
+        claude_args: vec!["--model".into(), "opus".into()],
+        ..Config::default()
+    }
 }
 
 fn project(e: &Env) -> Project {
-    Project { name: "My Proj".into(), path: e.proj_dir.clone(), color: Some("#2e8b57".into()), summary: None }
+    Project {
+        name: "My Proj".into(),
+        path: e.proj_dir.clone(),
+        color: Some("#2e8b57".into()),
+        summary: None,
+    }
 }
 
 fn env_val<'a>(spec: &'a LaunchSpec, k: &str) -> Option<&'a str> {
-    spec.env.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str())
+    spec.env
+        .iter()
+        .find(|(key, _)| key == k)
+        .map(|(_, v)| v.as_str())
 }
 
 #[test]
 fn build_sets_account_project_and_session_env() {
     let e = env();
-    let spec = build(&cfg(&e), &e.paths, &project(&e), "uuid-1", "s1").unwrap();
-    assert_eq!(env_val(&spec, "CLAUDE_CONFIG_DIR"), Some(e.claude_dir.to_str().unwrap()));
+    let spec = build_with_bin(
+        &cfg(&e),
+        &e.paths,
+        &project(&e),
+        "uuid-1",
+        "s1",
+        "/usr/local/bin/claude",
+    )
+    .unwrap();
+    assert_eq!(
+        env_val(&spec, "CLAUDE_CONFIG_DIR"),
+        Some(e.claude_dir.to_str().unwrap())
+    );
     assert_eq!(env_val(&spec, "GROVE_PROJECT"), Some("my-proj"));
     assert_eq!(env_val(&spec, "GROVE_SESSION"), Some("uuid-1"));
-    assert_eq!(env_val(&spec, "GROVE_HOME"), Some(e.paths.home.to_str().unwrap()));
+    assert_eq!(
+        env_val(&spec, "GROVE_HOME"),
+        Some(e.paths.home.to_str().unwrap())
+    );
     assert_eq!(spec.cwd, e.proj_dir);
     assert_eq!(spec.window_name, "my-proj:s1");
 }
@@ -46,22 +77,50 @@ fn build_sets_account_project_and_session_env() {
 #[test]
 fn build_passes_session_hooks_and_mcp_flags() {
     let e = env();
-    let spec = build(&cfg(&e), &e.paths, &project(&e), "uuid-1", "s1").unwrap();
+    let spec = build_with_bin(
+        &cfg(&e),
+        &e.paths,
+        &project(&e),
+        "uuid-1",
+        "s1",
+        "/usr/local/bin/claude",
+    )
+    .unwrap();
     let a = &spec.argv;
     assert!(a[0].ends_with("claude"), "{a:?}");
     let pair = |flag: &str| a.iter().position(|x| x == flag).map(|i| a[i + 1].clone());
     assert_eq!(pair("--session-id").as_deref(), Some("uuid-1"));
-    assert_eq!(pair("--settings"), Some(e.paths.run.join("hooks.json").to_string_lossy().into_owned()));
-    assert_eq!(pair("--mcp-config"), Some(e.paths.run.join("mcp.json").to_string_lossy().into_owned()));
+    assert_eq!(
+        pair("--settings"),
+        Some(
+            e.paths
+                .run
+                .join("hooks.json")
+                .to_string_lossy()
+                .into_owned()
+        )
+    );
+    assert_eq!(
+        pair("--mcp-config"),
+        Some(e.paths.run.join("mcp.json").to_string_lossy().into_owned())
+    );
     assert_eq!(pair("-n").as_deref(), Some("my-proj:s1"));
-    assert_eq!(&a[a.len() - 2..], &["--model".to_string(), "opus".to_string()]);
+    assert_eq!(
+        &a[a.len() - 2..],
+        &["--model".to_string(), "opus".to_string()]
+    );
 }
 
 #[test]
 fn build_refuses_missing_claude_dir() {
     let e = env();
-    let c = Config { claude_config_dir: "/no/such/claude".into(), ..Config::default() };
-    let err = build(&c, &e.paths, &project(&e), "u", "s1").unwrap_err().to_string();
+    let c = Config {
+        claude_config_dir: "/no/such/claude".into(),
+        ..Config::default()
+    };
+    let err = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", "claude")
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("/no/such/claude"), "{err}");
 }
 
@@ -70,7 +129,9 @@ fn build_refuses_missing_project_dir() {
     let e = env();
     let mut p = project(&e);
     p.path = "/no/such/project".into();
-    let err = build(&cfg(&e), &e.paths, &p, "u", "s1").unwrap_err().to_string();
+    let err = build_with_bin(&cfg(&e), &e.paths, &p, "u", "s1", "claude")
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("/no/such/project"), "{err}");
 }
 
@@ -80,9 +141,15 @@ fn next_session_name_skips_live_names() {
     let store = Store::new(e.paths.clone());
     assert_eq!(next_session_name(&store, "p"), "s1");
     let mk = |id: &str, name: &str, state| Session {
-        id: id.into(), project: "p".into(), name: name.into(), host: "local".into(),
-        tmux_window: None, state, message: None,
-        created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+        id: id.into(),
+        project: "p".into(),
+        name: name.into(),
+        host: "local".into(),
+        tmux_window: None,
+        state,
+        message: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     };
     store.save_session(&mk("a", "s1", State::Working)).unwrap();
     store.save_session(&mk("b", "s2", State::Ended)).unwrap();
@@ -96,12 +163,21 @@ fn start_opens_window_and_records_session() {
     let e = env();
     let store = Store::new(e.paths.clone());
     let tmux = Tmux::new(format!("grove-test-{}-launch", std::process::id()));
-    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()]).unwrap();
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
     // Stand-in for `claude` (ignores claude's flags) so no real session starts.
     let stub = e.proj_dir.join("fake claude");
     std::fs::write(&stub, "#!/bin/sh\nsleep 30\n").unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let s = start_with_bin(&tmux, &store, &cfg(&e), &project(&e), None, stub.to_str().unwrap()).unwrap();
+    let s = start_with_bin(
+        &tmux,
+        &store,
+        &cfg(&e),
+        &project(&e),
+        None,
+        stub.to_str().unwrap(),
+    )
+    .unwrap();
     let windows = tmux.list_windows("grove").unwrap();
     tmux.kill_server();
     assert_eq!(s.state, State::Starting);

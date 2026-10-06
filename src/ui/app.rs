@@ -90,20 +90,42 @@ impl App {
             .list_projects()
             .into_iter()
             .map(|r| match r {
-                Ok(p) => ProjectRow { slug: p.slug(), name: p.name, path: p.path, color: p.color, error: None },
+                Ok(p) => ProjectRow {
+                    slug: p.slug(),
+                    name: p.name,
+                    path: p.path,
+                    color: p.color,
+                    error: None,
+                },
                 Err((path, err)) => {
-                    let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-                    ProjectRow { slug: stem.clone(), name: stem, path, color: None, error: Some(err) }
+                    let stem = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    ProjectRow {
+                        slug: stem.clone(),
+                        name: stem,
+                        path,
+                        color: None,
+                        error: Some(err),
+                    }
                 }
             })
             .collect();
         self.sessions = store.list_sessions(None);
 
-        if let Some(i) = keep_project.and_then(|slug| self.projects.iter().position(|p| p.slug == slug)) {
+        if let Some(i) =
+            keep_project.and_then(|slug| self.projects.iter().position(|p| p.slug == slug))
+        {
             self.proj_idx = i;
         }
         self.proj_idx = self.proj_idx.min(self.projects.len().saturating_sub(1));
-        let visible: Vec<String> = self.visible_sessions().iter().map(|s| s.id.clone()).collect();
+        let visible: Vec<String> = self
+            .visible_sessions()
+            .iter()
+            .map(|s| s.id.clone())
+            .collect();
         if let Some(i) = keep_session.and_then(|id| visible.iter().position(|v| *v == id)) {
             self.sess_idx = i;
         }
@@ -117,7 +139,11 @@ impl App {
     /// Sessions of the selected project, oldest first.
     pub fn visible_sessions(&self) -> Vec<&Session> {
         match self.selected_project() {
-            Some(p) => self.sessions.iter().filter(|s| s.project == p.slug).collect(),
+            Some(p) => self
+                .sessions
+                .iter()
+                .filter(|s| s.project == p.slug)
+                .collect(),
             None => Vec::new(),
         }
     }
@@ -127,7 +153,10 @@ impl App {
     }
 
     pub fn needs_you_count(&self) -> usize {
-        self.sessions.iter().filter(|s| s.state == State::NeedsYou).count()
+        self.sessions
+            .iter()
+            .filter(|s| s.state == State::NeedsYou)
+            .count()
     }
 
     /// needs-you count per project slug (for the project list badges).
@@ -142,12 +171,25 @@ impl App {
 
 /// Sessions whose tmux window no longer exists, returned as `Ended` copies
 /// ready to save. Sessions without a window yet (still starting) are left alone.
-pub fn mark_missing(sessions: &[Session], live_windows: &[String], now: DateTime<Utc>) -> Vec<Session> {
+pub fn mark_missing(
+    sessions: &[Session],
+    live_windows: &[String],
+    now: DateTime<Utc>,
+) -> Vec<Session> {
     sessions
         .iter()
         .filter(|s| state_is_live(s.state))
-        .filter(|s| s.tmux_window.as_ref().is_some_and(|w| !live_windows.contains(w)))
-        .map(|s| Session { state: State::Ended, message: None, updated_at: now, ..s.clone() })
+        .filter(|s| {
+            s.tmux_window
+                .as_ref()
+                .is_some_and(|w| !live_windows.contains(w))
+        })
+        .map(|s| Session {
+            state: State::Ended,
+            message: None,
+            updated_at: now,
+            ..s.clone()
+        })
         .collect()
 }
 

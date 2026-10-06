@@ -31,8 +31,10 @@ pub fn hooks_json(grove_bin: &Path) -> serde_json::Value {
         "args": ["hook"],
         "timeout": 10,
     }]}]);
-    let hooks: serde_json::Map<String, serde_json::Value> =
-        HOOK_EVENTS.iter().map(|e| (e.to_string(), handler.clone())).collect();
+    let hooks: serde_json::Map<String, serde_json::Value> = HOOK_EVENTS
+        .iter()
+        .map(|e| (e.to_string(), handler.clone()))
+        .collect();
     json!({ "hooks": hooks })
 }
 
@@ -67,7 +69,10 @@ set -g window-status-current-style "bg=#2e7d32,fg=#ffffff,bold"
 
 pub fn write_all(paths: &Paths, grove_bin: &Path) -> Result<()> {
     let pretty = |v: serde_json::Value| serde_json::to_string_pretty(&v).map(String::into_bytes);
-    write_atomic(&paths.run.join("hooks.json"), &pretty(hooks_json(grove_bin))?)?;
+    write_atomic(
+        &paths.run.join("hooks.json"),
+        &pretty(hooks_json(grove_bin))?,
+    )?;
     write_atomic(&paths.run.join("mcp.json"), &pretty(mcp_json(grove_bin))?)?;
     write_atomic(&paths.run.join("tmux.conf"), tmux_conf().as_bytes())
 }
@@ -100,7 +105,12 @@ mod tests {
     #[test]
     fn tmux_conf_has_grove_keys() {
         let c = tmux_conf();
-        for needle in ["bind-key -n C-y select-window -t :0", "bind-key -n C-h previous-window", "bind-key -n C-l next-window", "GROVE"] {
+        for needle in [
+            "bind-key -n C-y select-window -t :0",
+            "bind-key -n C-h previous-window",
+            "bind-key -n C-l next-window",
+            "GROVE",
+        ] {
             assert!(c.contains(needle), "missing {needle}");
         }
     }

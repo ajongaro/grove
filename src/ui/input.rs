@@ -32,7 +32,10 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
             let text = input.trim().to_string();
             match kind {
                 PromptKind::NewSession => match app.selected_project() {
-                    Some(p) => Action::NewSession { slug: p.slug.clone(), name: (!text.is_empty()).then_some(text) },
+                    Some(p) => Action::NewSession {
+                        slug: p.slug.clone(),
+                        name: (!text.is_empty()).then_some(text),
+                    },
                     None => Action::None,
                 },
                 PromptKind::AddProject if text.is_empty() => Action::None,
@@ -45,7 +48,10 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
             Action::None
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.mode = Mode::Prompt { kind, input: String::new() };
+            app.mode = Mode::Prompt {
+                kind,
+                input: String::new(),
+            };
             Action::None
         }
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -70,7 +76,11 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Tab | KeyCode::BackTab => {
-            app.pane = if app.pane == Pane::Projects { Pane::Sessions } else { Pane::Projects };
+            app.pane = if app.pane == Pane::Projects {
+                Pane::Sessions
+            } else {
+                Pane::Projects
+            };
             Action::None
         }
         KeyCode::Char('l') | KeyCode::Right => {
@@ -82,7 +92,10 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('a') => {
-            app.mode = Mode::Prompt { kind: PromptKind::AddProject, input: app.cwd.clone() };
+            app.mode = Mode::Prompt {
+                kind: PromptKind::AddProject,
+                input: app.cwd.clone(),
+            };
             Action::None
         }
         KeyCode::Enter if app.pane == Pane::Sessions => match app.selected_session() {
@@ -94,17 +107,25 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         },
         KeyCode::Char('x') => match app.selected_session() {
             Some(s) if app.pane == Pane::Sessions && state_is_live(s.state) => {
-                app.mode = Mode::Confirm { session_id: s.id.clone(), label: s.name.clone() };
+                app.mode = Mode::Confirm {
+                    session_id: s.id.clone(),
+                    label: s.name.clone(),
+                };
                 Action::None
             }
             _ => Action::None,
         },
         code => {
-            let Some(slug) = usable_project(app) else { return Action::None };
+            let Some(slug) = usable_project(app) else {
+                return Action::None;
+            };
             match code {
                 KeyCode::Enter => Action::NewSession { slug, name: None },
                 KeyCode::Char('n') => {
-                    app.mode = Mode::Prompt { kind: PromptKind::NewSession, input: String::new() };
+                    app.mode = Mode::Prompt {
+                        kind: PromptKind::NewSession,
+                        input: String::new(),
+                    };
                     Action::None
                 }
                 KeyCode::Char('e') => Action::EditProject { slug },

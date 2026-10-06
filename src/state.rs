@@ -16,8 +16,6 @@ pub struct HookEvent {
     pub message: Option<String>,
     #[serde(default)]
     pub tool_name: Option<String>,
-    #[serde(default)]
-    pub cwd: Option<String>,
 }
 
 /// `None` means "no change". The string is the message to store.
@@ -29,7 +27,10 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
         "UserPromptSubmit" | "PostToolUse" | "PostToolUseFailure" => (State::Working, None),
         "PermissionRequest" => (
             State::NeedsYou,
-            Some(format!("Permission needed: {}", ev.tool_name.as_deref().unwrap_or("a tool"))),
+            Some(format!(
+                "Permission needed: {}",
+                ev.tool_name.as_deref().unwrap_or("a tool")
+            )),
         ),
         "Notification" => match ev.notification_type.as_deref() {
             Some("permission_prompt") => (State::NeedsYou, ev.message.clone()),
@@ -42,7 +43,11 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
         "Stop" => (State::YourTurn, None),
         "StopFailure" => (
             State::YourTurn,
-            Some(ev.message.clone().unwrap_or_else(|| "Turn ended with an error".into())),
+            Some(
+                ev.message
+                    .clone()
+                    .unwrap_or_else(|| "Turn ended with an error".into()),
+            ),
         ),
         "SessionEnd" => (State::Ended, None),
         _ => return None,
@@ -58,7 +63,10 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> HookEvent {
-        let path = format!("{}/tests/fixtures/hooks/{name}.json", env!("CARGO_MANIFEST_DIR"));
+        let path = format!(
+            "{}/tests/fixtures/hooks/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
     }
 
@@ -69,9 +77,17 @@ mod tests {
     #[test]
     fn all_fixtures_parse() {
         for name in [
-            "session_start", "user_prompt_submit", "post_tool_use", "post_tool_use_failure",
-            "permission_request", "notification_permission", "notification_idle",
-            "notification_auth", "stop", "stop_failure", "session_end",
+            "session_start",
+            "user_prompt_submit",
+            "post_tool_use",
+            "post_tool_use_failure",
+            "permission_request",
+            "notification_permission",
+            "notification_idle",
+            "notification_auth",
+            "stop",
+            "stop_failure",
+            "session_end",
         ] {
             fixture(name);
         }
@@ -79,26 +95,46 @@ mod tests {
 
     #[test]
     fn working_events() {
-        for name in ["user_prompt_submit", "post_tool_use", "post_tool_use_failure"] {
-            assert_eq!(state_after(State::YourTurn, name), Some(State::Working), "{name}");
+        for name in [
+            "user_prompt_submit",
+            "post_tool_use",
+            "post_tool_use_failure",
+        ] {
+            assert_eq!(
+                state_after(State::YourTurn, name),
+                Some(State::Working),
+                "{name}"
+            );
         }
     }
 
     #[test]
     fn approving_a_tool_clears_needs_you() {
-        assert_eq!(state_after(State::NeedsYou, "post_tool_use"), Some(State::Working));
+        assert_eq!(
+            state_after(State::NeedsYou, "post_tool_use"),
+            Some(State::Working)
+        );
     }
 
     #[test]
     fn needs_you_events() {
-        assert_eq!(state_after(State::Working, "permission_request"), Some(State::NeedsYou));
-        assert_eq!(state_after(State::Working, "notification_permission"), Some(State::NeedsYou));
+        assert_eq!(
+            state_after(State::Working, "permission_request"),
+            Some(State::NeedsYou)
+        );
+        assert_eq!(
+            state_after(State::Working, "notification_permission"),
+            Some(State::NeedsYou)
+        );
     }
 
     #[test]
     fn needs_you_message_is_kept() {
         let (_, msg) = next(State::Working, &fixture("notification_permission")).unwrap();
-        assert_eq!(msg.as_deref(), Some("Claude needs your permission to use Bash"));
+        assert_eq!(
+            msg.as_deref(),
+            Some("Claude needs your permission to use Bash")
+        );
         let (_, msg) = next(State::Working, &fixture("permission_request")).unwrap();
         assert_eq!(msg.as_deref(), Some("Permission needed: Bash"));
     }
@@ -106,7 +142,11 @@ mod tests {
     #[test]
     fn your_turn_events() {
         for name in ["stop", "stop_failure", "notification_idle"] {
-            assert_eq!(state_after(State::Working, name), Some(State::YourTurn), "{name}");
+            assert_eq!(
+                state_after(State::Working, name),
+                Some(State::YourTurn),
+                "{name}"
+            );
         }
     }
 
@@ -125,7 +165,10 @@ mod tests {
 
     #[test]
     fn session_end_ends() {
-        assert_eq!(state_after(State::Working, "session_end"), Some(State::Ended));
+        assert_eq!(
+            state_after(State::Working, "session_end"),
+            Some(State::Ended)
+        );
     }
 
     #[test]

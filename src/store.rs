@@ -44,13 +44,20 @@ impl Store {
 
     pub fn get_project(&self, name_or_slug: &str) -> Result<Project> {
         let slug = slugify(name_or_slug);
-        let all: Vec<Project> = self.list_projects().into_iter().filter_map(Result::ok).collect();
+        let all: Vec<Project> = self
+            .list_projects()
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
         all.iter()
             .find(|p| p.slug() == slug)
             .cloned()
             .ok_or_else(|| {
                 let names: Vec<_> = all.iter().map(|p| p.name.as_str()).collect();
-                anyhow!("no project named {name_or_slug:?}; projects: {}", list_or_none(&names))
+                anyhow!(
+                    "no project named {name_or_slug:?}; projects: {}",
+                    list_or_none(&names)
+                )
             })
     }
 
@@ -106,12 +113,20 @@ impl Store {
             .map(|f| {
                 let title = std::fs::read_to_string(&f)
                     .ok()
-                    .and_then(|t| t.lines().find_map(|l| l.strip_prefix("# ").map(|h| h.trim().to_string())))
-                    .unwrap_or_else(|| f.file_stem().unwrap_or_default().to_string_lossy().into_owned());
+                    .and_then(|t| {
+                        t.lines()
+                            .find_map(|l| l.strip_prefix("# ").map(|h| h.trim().to_string()))
+                    })
+                    .unwrap_or_else(|| {
+                        f.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned()
+                    });
                 (title, f)
             })
             .collect();
-        out.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+        out.sort_by_key(|(title, _)| title.to_lowercase());
         out
     }
 
@@ -119,16 +134,25 @@ impl Store {
     /// every section joined in title order.
     pub fn read_wiki(&self, slug: &str, section: Option<&str>) -> Result<String> {
         let sections = self.wiki_sections(slug);
-        let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
+        let read = |p: &Path| {
+            std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
+        };
         match section {
-            None => Ok(sections.iter().map(|(_, p)| read(p)).collect::<Result<Vec<_>>>()?.join("\n")),
+            None => Ok(sections
+                .iter()
+                .map(|(_, p)| read(p))
+                .collect::<Result<Vec<_>>>()?
+                .join("\n")),
             Some(want) => {
                 let want_slug = slugify(want);
                 match sections.iter().find(|(t, _)| slugify(t) == want_slug) {
                     Some((_, p)) => read(p),
                     None => {
                         let titles: Vec<_> = sections.iter().map(|(t, _)| t.as_str()).collect();
-                        bail!("no wiki section {want:?}; sections: {}", list_or_none(&titles))
+                        bail!(
+                            "no wiki section {want:?}; sections: {}",
+                            list_or_none(&titles)
+                        )
                     }
                 }
             }
@@ -144,7 +168,10 @@ impl Store {
         }
         let heading = format!("# {}", title.trim());
         let body = content.trim();
-        let body = body.strip_prefix(&heading).map(str::trim_start).unwrap_or(body);
+        let body = body
+            .strip_prefix(&heading)
+            .map(str::trim_start)
+            .unwrap_or(body);
         let text = format!("{heading}\n\n{body}\n");
         let path = self.paths.wiki.join(slug).join(format!("{file_slug}.md"));
         write_atomic(&path, text.as_bytes())?;
@@ -154,7 +181,9 @@ impl Store {
 
 /// Writes to a temp file in the same directory, then renames over `path`.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let dir = path.parent().ok_or_else(|| anyhow!("{} has no parent", path.display()))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent", path.display()))?;
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
@@ -163,12 +192,18 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn files_with_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut out: Vec<PathBuf> = rd
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| {
             p.extension().is_some_and(|e| e == ext)
-                && !p.file_name().unwrap_or_default().to_string_lossy().starts_with('.')
+                && !p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .starts_with('.')
         })
         .collect();
     out.sort();
@@ -176,7 +211,11 @@ fn files_with_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
 }
 
 fn list_or_none(items: &[&str]) -> String {
-    if items.is_empty() { "(none)".into() } else { items.join(", ") }
+    if items.is_empty() {
+        "(none)".into()
+    } else {
+        items.join(", ")
+    }
 }
 
 #[cfg(test)]

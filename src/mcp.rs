@@ -19,15 +19,26 @@ pub struct GroveMcp {
 
 impl GroveMcp {
     fn project(&self, project: Option<String>) -> Result<Project, String> {
-        let name = project.filter(|p| !p.trim().is_empty()).or_else(|| self.default_project.clone());
+        let name = project
+            .filter(|p| !p.trim().is_empty())
+            .or_else(|| self.default_project.clone());
         match name {
             Some(n) => self.store.get_project(&n).map_err(|e| e.to_string()),
             None => {
-                let names: Vec<String> =
-                    self.store.list_projects().into_iter().filter_map(Result::ok).map(|p| p.name).collect();
+                let names: Vec<String> = self
+                    .store
+                    .list_projects()
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .map(|p| p.name)
+                    .collect();
                 Err(format!(
                     "no project given and this isn't a Grove session; pass `project` (one of: {})",
-                    if names.is_empty() { "(none)".into() } else { names.join(", ") }
+                    if names.is_empty() {
+                        "(none)".into()
+                    } else {
+                        names.join(", ")
+                    }
                 ))
             }
         }
@@ -44,19 +55,32 @@ impl GroveMcp {
                 format!("- {} — {} — {summary}", p.name, p.path.display())
             })
             .collect();
-        Ok(if lines.is_empty() { "No projects registered in Grove yet.".into() } else { lines.join("\n") })
+        Ok(if lines.is_empty() {
+            "No projects registered in Grove yet.".into()
+        } else {
+            lines.join("\n")
+        })
     }
 
     pub fn do_get_project(&self, project: Option<String>) -> Result<String, String> {
         let p = self.project(project)?;
-        let titles: Vec<String> = self.store.wiki_sections(&p.slug()).into_iter().map(|(t, _)| t).collect();
+        let titles: Vec<String> = self
+            .store
+            .wiki_sections(&p.slug())
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
         Ok(format!(
             "Name: {}\nPath: {}\nColor: {}\nSummary: {}\nWiki sections: {}",
             p.name,
             p.path.display(),
             p.color.as_deref().unwrap_or("(none)"),
             p.summary.as_deref().unwrap_or("(none)"),
-            if titles.is_empty() { "(none)".into() } else { titles.join(", ") }
+            if titles.is_empty() {
+                "(none)".into()
+            } else {
+                titles.join(", ")
+            }
         ))
     }
 
@@ -70,7 +94,9 @@ impl GroveMcp {
             return Err("nothing to update: pass `summary` and/or `color`".into());
         }
         if let Some(c) = &color {
-            let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+            let ok = c.len() == 7
+                && c.starts_with('#')
+                && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
             if !ok {
                 return Err(format!("color {c:?} must be #RRGGBB"));
             }
@@ -86,18 +112,32 @@ impl GroveMcp {
         self.do_get_project(Some(p.name))
     }
 
-    pub fn do_read_wiki(&self, project: Option<String>, section: Option<String>) -> Result<String, String> {
+    pub fn do_read_wiki(
+        &self,
+        project: Option<String>,
+        section: Option<String>,
+    ) -> Result<String, String> {
         let p = self.project(project)?;
         let slug = p.slug();
         if section.is_none() && self.store.wiki_sections(&slug).is_empty() {
             return Ok(format!("{} has no wiki sections yet.", p.name));
         }
-        self.store.read_wiki(&slug, section.as_deref()).map_err(|e| e.to_string())
+        self.store
+            .read_wiki(&slug, section.as_deref())
+            .map_err(|e| e.to_string())
     }
 
-    pub fn do_write_wiki_section(&self, project: Option<String>, title: String, content: String) -> Result<String, String> {
+    pub fn do_write_wiki_section(
+        &self,
+        project: Option<String>,
+        title: String,
+        content: String,
+    ) -> Result<String, String> {
         let p = self.project(project)?;
-        let path = self.store.write_wiki(&p.slug(), &title, &content).map_err(|e| e.to_string())?;
+        let path = self
+            .store
+            .write_wiki(&p.slug(), &title, &content)
+            .map_err(|e| e.to_string())?;
         Ok(format!("Wrote {}", path.display()))
     }
 }
@@ -160,7 +200,9 @@ impl GroveMcp {
         result(self.do_update_project(a.project, a.summary, a.color))
     }
 
-    #[tool(description = "Read one wiki section of a Grove project, or the whole wiki if no section is given.")]
+    #[tool(
+        description = "Read one wiki section of a Grove project, or the whole wiki if no section is given."
+    )]
     fn read_wiki(&self, Parameters(a): Parameters<ReadWikiArgs>) -> CallToolResult {
         result(self.do_read_wiki(a.project, a.section))
     }
@@ -172,8 +214,15 @@ impl GroveMcp {
 }
 
 pub async fn serve(store: Store) -> anyhow::Result<()> {
-    let default_project = std::env::var("GROVE_PROJECT").ok().filter(|p| !p.is_empty());
-    let service = GroveMcp { store, default_project }.serve(rmcp::transport::stdio()).await?;
+    let default_project = std::env::var("GROVE_PROJECT")
+        .ok()
+        .filter(|p| !p.is_empty());
+    let service = GroveMcp {
+        store,
+        default_project,
+    }
+    .serve(rmcp::transport::stdio())
+    .await?;
     service.waiting().await?;
     Ok(())
 }

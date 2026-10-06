@@ -13,8 +13,10 @@ use crate::model::State;
 const ACCENT: Color = Color::Rgb(102, 187, 106);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
-    let [main, footer] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
-    let [left, right] = Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
+    let [main, footer] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
+    let [left, right] =
+        Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
     render_projects(frame, app, left);
     render_sessions(frame, app, right, now);
@@ -29,7 +31,12 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             let area = popup(frame.area(), 70, 3);
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Paragraph::new(format!("{input}█")).block(Block::bordered().border_type(BorderType::Rounded).title(title).fg(ACCENT)),
+                Paragraph::new(format!("{input}█")).block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(title)
+                        .fg(ACCENT),
+                ),
                 area,
             );
         }
@@ -37,8 +44,12 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             let area = popup(frame.area(), 44, 3);
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Paragraph::new(format!("Kill session {label}?  y / n"))
-                    .block(Block::bordered().border_type(BorderType::Rounded).title(" Confirm ").fg(Color::Red)),
+                Paragraph::new(format!("Kill session {label}?  y / n")).block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(" Confirm ")
+                        .fg(Color::Red),
+                ),
                 area,
             );
         }
@@ -47,14 +58,22 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
 }
 
 fn pane_block(title: &str, focused: bool) -> Block<'_> {
-    let b = Block::bordered().border_type(BorderType::Rounded).title(format!(" {title} "));
-    if focused { b.border_style(Style::new().fg(ACCENT)) } else { b.border_style(Style::new().fg(Color::DarkGray)) }
+    let b = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(format!(" {title} "));
+    if focused {
+        b.border_style(Style::new().fg(ACCENT))
+    } else {
+        b.border_style(Style::new().fg(Color::DarkGray))
+    }
 }
 
 fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
     let block = pane_block("Projects", app.pane == Pane::Projects);
     if app.projects.is_empty() {
-        let p = Paragraph::new("No projects yet — press a to add one.").wrap(Wrap { trim: true }).block(block);
+        let p = Paragraph::new("No projects yet — press a to add one.")
+            .wrap(Wrap { trim: true })
+            .block(block);
         frame.render_widget(p, area);
         return;
     }
@@ -64,11 +83,22 @@ fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|p| {
             if p.error.is_some() {
-                return ListItem::new(Line::from(vec![Span::raw("✗ ").red(), Span::raw(p.name.clone()).red(), Span::raw(" (bad file)").dark_gray()]));
+                return ListItem::new(Line::from(vec![
+                    Span::raw("✗ ").red(),
+                    Span::raw(p.name.clone()).red(),
+                    Span::raw(" (bad file)").dark_gray(),
+                ]));
             }
-            let dot = Span::styled("● ", Style::new().fg(parse_hex(p.color.as_deref()).unwrap_or(ACCENT)));
+            let dot = Span::styled(
+                "● ",
+                Style::new().fg(parse_hex(p.color.as_deref()).unwrap_or(ACCENT)),
+            );
             let mut spans = vec![dot, Span::raw(p.name.clone())];
-            let live = app.sessions.iter().filter(|s| s.project == p.slug && s.state != State::Ended).count();
+            let live = app
+                .sessions
+                .iter()
+                .filter(|s| s.project == p.slug && s.state != State::Ended)
+                .count();
             if live > 0 {
                 spans.push(Span::raw(format!("  {live}")).dark_gray());
             }
@@ -79,7 +109,9 @@ fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
     let mut state = ListState::default().with_selected(Some(app.proj_idx));
-    let list = List::new(items).block(block).highlight_style(highlight(app.pane == Pane::Projects));
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight(app.pane == Pane::Projects));
     frame.render_stateful_widget(list, area, &mut state);
 }
 
@@ -91,15 +123,22 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
     let block = pane_block(&title, app.pane == Pane::Sessions);
     let sessions = app.visible_sessions();
     if sessions.is_empty() {
-        let hint = if app.selected_project().is_some() { "No sessions — press Enter to start one, n to name it." } else { "" };
-        frame.render_widget(Paragraph::new(hint).wrap(Wrap { trim: true }).block(block), area);
+        let hint = if app.selected_project().is_some() {
+            "No sessions — press Enter to start one, n to name it."
+        } else {
+            ""
+        };
+        frame.render_widget(
+            Paragraph::new(hint).wrap(Wrap { trim: true }).block(block),
+            area,
+        );
         return;
     }
     let items: Vec<ListItem> = sessions
         .iter()
         .map(|s| {
             let color = state_color(s.state);
-            let mut spans = vec![
+            let spans = vec![
                 Span::styled("● ", Style::new().fg(color)),
                 Span::raw(format!("{:<14}", s.name)).bold(),
                 Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
@@ -108,13 +147,18 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
             let mut lines = vec![Line::from(spans)];
             // On its own line so long permission prompts aren't cut off.
             if let Some(m) = &s.message {
-                lines.push(Line::from(Span::styled(format!("    {m}"), Style::new().fg(color))));
+                lines.push(Line::from(Span::styled(
+                    format!("    {m}"),
+                    Style::new().fg(color),
+                )));
             }
             ListItem::new(lines)
         })
         .collect();
     let mut state = ListState::default().with_selected(Some(app.sess_idx));
-    let list = List::new(items).block(block).highlight_style(highlight(app.pane == Pane::Sessions));
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight(app.pane == Pane::Sessions));
     frame.render_stateful_widget(list, area, &mut state);
 }
 
@@ -122,7 +166,12 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let mut spans = Vec::new();
     let n = app.needs_you_count();
     if n > 0 {
-        spans.push(Span::raw(format!(" ⚑ {n} needs you ")).white().on_red().bold());
+        spans.push(
+            Span::raw(format!(" ⚑ {n} needs you "))
+                .white()
+                .on_red()
+                .bold(),
+        );
         spans.push(Span::raw(" "));
     }
     match &app.footer {
@@ -136,7 +185,9 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 
 fn highlight(focused: bool) -> Style {
     if focused {
-        Style::new().bg(Color::Rgb(46, 74, 52)).add_modifier(Modifier::BOLD)
+        Style::new()
+            .bg(Color::Rgb(46, 74, 52))
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::new().bg(Color::Rgb(40, 40, 40))
     }
@@ -165,5 +216,10 @@ fn parse_hex(c: Option<&str>) -> Option<Color> {
 fn popup(area: Rect, width_pct: u16, height: u16) -> Rect {
     let w = (area.width * width_pct / 100).max(20).min(area.width);
     let h = height.min(area.height);
-    Rect { x: area.x + (area.width - w) / 2, y: area.y + (area.height - h) / 2, width: w, height: h }
+    Rect {
+        x: area.x + (area.width - w) / 2,
+        y: area.y + (area.height - h) / 2,
+        width: w,
+        height: h,
+    }
 }

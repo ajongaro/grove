@@ -21,13 +21,13 @@ pub struct LaunchSpec {
 /// Resolving here means the window doesn't depend on the tmux server's PATH.
 pub fn claude_bin() -> String {
     std::env::var_os("PATH")
-        .and_then(|p| std::env::split_paths(&p).map(|d| d.join("claude")).find(|c| c.is_file()))
+        .and_then(|p| {
+            std::env::split_paths(&p)
+                .map(|d| d.join("claude"))
+                .find(|c| c.is_file())
+        })
         .map(|c| c.to_string_lossy().into_owned())
         .unwrap_or_else(|| "claude".into())
-}
-
-pub fn build(cfg: &Config, paths: &Paths, project: &Project, session_id: &str, name: &str) -> Result<LaunchSpec> {
-    build_with_bin(cfg, paths, project, session_id, name, &claude_bin())
 }
 
 fn build_with_bin(
@@ -40,7 +40,10 @@ fn build_with_bin(
 ) -> Result<LaunchSpec> {
     let account = claude_dir(cfg)?;
     if !project.path.is_dir() {
-        bail!("project directory {} does not exist", project.path.display());
+        bail!(
+            "project directory {} does not exist",
+            project.path.display()
+        );
     }
     let slug = project.slug();
     let window_name = format!("{slug}:{name}");
@@ -78,11 +81,20 @@ pub fn next_session_name(store: &Store, slug: &str) -> String {
         .filter(|s| s.state != State::Ended)
         .map(|s| s.name)
         .collect();
-    (1..).map(|n| format!("s{n}")).find(|n| !taken.contains(n)).expect("unbounded range")
+    (1..)
+        .map(|n| format!("s{n}"))
+        .find(|n| !taken.contains(n))
+        .expect("unbounded range")
 }
 
 /// Records a `starting` session, opens its window, and stores the window id.
-pub fn start(tmux: &Tmux, store: &Store, cfg: &Config, project: &Project, name: Option<String>) -> Result<Session> {
+pub fn start(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    name: Option<String>,
+) -> Result<Session> {
     start_with_bin(tmux, store, cfg, project, name, &claude_bin())
 }
 
@@ -96,7 +108,9 @@ pub fn start_with_bin(
     bin: &str,
 ) -> Result<Session> {
     let slug = project.slug();
-    let name = name.map(|n| n.trim().replace([':', '.'], "-")).filter(|n| !n.is_empty());
+    let name = name
+        .map(|n| n.trim().replace([':', '.'], "-"))
+        .filter(|n| !n.is_empty());
     let name = name.unwrap_or_else(|| next_session_name(store, &slug));
     let id = uuid::Uuid::new_v4().to_string();
     // Validate everything before touching disk or tmux.
@@ -116,7 +130,13 @@ pub fn start_with_bin(
     };
     // Written before the window exists so the first hook finds it.
     store.save_session(&session)?;
-    let window = match tmux.new_window(&cfg.tmux_session, &spec.window_name, &spec.cwd, &spec.env, &spec.argv) {
+    let window = match tmux.new_window(
+        &cfg.tmux_session,
+        &spec.window_name,
+        &spec.cwd,
+        &spec.env,
+        &spec.argv,
+    ) {
         Ok(w) => w,
         Err(e) => {
             let _ = store.delete_session(&session.id);

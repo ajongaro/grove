@@ -8,7 +8,11 @@ fn mcp_lists_five_tools_and_answers_a_call() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join("projects")).unwrap();
-    std::fs::write(home.join("projects/demo.toml"), "name = \"demo\"\npath = \"/tmp/demo\"\n").unwrap();
+    std::fs::write(
+        home.join("projects/demo.toml"),
+        "name = \"demo\"\npath = \"/tmp/demo\"\n",
+    )
+    .unwrap();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_grove"))
         .arg("mcp")
@@ -28,8 +32,10 @@ fn mcp_lists_five_tools_and_answers_a_call() {
         serde_json::from_str::<serde_json::Value>(&line).unwrap()
     };
 
-    send(serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-        "protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}));
+    send(
+        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+        "protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}),
+    );
     let init = recv();
     assert!(init["result"]["serverInfo"].is_object(), "{init}");
     send(serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
@@ -43,9 +49,20 @@ fn mcp_lists_five_tools_and_answers_a_call() {
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     names.sort();
-    assert_eq!(names, ["get_project", "list_projects", "read_wiki", "update_project", "write_wiki_section"]);
+    assert_eq!(
+        names,
+        [
+            "get_project",
+            "list_projects",
+            "read_wiki",
+            "update_project",
+            "write_wiki_section"
+        ]
+    );
 
-    send(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project","arguments":{}}}));
+    send(
+        serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project","arguments":{}}}),
+    );
     let call = recv();
     let text = call["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Name: demo"), "{call}");

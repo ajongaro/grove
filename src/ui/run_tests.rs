@@ -19,16 +19,33 @@ fn setup(tag: &str) -> T {
     let root = dir.path().to_path_buf();
     let paths = Paths::new(root.join("home"));
     paths.ensure().unwrap();
-    let cfg = Config { tmux_session: "grove".into(), ..Config::default() };
+    let cfg = Config {
+        tmux_session: "grove".into(),
+        ..Config::default()
+    };
     let tmux = Tmux::new(format!("grove-test-{}-{tag}", std::process::id()));
-    T { _dir: dir, root, ctx: Ctx { store: Store::new(paths), cfg, tmux } }
+    T {
+        _dir: dir,
+        root,
+        ctx: Ctx {
+            store: Store::new(paths),
+            cfg,
+            tmux,
+        },
+    }
 }
 
 fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session {
     Session {
-        id: id.into(), project: project.into(), name: id.into(), host: "local".into(),
-        tmux_window: window.map(str::to_string), state, message: None,
-        created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
+        id: id.into(),
+        project: project.into(),
+        name: id.into(),
+        host: "local".into(),
+        tmux_window: window.map(str::to_string),
+        state,
+        message: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
     }
 }
 
@@ -53,8 +70,17 @@ fn add_project_expands_tilde() {
     let home = std::env::var("HOME").unwrap();
     // HOME itself always exists.
     add_project_at(&t.ctx.store, "~").unwrap();
-    let all: Vec<Project> = t.ctx.store.list_projects().into_iter().filter_map(Result::ok).collect();
-    assert_eq!(all[0].path, std::path::PathBuf::from(home).canonicalize().unwrap());
+    let all: Vec<Project> = t
+        .ctx
+        .store
+        .list_projects()
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    assert_eq!(
+        all[0].path,
+        std::path::PathBuf::from(home).canonicalize().unwrap()
+    );
 }
 
 #[test]
@@ -72,7 +98,13 @@ fn perform_add_project_reports_in_footer() {
     let t = setup("addmsg");
     let dir = t.root.join("app");
     std::fs::create_dir_all(&dir).unwrap();
-    let out = perform(&t.ctx, Action::AddProject { path: dir.to_string_lossy().into() }).unwrap();
+    let out = perform(
+        &t.ctx,
+        Action::AddProject {
+            path: dir.to_string_lossy().into(),
+        },
+    )
+    .unwrap();
     assert!(matches!(out, Outcome::Message(m) if m.contains("app")));
 }
 
@@ -81,7 +113,8 @@ fn clear_ended_removes_only_ended_sessions_of_that_project() {
     let t = setup("clear");
     let s = &t.ctx.store;
     s.save_session(&sess("a", "p", State::Ended, None)).unwrap();
-    s.save_session(&sess("b", "p", State::Working, None)).unwrap();
+    s.save_session(&sess("b", "p", State::Working, None))
+        .unwrap();
     s.save_session(&sess("c", "q", State::Ended, None)).unwrap();
     perform(&t.ctx, Action::ClearEnded { slug: "p".into() }).unwrap();
     let ids: Vec<_> = s.list_sessions(None).into_iter().map(|x| x.id).collect();
@@ -93,10 +126,22 @@ fn clear_ended_removes_only_ended_sessions_of_that_project() {
 fn kill_closes_window_and_marks_ended() {
     let t = setup("kill");
     let tm = &t.ctx.tmux;
-    tm.new_session_detached("grove", "dash", &t.root, &sleeper()).unwrap();
-    let w = tm.new_window("grove", "p:s1", &t.root, &[], &sleeper()).unwrap();
-    t.ctx.store.save_session(&sess("a", "p", State::Working, Some(&w))).unwrap();
-    perform(&t.ctx, Action::Kill { session_id: "a".into() }).unwrap();
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:s1", &t.root, &[], &sleeper())
+        .unwrap();
+    t.ctx
+        .store
+        .save_session(&sess("a", "p", State::Working, Some(&w)))
+        .unwrap();
+    perform(
+        &t.ctx,
+        Action::Kill {
+            session_id: "a".into(),
+        },
+    )
+    .unwrap();
     assert!(!tm.list_windows("grove").unwrap().contains(&w));
     assert_eq!(t.ctx.store.get_session("a").unwrap().state, State::Ended);
 }
@@ -104,17 +149,46 @@ fn kill_closes_window_and_marks_ended() {
 #[test]
 fn kill_of_already_closed_window_still_marks_ended() {
     let t = setup("kill2");
-    t.ctx.tmux.new_session_detached("grove", "dash", &t.root, &sleeper()).unwrap();
-    t.ctx.store.save_session(&sess("a", "p", State::Working, Some("@999"))).unwrap();
-    perform(&t.ctx, Action::Kill { session_id: "a".into() }).unwrap();
+    t.ctx
+        .tmux
+        .new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    t.ctx
+        .store
+        .save_session(&sess("a", "p", State::Working, Some("@999")))
+        .unwrap();
+    perform(
+        &t.ctx,
+        Action::Kill {
+            session_id: "a".into(),
+        },
+    )
+    .unwrap();
     assert_eq!(t.ctx.store.get_session("a").unwrap().state, State::Ended);
 }
 
 #[test]
 fn new_session_for_missing_project_dir_is_an_error() {
     let t = setup("newerr");
-    t.ctx.store.add_project(&Project { name: "gone".into(), path: "/no/such".into(), color: None, summary: None }).unwrap();
-    assert!(perform(&t.ctx, Action::NewSession { slug: "gone".into(), name: None }).is_err());
+    t.ctx
+        .store
+        .add_project(&Project {
+            name: "gone".into(),
+            path: "/no/such".into(),
+            color: None,
+            summary: None,
+        })
+        .unwrap();
+    assert!(
+        perform(
+            &t.ctx,
+            Action::NewSession {
+                slug: "gone".into(),
+                name: None
+            }
+        )
+        .is_err()
+    );
     assert!(t.ctx.store.list_sessions(None).is_empty());
 }
 
@@ -129,18 +203,33 @@ fn quit_and_none() {
 fn reconcile_ends_vanished_and_flags_needs_you() {
     let t = setup("recon");
     let tm = &t.ctx.tmux;
-    tm.new_session_detached("grove", "dash", &t.root, &sleeper()).unwrap();
-    let live = tm.new_window("grove", "p:s1", &t.root, &[], &sleeper()).unwrap();
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let live = tm
+        .new_window("grove", "p:s1", &t.root, &[], &sleeper())
+        .unwrap();
     let s = &t.ctx.store;
-    s.save_session(&sess("needy", "p", State::NeedsYou, Some(&live))).unwrap();
-    s.save_session(&sess("gone", "p", State::Working, Some("@999"))).unwrap();
+    s.save_session(&sess("needy", "p", State::NeedsYou, Some(&live)))
+        .unwrap();
+    s.save_session(&sess("gone", "p", State::Working, Some("@999")))
+        .unwrap();
     let mut flagged = HashMap::new();
     reconcile(&t.ctx, &mut flagged).unwrap();
     assert_eq!(s.get_session("gone").unwrap().state, State::Ended);
     assert_eq!(s.get_session("needy").unwrap().state, State::NeedsYou);
     assert_eq!(flagged.get(&live), Some(&true));
     let style = String::from_utf8(
-        tm.cmd().args(["show-window-options", "-v", "-t", &live, "window-status-style"]).output().unwrap().stdout,
+        tm.cmd()
+            .args([
+                "show-window-options",
+                "-v",
+                "-t",
+                &live,
+                "window-status-style",
+            ])
+            .output()
+            .unwrap()
+            .stdout,
     )
     .unwrap();
     assert!(style.contains("red"), "{style:?}");
@@ -156,7 +245,10 @@ fn reconcile_ends_vanished_and_flags_needs_you() {
 #[test]
 fn reconcile_without_tmux_session_is_ok() {
     let t = setup("recon-none");
-    t.ctx.store.save_session(&sess("a", "p", State::Working, Some("@1"))).unwrap();
+    t.ctx
+        .store
+        .save_session(&sess("a", "p", State::Working, Some("@1")))
+        .unwrap();
     // No grove tmux session at all: don't mass-end sessions on a tmux hiccup.
     assert!(reconcile(&t.ctx, &mut HashMap::new()).is_err());
     assert_eq!(t.ctx.store.get_session("a").unwrap().state, State::Working);

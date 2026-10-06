@@ -7,7 +7,11 @@ use std::process::{Command, Stdio};
 const SID: &str = "11111111-2222-3333-4444-555555555556";
 
 fn fixture(name: &str) -> String {
-    std::fs::read_to_string(format!("{}/tests/fixtures/hooks/{name}.json", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    std::fs::read_to_string(format!(
+        "{}/tests/fixtures/hooks/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
 }
 
 /// Runs `grove hook` with `input` on stdin; returns (exit code, stdout).
@@ -20,9 +24,17 @@ fn run_hook(home: &Path, input: &str) -> (i32, String) {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
-    (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned())
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
 }
 
 fn setup(state: &str) -> tempfile::TempDir {
@@ -52,7 +64,10 @@ fn home(dir: &tempfile::TempDir) -> std::path::PathBuf {
 }
 
 fn session(dir: &tempfile::TempDir) -> serde_json::Value {
-    serde_json::from_str(&std::fs::read_to_string(home(dir).join(format!("sessions/{SID}.json"))).unwrap()).unwrap()
+    serde_json::from_str(
+        &std::fs::read_to_string(home(dir).join(format!("sessions/{SID}.json"))).unwrap(),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -96,7 +111,11 @@ fn unknown_session_is_ignored_silently() {
     let (code, out) = run_hook(&home(&dir), &input);
     assert_eq!(code, 0);
     assert!(out.is_empty());
-    assert!(!home(&dir).join("sessions/99999999-0000-0000-0000-000000000000.json").exists());
+    assert!(
+        !home(&dir)
+            .join("sessions/99999999-0000-0000-0000-000000000000.json")
+            .exists()
+    );
     assert!(!home(&dir).join("grove.log").exists());
 }
 
@@ -118,8 +137,14 @@ fn session_start_prints_project_context_with_wiki_titles() {
     assert_eq!(code, 0);
     assert!(out.contains("Grove project: Demo (/tmp/demo)"), "{out}");
     assert!(out.contains("Summary: A demo project."), "{out}");
-    assert!(out.contains("Wiki sections: Architecture, Commands"), "{out}");
-    assert!(!out.contains("x\n"), "wiki bodies must not be printed: {out}");
+    assert!(
+        out.contains("Wiki sections: Architecture, Commands"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("x\n"),
+        "wiki bodies must not be printed: {out}"
+    );
     assert_eq!(session(&dir)["state"], "starting");
 }
 

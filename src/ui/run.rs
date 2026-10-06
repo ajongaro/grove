@@ -46,13 +46,17 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
             Outcome::Message(format!("Started {} in {}", s.name, project.name))
         }
-        Action::AddProject { path } => Outcome::Message(format!("Added {}", add_project_at(store, &path)?)),
+        Action::AddProject { path } => {
+            Outcome::Message(format!("Added {}", add_project_at(store, &path)?))
+        }
         Action::Jump { window } => {
             ctx.tmux.select_window(&window)?;
             Outcome::Nothing
         }
         Action::Kill { session_id } => {
-            let Some(mut s) = store.get_session(&session_id) else { return Ok(Outcome::Nothing) };
+            let Some(mut s) = store.get_session(&session_id) else {
+                return Ok(Outcome::Nothing);
+            };
             if let Some(w) = &s.tmux_window {
                 // Already gone is fine: the goal is "not running".
                 let _ = ctx.tmux.kill_window(w);
@@ -75,8 +79,11 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             Outcome::Nothing
         }
         Action::ClearEnded { slug } => {
-            let ended: Vec<_> =
-                store.list_sessions(Some(&slug)).into_iter().filter(|s| s.state == State::Ended).collect();
+            let ended: Vec<_> = store
+                .list_sessions(Some(&slug))
+                .into_iter()
+                .filter(|s| s.state == State::Ended)
+                .collect();
             for s in &ended {
                 store.delete_session(&s.id)?;
             }
@@ -86,7 +93,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
 }
 
 fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
-    let mut argv: Vec<String> = editor(&ctx.cfg).split_whitespace().map(str::to_string).collect();
+    let mut argv: Vec<String> = editor(&ctx.cfg)
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
     argv.push(target.to_string());
     ctx.tmux.display_popup(&ctx.store.paths.home, &argv)
 }
@@ -94,12 +104,22 @@ fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
 /// Registers the directory at `path` as a project named after the folder.
 pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
     let dir = expand_tilde(path.trim());
-    let dir = dir.canonicalize().with_context(|| format!("{} does not exist", dir.display()))?;
+    let dir = dir
+        .canonicalize()
+        .with_context(|| format!("{} does not exist", dir.display()))?;
     if !dir.is_dir() {
         bail!("{} is not a directory", dir.display());
     }
-    let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "root".into());
-    store.add_project(&Project { name: name.clone(), path: dir, color: None, summary: None })?;
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "root".into());
+    store.add_project(&Project {
+        name: name.clone(),
+        path: dir,
+        color: None,
+        summary: None,
+    })?;
     Ok(name)
 }
 
@@ -117,7 +137,9 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
         }
     }
     for s in ctx.store.list_sessions(None) {
-        let Some(w) = s.tmux_window.as_ref().filter(|w| windows.contains(w)) else { continue };
+        let Some(w) = s.tmux_window.as_ref().filter(|w| windows.contains(w)) else {
+            continue;
+        };
         let want = s.state == State::NeedsYou;
         if flagged.get(w) == Some(&want) {
             continue;
@@ -130,7 +152,8 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
                 None => "default".to_string(),
             }
         };
-        ctx.tmux.set_window_option(w, "window-status-style", &style)?;
+        ctx.tmux
+            .set_window_option(w, "window-status-style", &style)?;
         flagged.insert(w.clone(), want);
     }
     Ok(())
@@ -145,10 +168,18 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     })?;
     use notify::Watcher;
     ctx.store.paths.ensure()?;
-    watcher.watch(&ctx.store.paths.sessions, notify::RecursiveMode::NonRecursive)?;
-    watcher.watch(&ctx.store.paths.projects, notify::RecursiveMode::NonRecursive)?;
+    watcher.watch(
+        &ctx.store.paths.sessions,
+        notify::RecursiveMode::NonRecursive,
+    )?;
+    watcher.watch(
+        &ctx.store.paths.projects,
+        notify::RecursiveMode::NonRecursive,
+    )?;
 
-    let cwd = std::env::current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+    let cwd = std::env::current_dir()
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let mut app = App::new(cwd);
     app.reload(&ctx.store);
 
@@ -158,7 +189,12 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     result
 }
 
-fn event_loop(ctx: &Ctx, app: &mut App, terminal: &mut ratatui::DefaultTerminal, rx: &mpsc::Receiver<()>) -> Result<()> {
+fn event_loop(
+    ctx: &Ctx,
+    app: &mut App,
+    terminal: &mut ratatui::DefaultTerminal,
+    rx: &mpsc::Receiver<()>,
+) -> Result<()> {
     let mut flagged = HashMap::new();
     let mut last_reconcile = Instant::now() - RECONCILE_EVERY;
     loop {
@@ -171,19 +207,19 @@ fn event_loop(ctx: &Ctx, app: &mut App, terminal: &mut ratatui::DefaultTerminal,
         }
         terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
 
-        if event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                let action = handle_key(app, key);
-                match perform(ctx, action) {
-                    Ok(Outcome::Quit) => {
-                        let _ = ctx.tmux.cmd().arg("detach-client").status();
-                    }
-                    Ok(Outcome::Message(m)) => app.footer = Some(m),
-                    Ok(Outcome::Nothing) => {}
-                    Err(e) => app.footer = Some(format!("{e:#}")),
+        if event::poll(Duration::from_millis(250))?
+            && let Event::Key(key) = event::read()?
+        {
+            let action = handle_key(app, key);
+            match perform(ctx, action) {
+                Ok(Outcome::Quit) => {
+                    let _ = ctx.tmux.cmd().arg("detach-client").status();
                 }
-                app.reload(&ctx.store);
+                Ok(Outcome::Message(m)) => app.footer = Some(m),
+                Ok(Outcome::Nothing) => {}
+                Err(e) => app.footer = Some(format!("{e:#}")),
             }
+            app.reload(&ctx.store);
         }
         // Hook writes land here; coalesce bursts into one reload.
         if rx.try_recv().is_ok() {
