@@ -1,9 +1,12 @@
 mod config;
 mod hook;
+mod launch;
 mod log;
 mod model;
+mod runfiles;
 mod state;
 mod store;
+mod tmux;
 
 use std::io::Read;
 
