@@ -8,6 +8,7 @@ mod runfiles;
 mod state;
 mod store;
 mod tmux;
+mod ui;
 
 use std::io::Read;
 
