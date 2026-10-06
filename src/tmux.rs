@@ -130,6 +130,18 @@ impl Tmux {
         check(&out, &["display-popup"]).map(|_| ())
     }
 
+    /// Sets a session-level environment variable.
+    pub fn set_environment(&self, session: &str, key: &str, value: &str) -> Result<()> {
+        self.run(&["set-environment", "-t", &format!("={session}"), key, value]).map(|_| ())
+    }
+
+    /// Reads a session-level environment variable, if set.
+    pub fn show_environment(&self, session: &str, key: &str) -> Option<String> {
+        let out = self.run(&["show-environment", "-t", &format!("={session}"), key]).ok()?;
+        // "KEY=value", or "-KEY" when it was removed.
+        out.trim().strip_prefix(&format!("{key}=")).map(str::to_string)
+    }
+
     #[cfg(test)]
     /// Kills the server and removes its socket file (tmux leaves it behind).
     pub fn kill_server(&self) {

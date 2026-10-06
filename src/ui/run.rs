@@ -161,6 +161,14 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
     Ok(())
 }
 
+/// Updates the add-project default from the `GROVE_CWD` that `grove` sets on
+/// the tmux session each time it attaches.
+pub fn refresh_cwd(ctx: &Ctx, app: &mut App) {
+    if let Some(cwd) = ctx.tmux.show_environment(&ctx.cfg.tmux_session, "GROVE_CWD") {
+        app.cwd = cwd;
+    }
+}
+
 /// Runs the dashboard until the process is killed. `q` detaches the tmux
 /// client rather than exiting, so window 0 always has the dashboard.
 pub fn run_dashboard(ctx: Ctx) -> Result<()> {
@@ -204,6 +212,7 @@ fn event_loop(
             if let Err(e) = reconcile(ctx, &mut flagged) {
                 app.footer = Some(format!("tmux: {e:#}"));
             }
+            refresh_cwd(ctx, app);
             app.reload(&ctx.store);
             last_reconcile = Instant::now();
         }

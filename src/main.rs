@@ -154,6 +154,10 @@ fn start(paths: &Paths) -> Result<()> {
     // Also brings window 0 back if the dashboard ever died.
     let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
     launch::ensure_dashboard(&tmux, session, &paths.home, &argv)?;
+    // The dashboard offers this folder as the default for `a` (add project).
+    if let Ok(cwd) = std::env::current_dir() {
+        let _ = tmux.set_environment(session, "GROVE_CWD", &cwd.to_string_lossy());
+    }
 
     let inside = std::env::var("TMUX").unwrap_or_default();
     let target = format!("={session}");
