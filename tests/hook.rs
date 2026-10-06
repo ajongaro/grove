@@ -166,7 +166,12 @@ fn run_hook_in_window(home: &Path, input: &str, grove_session: &str) -> i32 {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
     child.wait().unwrap().code().unwrap_or(-1)
 }
 

@@ -65,6 +65,14 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
 
 fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     app.footer = None;
+    // Raw mode delivers Ctrl-C as Char('c'); a reflexive Ctrl-C must not
+    // clear sessions, so modified keys never map to actions.
+    if key
+        .modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return Action::None;
+    }
     match key.code {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Char('j') | KeyCode::Down => {

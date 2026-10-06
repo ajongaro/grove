@@ -425,3 +425,26 @@ fn tiny_terminal_does_not_panic() {
     );
     screen(&app, 10, 3);
 }
+
+#[test]
+fn ctrl_chords_never_trigger_actions() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@7"))],
+    );
+    for c in ['c', 'e', 'w', 'n', 'a', 'q', 'x'] {
+        for pane in [Pane::Projects, Pane::Sessions] {
+            app.pane = pane;
+            let action = handle_key(
+                &mut app,
+                KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL),
+            );
+            assert_eq!(action, Action::None, "ctrl-{c}");
+            assert_eq!(app.mode, Mode::Normal, "ctrl-{c}");
+        }
+    }
+    assert_eq!(
+        handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)),
+        Action::None
+    );
+}

@@ -261,20 +261,39 @@ fn new_session_uses_current_config_file() {
     std::fs::create_dir_all(&dir).unwrap();
     add_project_at(&t.ctx.store, dir.to_str().unwrap()).unwrap();
     // Edited after the dashboard started: must win over ctx.cfg.
-    std::fs::write(t.ctx.store.paths.config_file(), "claude_config_dir = \"/no/such/edited-account\"\n").unwrap();
-    let err = perform(&t.ctx, Action::NewSession { slug: "app".into(), name: None }).unwrap_err();
-    assert!(format!("{err:#}").contains("/no/such/edited-account"), "{err:#}");
+    std::fs::write(
+        t.ctx.store.paths.config_file(),
+        "claude_config_dir = \"/no/such/edited-account\"\n",
+    )
+    .unwrap();
+    let err = perform(
+        &t.ctx,
+        Action::NewSession {
+            slug: "app".into(),
+            name: None,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("/no/such/edited-account"),
+        "{err:#}"
+    );
 }
 
 #[test]
 fn add_prompt_default_follows_the_folder_grove_was_run_from() {
     let t = setup("cwd");
     let tm = &t.ctx.tmux;
-    tm.new_session_detached("grove", "dash", &t.root, &sleeper()).unwrap();
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
     let mut app = crate::ui::app::App::new("/initial".into());
     refresh_cwd(&t.ctx, &mut app);
-    assert_eq!(app.cwd, "/initial", "no GROVE_CWD yet: keep the old default");
-    tm.set_environment("grove", "GROVE_CWD", "/Users/me/Play/foo").unwrap();
+    assert_eq!(
+        app.cwd, "/initial",
+        "no GROVE_CWD yet: keep the old default"
+    );
+    tm.set_environment("grove", "GROVE_CWD", "/Users/me/Play/foo")
+        .unwrap();
     refresh_cwd(&t.ctx, &mut app);
     assert_eq!(app.cwd, "/Users/me/Play/foo");
 }

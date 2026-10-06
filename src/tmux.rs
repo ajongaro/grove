@@ -132,14 +132,19 @@ impl Tmux {
 
     /// Sets a session-level environment variable.
     pub fn set_environment(&self, session: &str, key: &str, value: &str) -> Result<()> {
-        self.run(&["set-environment", "-t", &format!("={session}"), key, value]).map(|_| ())
+        self.run(&["set-environment", "-t", &format!("={session}"), key, value])
+            .map(|_| ())
     }
 
     /// Reads a session-level environment variable, if set.
     pub fn show_environment(&self, session: &str, key: &str) -> Option<String> {
-        let out = self.run(&["show-environment", "-t", &format!("={session}"), key]).ok()?;
+        let out = self
+            .run(&["show-environment", "-t", &format!("={session}"), key])
+            .ok()?;
         // "KEY=value", or "-KEY" when it was removed.
-        out.trim().strip_prefix(&format!("{key}=")).map(str::to_string)
+        out.trim()
+            .strip_prefix(&format!("{key}="))
+            .map(str::to_string)
     }
 
     #[cfg(test)]

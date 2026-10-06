@@ -54,7 +54,9 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
         ),
         // /clear and /resume end the conversation, not the window: Claude is
         // still running and waiting for input.
-        "SessionEnd" if matches!(ev.reason.as_deref(), Some("clear" | "resume")) => (State::YourTurn, None),
+        "SessionEnd" if matches!(ev.reason.as_deref(), Some("clear" | "resume")) => {
+            (State::YourTurn, None)
+        }
         "SessionEnd" => (State::Ended, None),
         _ => return None,
     };
@@ -171,7 +173,10 @@ mod tests {
 
     #[test]
     fn clear_or_resume_does_not_end_a_live_session() {
-        assert_eq!(state_after(State::Working, "session_end_clear"), Some(State::YourTurn));
+        assert_eq!(
+            state_after(State::Working, "session_end_clear"),
+            Some(State::YourTurn)
+        );
         let mut ev = fixture("session_end_clear");
         ev.reason = Some("resume".into());
         assert_eq!(next(State::YourTurn, &ev), None);
