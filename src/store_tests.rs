@@ -208,3 +208,21 @@ fn read_missing_wiki_section_errors_with_titles() {
     let err = s.read_wiki("proj", Some("Nope")).unwrap_err().to_string();
     assert!(err.contains("Architecture"), "{err}");
 }
+
+#[test]
+fn renamed_project_file_is_reported_not_split() {
+    let (_d, s) = store();
+    s.add_project(&proj("my-app")).unwrap();
+    std::fs::write(
+        s.paths.projects.join("my-app.toml"),
+        "name = \"Other\"\npath = \"/tmp/x\"\n",
+    )
+    .unwrap();
+    let all = s.list_projects();
+    assert_eq!(all.len(), 1);
+    let (path, err) = all[0].as_ref().unwrap_err();
+    assert!(path.ends_with("my-app.toml"));
+    assert!(err.contains("my-app") && err.contains("Other"), "{err}");
+    assert!(s.get_project("Other").is_err());
+    assert!(!s.paths.projects.join("other.toml").exists());
+}

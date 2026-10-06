@@ -37,6 +37,20 @@ impl Store {
                 std::fs::read_to_string(&f)
                     .map_err(|e| e.to_string())
                     .and_then(|t| toml::from_str::<Project>(&t).map_err(|e| e.to_string()))
+                    .and_then(|p| {
+                        // Sessions and the wiki are keyed by the file's slug,
+                        // so a renamed `name` would orphan them.
+                        let stem = f.file_stem().unwrap_or_default().to_string_lossy();
+                        if p.slug() == stem {
+                            Ok(p)
+                        } else {
+                            Err(format!(
+                                "name {:?} doesn't match file {stem}.toml; rename the file to {}.toml or change the name back",
+                                p.name,
+                                p.slug()
+                            ))
+                        }
+                    })
                     .map_err(|e| (f, e))
             })
             .collect()
