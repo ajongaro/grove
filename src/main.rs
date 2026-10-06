@@ -150,10 +150,10 @@ fn start(paths: &Paths) -> Result<()> {
         // Pick up tmux.conf changes from a newer grove.
         let conf = paths.run.join("tmux.conf");
         let _ = tmux.cmd().args(["source-file"]).arg(&conf).status();
-    } else {
-        let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
-        tmux.new_session_detached(session, "dashboard", &paths.home, &argv)?;
     }
+    // Also brings window 0 back if the dashboard ever died.
+    let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
+    launch::ensure_dashboard(&tmux, session, &paths.home, &argv)?;
 
     let inside = std::env::var("TMUX").unwrap_or_default();
     let target = format!("={session}");

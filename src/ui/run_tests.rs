@@ -253,3 +253,15 @@ fn reconcile_without_tmux_session_is_ok() {
     assert!(reconcile(&t.ctx, &mut HashMap::new()).is_err());
     assert_eq!(t.ctx.store.get_session("a").unwrap().state, State::Working);
 }
+
+#[test]
+fn new_session_uses_current_config_file() {
+    let t = setup("freshcfg");
+    let dir = t.root.join("app");
+    std::fs::create_dir_all(&dir).unwrap();
+    add_project_at(&t.ctx.store, dir.to_str().unwrap()).unwrap();
+    // Edited after the dashboard started: must win over ctx.cfg.
+    std::fs::write(t.ctx.store.paths.config_file(), "claude_config_dir = \"/no/such/edited-account\"\n").unwrap();
+    let err = perform(&t.ctx, Action::NewSession { slug: "app".into(), name: None }).unwrap_err();
+    assert!(format!("{err:#}").contains("/no/such/edited-account"), "{err:#}");
+}

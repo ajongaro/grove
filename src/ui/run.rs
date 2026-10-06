@@ -10,7 +10,7 @@ use ratatui::crossterm::event::{self, Event};
 use super::app::{Action, App, mark_missing};
 use super::input::handle_key;
 use super::render::render;
-use crate::config::{Config, editor, expand_tilde};
+use crate::config::{Config, editor, expand_tilde, load_config};
 use crate::launch;
 use crate::model::{Project, State};
 use crate::store::Store;
@@ -40,7 +40,9 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
         Action::Quit => Outcome::Quit,
         Action::NewSession { slug, name } => {
             let project = store.get_project(&slug)?;
-            let s = launch::start(&ctx.tmux, store, &ctx.cfg, &project, name)?;
+            // Re-read so config.toml edits apply without restarting the dashboard.
+            let cfg = load_config(&store.paths)?;
+            let s = launch::start(&ctx.tmux, store, &cfg, &project, name)?;
             if let Some(w) = &s.tmux_window {
                 ctx.tmux.select_window(w)?;
             }

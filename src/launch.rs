@@ -155,6 +155,32 @@ pub fn start_with_bin(
     Ok(session)
 }
 
+/// Makes sure the Grove tmux session exists with the dashboard in window 0,
+/// recreating either if missing. Returns whether anything was created.
+pub fn ensure_dashboard(tmux: &Tmux, session: &str, cwd: &std::path::Path, argv: &[String]) -> Result<bool> {
+    if !tmux.has_session(session) {
+        tmux.new_session_detached(session, "dashboard", cwd, argv)?;
+        return Ok(true);
+    }
+    let out = tmux
+        .cmd()
+        .args(["list-windows", "-t", &format!("={session}"), "-F", "#{window_index}"])
+        .output()?;
+    if String::from_utf8_lossy(&out.stdout).lines().any(|l| l == "0") {
+        return Ok(false);
+    }
+    let status = tmux
+        .cmd()
+        .args(["new-window", "-d", "-t", &format!("={session}:0"), "-n", "dashboard", "-c"])
+        .arg(cwd)
+        .args(argv)
+        .status()?;
+    if !status.success() {
+        bail!("tmux could not recreate the dashboard window");
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 #[path = "launch_tests.rs"]
 mod tests;

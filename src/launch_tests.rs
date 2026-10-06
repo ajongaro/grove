@@ -197,3 +197,27 @@ fn start_with_missing_project_dir_creates_nothing() {
     assert!(start(&tmux, &store, &cfg(&e), &p, None).is_err());
     assert!(store.list_sessions(None).is_empty());
 }
+
+#[test]
+fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
+    let e = env();
+    let conf = e.paths.run.join("tmux.conf");
+    std::fs::write(&conf, crate::runfiles::tmux_conf()).unwrap();
+    let tmux = Tmux { config: Some(conf), ..Tmux::new(format!("grove-test-{}-dash", std::process::id())) };
+    let argv = vec!["sleep".to_string(), "30".to_string()];
+    let index0 = |t: &Tmux| {
+        let out = t.cmd().args(["list-windows", "-t", "=grove", "-F", "#{window_index}:#{window_name}"]).output().unwrap();
+        String::from_utf8(out.stdout).unwrap().lines().any(|l| l == "0:dashboard")
+    };
+    assert!(ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap(), "created");
+    assert!(index0(&tmux));
+    assert!(!ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap(), "already there");
+
+    // A session window keeps the tmux session alive while window 0 dies.
+    tmux.new_window("grove", "p:s1", &e.proj_dir, &[], &argv).unwrap();
+    tmux.kill_window("=grove:0").unwrap();
+    assert!(!index0(&tmux));
+    assert!(ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap(), "restored");
+    assert!(index0(&tmux));
+    tmux.kill_server();
+}
