@@ -18,8 +18,13 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
             return None;
         }
     };
-    // Sessions Grove didn't launch (or forks of them) aren't ours to track.
-    let mut session = store.get_session(&ev.session_id)?;
+    // Prefer the id Grove put on the window: /clear and /resume start a new
+    // conversation id in the same window. Sessions Grove didn't launch aren't
+    // ours to track.
+    let mut session = std::env::var("GROVE_SESSION")
+        .ok()
+        .and_then(|id| store.get_session(&id))
+        .or_else(|| store.get_session(&ev.session_id))?;
 
     if ev.hook_event_name == "SessionStart" {
         return Some(session_context(store, &session.project));

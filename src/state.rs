@@ -16,6 +16,9 @@ pub struct HookEvent {
     pub message: Option<String>,
     #[serde(default)]
     pub tool_name: Option<String>,
+    /// SessionEnd only: "clear", "resume", "logout", "prompt_input_exit", "other".
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// `None` means "no change". The string is the message to store.
@@ -49,6 +52,9 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
                     .unwrap_or_else(|| "Turn ended with an error".into()),
             ),
         ),
+        // /clear and /resume end the conversation, not the window: Claude is
+        // still running and waiting for input.
+        "SessionEnd" if matches!(ev.reason.as_deref(), Some("clear" | "resume")) => (State::YourTurn, None),
         "SessionEnd" => (State::Ended, None),
         _ => return None,
     };
@@ -161,6 +167,14 @@ mod tests {
     #[test]
     fn idle_prompt_does_not_override_needs_you() {
         assert_eq!(state_after(State::NeedsYou, "notification_idle"), None);
+    }
+
+    #[test]
+    fn clear_or_resume_does_not_end_a_live_session() {
+        assert_eq!(state_after(State::Working, "session_end_clear"), Some(State::YourTurn));
+        let mut ev = fixture("session_end_clear");
+        ev.reason = Some("resume".into());
+        assert_eq!(next(State::YourTurn, &ev), None);
     }
 
     #[test]

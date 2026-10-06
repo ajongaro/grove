@@ -154,3 +154,37 @@ fn session_start_without_wiki_says_none() {
     let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
     assert!(out.contains("Wiki sections: none yet"), "{out}");
 }
+
+/// Runs `grove hook` as it runs inside a Grove window: with GROVE_SESSION set.
+fn run_hook_in_window(home: &Path, input: &str, grove_session: &str) -> i32 {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_grove"))
+        .arg("hook")
+        .env("GROVE_HOME", home)
+        .env("GROVE_SESSION", grove_session)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child.wait().unwrap().code().unwrap_or(-1)
+}
+
+#[test]
+fn after_clear_new_conversation_id_still_updates_grove_session() {
+    let dir = setup("working");
+    let new_id = "99999999-aaaa-bbbb-cccc-dddddddddddd";
+    run_hook_in_window(&home(&dir), &fixture("session_end_clear"), SID);
+    assert_eq!(session(&dir)["state"], "your_turn");
+    let input = fixture("user_prompt_submit").replace(SID, new_id);
+    assert_eq!(run_hook_in_window(&home(&dir), &input, SID), 0);
+    assert_eq!(session(&dir)["state"], "working");
+    assert!(!home(&dir).join(format!("sessions/{new_id}.json")).exists());
+}
+
+#[test]
+fn unknown_grove_session_env_falls_back_to_stdin_id() {
+    let dir = setup("working");
+    run_hook_in_window(&home(&dir), &fixture("stop"), "not-a-real-session");
+    assert_eq!(session(&dir)["state"], "your_turn");
+}
