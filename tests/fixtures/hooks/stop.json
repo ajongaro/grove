@@ -1,0 +1,15 @@
+{
+  "session_id": "11111111-2222-3333-4444-555555555556",
+  "transcript_path": "/Users/me/.claude-play/projects/-private-tmp-claude-501--Users-me-Play-dad9ad3e-b982-4325-a38b-6b1ea7cb4785-scratchpad/11111111-2222-3333-4444-555555555556.jsonl",
+  "cwd": "/private/tmp/claude-501/-Users-me-Play/dad9ad3e-b982-4325-a38b-6b1ea7cb4785/scratchpad",
+  "prompt_id": "ca1a2260-7b4b-4673-9225-2acd0cd94f2c",
+  "permission_mode": "default",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "done",
+  "background_tasks": [],
+  "session_crons": []
+}
