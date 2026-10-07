@@ -121,6 +121,50 @@ impl Store {
 
     /// (title, path) for each wiki section, sorted by title. The title is the
     /// file's first `# ` heading, else its file stem.
+    pub fn list_fincas(&self) -> Vec<Result<crate::finca::Finca, BadFile>> {
+        files_with_ext(&self.paths.fincas, "toml")
+            .into_iter()
+            .map(|f| {
+                std::fs::read_to_string(&f)
+                    .map_err(|e| e.to_string())
+                    .and_then(|t| toml::from_str::<crate::finca::Finca>(&t).map_err(|e| e.to_string()))
+                    .and_then(|x| {
+                        let stem = f.file_stem().unwrap_or_default().to_string_lossy();
+                        if x.slug() == stem {
+                            Ok(x)
+                        } else {
+                            Err(format!("name {:?} doesn't match file {stem}.toml", x.name))
+                        }
+                    })
+                    .map_err(|e| (f, e))
+            })
+            .collect()
+    }
+    pub fn get_finca(&self, name_or_slug: &str) -> Result<crate::finca::Finca> {
+        let slug = slugify(name_or_slug);
+        let all: Vec<_> = self.list_fincas().into_iter().filter_map(Result::ok).collect();
+        all.iter().find(|f| f.slug() == slug).cloned().ok_or_else(|| {
+            let names: Vec<_> = all.iter().map(|f| f.name.as_str()).collect();
+            anyhow!("no finca named {name_or_slug:?}; fincas: {}", list_or_none(&names))
+        })
+    }
+    pub fn add_finca(&self, f: &crate::finca::Finca) -> Result<()> {
+        let slug = f.slug();
+        if slug.is_empty() {
+            bail!("finca name {:?} has no letters or digits", f.name);
+        }
+        let path = self.paths.fincas.join(format!("{slug}.toml"));
+        if path.exists() {
+            bail!("a finca named {slug:?} already exists");
+        }
+        write_atomic(&path, toml::to_string_pretty(f)?.as_bytes())
+    }
+    pub fn remove_finca(&self, name_or_slug: &str) -> Result<crate::finca::Finca> {
+        let f = self.get_finca(name_or_slug)?;
+        std::fs::remove_file(self.paths.fincas.join(format!("{}.toml", f.slug())))?;
+        Ok(f)
+    }
+
     pub fn wiki_sections(&self, slug: &str) -> Vec<(String, PathBuf)> {
         let mut out: Vec<_> = files_with_ext(&self.paths.wiki.join(slug), "md")
             .into_iter()

@@ -34,6 +34,7 @@ pub struct Paths {
     pub projects: PathBuf,
     pub wiki: PathBuf,
     pub sessions: PathBuf,
+    pub fincas: PathBuf,
     pub run: PathBuf,
     pub log: PathBuf,
 }
@@ -44,6 +45,7 @@ impl Paths {
             projects: home.join("projects"),
             wiki: home.join("wiki"),
             sessions: home.join("sessions"),
+            fincas: home.join("fincas"),
             run: home.join("run"),
             log: home.join("grove.log"),
             home,
@@ -59,7 +61,7 @@ impl Paths {
     }
 
     pub fn ensure(&self) -> Result<()> {
-        for d in [&self.projects, &self.wiki, &self.sessions, &self.run] {
+        for d in [&self.projects, &self.wiki, &self.sessions, &self.run, &self.fincas] {
             std::fs::create_dir_all(d).with_context(|| format!("creating {}", d.display()))?;
         }
         Ok(())

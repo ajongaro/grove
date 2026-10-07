@@ -1,4 +1,5 @@
 mod config;
+mod finca;
 mod hook;
 mod launch;
 mod log;
@@ -40,6 +41,9 @@ struct Cli {
 enum Cmd {
     /// Register a project directory (default: the current directory).
     Add { path: Option<PathBuf> },
+    /// Manage fincas: other machines running their own Grove.
+    #[command(subcommand)]
+    Finca(FincaCmd),
     /// Print this machine's sessions (used by other Groves to poll fincas).
     Status {
         /// Machine-readable output.
@@ -55,6 +59,23 @@ enum Cmd {
     /// Internal: stdio MCP server for projects and the wiki.
     #[command(hide = true)]
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum FincaCmd {
+    /// Register a machine reachable over key-based SSH that has grove installed.
+    Add {
+        name: String,
+        /// SSH destination, e.g. user@host or an ~/.ssh/config alias.
+        ssh: String,
+        /// grove's path on that machine, if not in a usual place.
+        #[arg(long)]
+        bin: Option<String>,
+    },
+    /// Forget a finca.
+    Rm { name: String },
+    /// List fincas.
+    Ls,
 }
 
 fn main() {
@@ -74,6 +95,7 @@ fn main() {
         }
         Some(Cmd::Add { path }) => exit_on_err(add(&paths, path)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),
     }
@@ -201,4 +223,29 @@ fn print_status(paths: &Paths, json: bool) {
             println!("  {}:{}  {}", p.name, s.name, s.state.label());
         }
     }
+}
+
+fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
+    paths.ensure()?;
+    let store = Store::new(paths.clone());
+    match cmd {
+        FincaCmd::Add { name, ssh, bin } => {
+            let grove_bin = finca::probe(&ssh, bin.as_deref())?;
+            store.add_finca(&finca::Finca { name: name.clone(), ssh, grove_bin: grove_bin.clone(), color: None })?;
+            println!("Added finca {name} (grove at {grove_bin})");
+        }
+        FincaCmd::Rm { name } => {
+            let f = store.remove_finca(&name)?;
+            println!("Removed finca {}", f.name);
+        }
+        FincaCmd::Ls => {
+            for r in store.list_fincas() {
+                match r {
+                    Ok(f) => println!("{}\t{}\t{}", f.name, f.ssh, f.grove_bin),
+                    Err((path, e)) => println!("{}\terror: {e}", path.display()),
+                }
+            }
+        }
+    }
+    Ok(())
 }

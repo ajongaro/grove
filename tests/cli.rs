@@ -98,3 +98,51 @@ fn status_json_reports_local_sessions() {
     assert_eq!(v["projects"][0]["sessions"][0]["name"], "s1");
     assert!(v["host"].as_str().is_some_and(|h| !h.is_empty()));
 }
+
+/// Fake ssh + a fake grove in the "remote" home's ~/.local/bin.
+fn fake_remote(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let ssh = dir.join("fake ssh");
+    std::fs::write(&ssh, "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) shift 2;; -t|-T) shift;; *) break;; esac; done\nshift\nHOME=\"$FAKE_HOME\" exec sh -c \"$*\"\n").unwrap();
+    let remote_home = dir.join("remote");
+    let bin = remote_home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("grove"), "#!/bin/sh\necho grove 0.1.0\n").unwrap();
+    for f in [ssh.clone(), bin.join("grove")] {
+        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    }
+    (ssh, remote_home)
+}
+
+#[test]
+fn finca_add_ls_rm() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let (ssh, remote_home) = fake_remote(dir.path());
+    let run = |args: &[&str]| grove(&home).args(args).env("GROVE_SSH", &ssh).env("FAKE_HOME", &remote_home).output().unwrap();
+
+    let out = run(&["finca", "add", "therver", "therver@therver.local"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let toml = std::fs::read_to_string(home.join("fincas/therver.toml")).unwrap();
+    assert!(toml.contains("ssh = \"therver@therver.local\""), "{toml}");
+    assert!(toml.contains(&format!("grove_bin = \"{}\"", remote_home.join(".local/bin/grove").display())), "{toml}");
+
+    let out = run(&["finca", "ls"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("therver"));
+
+    let out = run(&["finca", "rm", "therver"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!home.join("fincas/therver.toml").exists());
+}
+
+#[test]
+fn finca_add_failure_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let ssh = dir.path().join("failing ssh");
+    std::fs::write(&ssh, "#!/bin/sh\necho 'Permission denied (publickey)' >&2\nexit 255\n").unwrap();
+    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let out = grove(&home).args(["finca", "add", "pi", "admin@pi"]).env("GROVE_SSH", &ssh).output().unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Permission denied"));
+    assert!(!home.join("fincas/pi.toml").exists());
+}
