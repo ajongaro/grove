@@ -3,6 +3,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::app::{Action, App, Mode, Pane, PromptKind, state_is_live};
+use super::complete::complete_path;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     if key.kind == KeyEventKind::Release {
@@ -22,6 +23,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent) -> Action {
+    if key.code == KeyCode::Tab && kind == PromptKind::AddProject {
+        tab_complete(app, kind, input);
+        return Action::None;
+    }
+    // Any other key ends a Tab cycle.
+    app.completions.clear();
+    app.completion_idx = None;
     match key.code {
         KeyCode::Esc => {
             app.mode = Mode::Normal;
@@ -61,6 +69,29 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
         }
         _ => Action::None,
     }
+}
+
+/// First Tab completes as far as it can; while several matches are listed,
+/// each further Tab puts the next one in the prompt.
+fn tab_complete(app: &mut App, kind: PromptKind, input: String) {
+    if !app.completions.is_empty() {
+        let next = app
+            .completion_idx
+            .map_or(0, |i| (i + 1) % app.completions.len());
+        app.completion_idx = Some(next);
+        app.mode = Mode::Prompt {
+            kind,
+            input: app.completions[next].clone(),
+        };
+        return;
+    }
+    let c = complete_path(&input);
+    app.completions = c.candidates;
+    app.completion_idx = None;
+    app.mode = Mode::Prompt {
+        kind,
+        input: c.input,
+    };
 }
 
 fn normal_key(app: &mut App, key: KeyEvent) -> Action {

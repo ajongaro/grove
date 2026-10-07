@@ -64,6 +64,10 @@ pub struct App {
     pub footer: Option<String>,
     /// Default for the add-project prompt.
     pub cwd: String,
+    /// Tab-completion matches in the add-project prompt (full paths).
+    pub completions: Vec<String>,
+    /// Which match the prompt currently shows, once Tab cycles.
+    pub completion_idx: Option<usize>,
 }
 
 impl App {
@@ -77,6 +81,8 @@ impl App {
             mode: Mode::Normal,
             footer: None,
             cwd,
+            completions: Vec::new(),
+            completion_idx: None,
         }
     }
 

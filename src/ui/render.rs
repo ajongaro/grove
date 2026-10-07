@@ -26,7 +26,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         Mode::Prompt { kind, input } => {
             let title = match kind {
                 PromptKind::NewSession => " Session name (Enter for default, Esc to cancel) ",
-                PromptKind::AddProject => " Add project — path (Enter to add, Esc to cancel) ",
+                PromptKind::AddProject => {
+                    " Add project — path (Tab completes, Enter adds, Esc cancels) "
+                }
             };
             let area = popup(frame.area(), 70, 3);
             frame.render_widget(Clear, area);
@@ -39,6 +41,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 ),
                 area,
             );
+            render_completions(frame, app, area);
         }
         Mode::Confirm { label, .. } => {
             let area = popup(frame.area(), 44, 3);
@@ -55,6 +58,55 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         Mode::Normal => {}
     }
+}
+
+/// Tab-completion matches, in a box just under the prompt.
+fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
+    const MAX_ROWS: usize = 8;
+    if app.completions.is_empty() {
+        return;
+    }
+    let screen = frame.area();
+    let room = screen.bottom().saturating_sub(prompt.bottom()) as usize;
+    let rows = app
+        .completions
+        .len()
+        .min(MAX_ROWS)
+        .min(room.saturating_sub(2));
+    if rows == 0 {
+        return;
+    }
+    // Scroll so the highlighted match stays visible.
+    let selected = app.completion_idx.unwrap_or(0);
+    let start = selected.saturating_sub(rows - 1);
+    let items: Vec<ListItem> = app.completions[start..start + rows]
+        .iter()
+        .map(|p| {
+            let name = p.trim_end_matches('/').rsplit('/').next().unwrap_or(p);
+            ListItem::new(format!("{name}/"))
+        })
+        .collect();
+    let area = Rect {
+        x: prompt.x,
+        y: prompt.bottom(),
+        width: prompt.width,
+        height: rows as u16 + 2,
+    };
+    let title = format!(" {} matches — Tab to cycle ", app.completions.len());
+    let mut state = ListState::default().with_selected(app.completion_idx.map(|i| i - start));
+    frame.render_widget(Clear, area);
+    frame.render_stateful_widget(
+        List::new(items)
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .title(title)
+                    .fg(Color::DarkGray),
+            )
+            .highlight_style(highlight(true)),
+        area,
+        &mut state,
+    );
 }
 
 fn pane_block(title: &str, focused: bool) -> Block<'_> {

@@ -448,3 +448,99 @@ fn ctrl_chords_never_trigger_actions() {
         Action::None
     );
 }
+
+// ---------- path completion in the add prompt ----------
+
+fn add_prompt_at(input: &str) -> App {
+    let (_d, _s, mut app) = loaded(&[], &[]);
+    app.mode = Mode::Prompt {
+        kind: PromptKind::AddProject,
+        input: input.into(),
+    };
+    app
+}
+
+fn prompt_text(app: &App) -> String {
+    match &app.mode {
+        Mode::Prompt { input, .. } => input.clone(),
+        m => panic!("not in a prompt: {m:?}"),
+    }
+}
+
+fn dirs(names: &[&str]) -> (tempfile::TempDir, String) {
+    let d = tempfile::tempdir().unwrap();
+    for n in names {
+        std::fs::create_dir(d.path().join(n)).unwrap();
+    }
+    let base = format!("{}/", d.path().display());
+    (d, base)
+}
+
+#[test]
+fn tab_completes_unique_dir_in_add_prompt() {
+    let (_d, base) = dirs(&["streakwithfriends", "grove"]);
+    let mut app = add_prompt_at(&format!("{base}str"));
+    assert_eq!(handle_key(&mut app, key(KeyCode::Tab)), Action::None);
+    assert_eq!(prompt_text(&app), format!("{base}streakwithfriends/"));
+    assert!(app.completions.is_empty());
+}
+
+#[test]
+fn repeated_tab_cycles_through_matches() {
+    let (_d, base) = dirs(&["grove", "grove-fi"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), format!("{base}grove"));
+    assert_eq!(app.completions.len(), 2);
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), format!("{base}grove-fi/"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+}
+
+#[test]
+fn typing_after_tab_clears_the_match_list() {
+    let (_d, base) = dirs(&["grove", "grove-fi"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    handle_key(&mut app, ch('-'));
+    assert!(app.completions.is_empty());
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), format!("{base}grove-fi/"));
+}
+
+#[test]
+fn enter_after_completion_adds_that_path() {
+    let (_d, base) = dirs(&["streakwithfriends"]);
+    let mut app = add_prompt_at(&format!("{base}str"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::AddProject {
+            path: format!("{base}streakwithfriends/")
+        }
+    );
+    assert!(app.completions.is_empty());
+}
+
+#[test]
+fn tab_in_session_name_prompt_does_nothing() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('n'));
+    handle_key(&mut app, ch('x'));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(prompt_text(&app), "x");
+}
+
+#[test]
+fn match_list_is_rendered_under_the_prompt() {
+    let (_d, base) = dirs(&["grove", "grove-fi"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    handle_key(&mut app, key(KeyCode::Tab));
+    let s = screen(&app, 120, 24);
+    assert!(s.contains("grove-fi/"), "{s}");
+    assert!(s.contains("Tab"), "{s}");
+}
