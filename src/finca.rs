@@ -78,6 +78,127 @@ pub fn probe(dest: &str, bin: Option<&str>) -> Result<String> {
     }
 }
 
+/// Outcome of polling one finca.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Reach {
+    Reachable(crate::status::Status),
+    Unreachable { error: String },
+    /// Grove is there but too old (or too new) to report status.
+    NeedsUpdate,
+}
+
+/// One poll result, sent from the poller thread.
+#[derive(Debug, Clone)]
+pub struct PollResult {
+    pub slug: String,
+    pub reach: Reach,
+    pub at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Runs `grove status --json` on the finca, killing it after `timeout`.
+pub fn poll_one(f: &Finca, timeout: std::time::Duration) -> Reach {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let remote_cmd = format!("{} status --json", sh_quote(&f.grove_bin));
+    let mut child = match Command::new(ssh_program())
+        .args(SSH_BATCH_OPTS)
+        .arg(&f.ssh)
+        .arg(remote_cmd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return Reach::Unreachable { error: format!("can't run {}: {e}", ssh_program()) },
+    };
+    // Drain both pipes on threads so a chatty child can't block on a full pipe.
+    let drain = |mut r: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = r.read_to_string(&mut s);
+            s
+        })
+    };
+    let out = drain(Box::new(child.stdout.take().expect("piped")));
+    let err = drain(Box::new(child.stderr.take().expect("piped")));
+
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => return Reach::Unreachable { error: e.to_string() },
+        }
+    };
+    let Some(status) = status else {
+        return Reach::Unreachable { error: format!("timed out after {}s", timeout.as_secs_f32()) };
+    };
+    // The killed ssh's descendants may still hold the pipes; only join after exit.
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    match status.code() {
+        Some(0) => match crate::status::parse(&stdout) {
+            Ok(st) => Reach::Reachable(st),
+            Err(crate::status::ParseError::WrongVersion(_)) => Reach::NeedsUpdate,
+            Err(crate::status::ParseError::Invalid(e)) => Reach::Unreachable { error: format!("bad status output: {e}") },
+        },
+        // ssh itself failed: network, auth, host key.
+        Some(255) => Reach::Unreachable { error: stderr.trim().to_string() },
+        // grove ran but didn't know `status` (clap usage error) or failed.
+        _ => Reach::NeedsUpdate,
+    }
+}
+
+/// Background thread polling every finca each `interval` (and on `kick`).
+pub struct Poller {
+    pub results: std::sync::mpsc::Receiver<PollResult>,
+    kick: std::sync::mpsc::Sender<()>,
+}
+
+impl Poller {
+    pub fn start(store: crate::store::Store, interval: std::time::Duration, timeout: std::time::Duration) -> Self {
+        let (tx, results) = std::sync::mpsc::channel();
+        let (kick, kicked) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            loop {
+                let fincas: Vec<Finca> = store.list_fincas().into_iter().filter_map(Result::ok).collect();
+                // Poll in parallel so one slow finca doesn't delay the rest.
+                let handles: Vec<_> = fincas
+                    .into_iter()
+                    .map(|f| {
+                        let tx = tx.clone();
+                        std::thread::spawn(move || {
+                            let reach = poll_one(&f, timeout);
+                            tx.send(PollResult { slug: f.slug(), reach, at: chrono::Utc::now() }).is_ok()
+                        })
+                    })
+                    .collect();
+                let alive = handles.into_iter().all(|h| h.join().unwrap_or(false));
+                if !alive {
+                    return; // dashboard dropped the receiver
+                }
+                match kicked.recv_timeout(interval) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                }
+            }
+        });
+        Self { results, kick }
+    }
+
+    /// Poll again now (e.g. after a finca was added).
+    pub fn kick(&self) {
+        let _ = self.kick.send(());
+    }
+}
+
 #[cfg(test)]
 pub mod testing {
     //! A stand-in for `ssh`: skips options and the destination, then runs the
