@@ -144,6 +144,21 @@ impl Tmux {
             .map(|_| ())
     }
 
+    /// Sets a session option.
+    pub fn set_option(&self, session: &str, option: &str, value: &str) -> Result<()> {
+        // set-option takes a pane target; an exact session match needs the ":".
+        self.run(&["set-option", "-t", &format!("={session}:"), option, value]).map(|_| ())
+    }
+
+    /// Moves the current client to `target`.
+    pub fn switch_client(&self, target: &str) -> Result<()> {
+        self.run(&["switch-client", "-t", target]).map(|_| ())
+    }
+
+    pub fn kill_session(&self, name: &str) -> Result<()> {
+        self.run(&["kill-session", "-t", &format!("={name}")]).map(|_| ())
+    }
+
     /// Sets a session-level environment variable.
     pub fn set_environment(&self, session: &str, key: &str, value: &str) -> Result<()> {
         self.run(&["set-environment", "-t", &format!("={session}"), key, value])

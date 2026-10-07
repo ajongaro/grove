@@ -146,3 +146,24 @@ fn finca_add_failure_writes_nothing() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("Permission denied"));
     assert!(!home.join("fincas/pi.toml").exists());
 }
+
+#[test]
+fn finca_rm_closes_an_open_connection_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let (ssh, remote_home) = fake_remote(dir.path());
+    let socket = format!("grove-test-{}-clirm", std::process::id());
+    let tmux = |args: &[&str]| Command::new("tmux").args(["-L", &socket, "-f", "/dev/null"]).args(args).output().unwrap();
+    let run = |args: &[&str]| {
+        grove(&home).args(args).env("GROVE_SSH", &ssh).env("FAKE_HOME", &remote_home).env("GROVE_TMUX_SOCKET", &socket).output().unwrap()
+    };
+    assert!(run(&["finca", "add", "box", "me@box"]).status.success());
+    tmux(&["new-session", "-d", "-s", "finca-box", "sleep", "30"]);
+    let out = run(&["finca", "rm", "box"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let still = tmux(&["has-session", "-t", "=finca-box"]).status.success();
+    let sock = String::from_utf8(tmux(&["display-message", "-p", "#{socket_path}"]).stdout).unwrap();
+    tmux(&["kill-server"]);
+    let _ = std::fs::remove_file(sock.trim());
+    assert!(!still, "finca session should be closed");
+}

@@ -163,3 +163,72 @@ fn poller_reports_every_finca_and_responds_to_kick() {
         assert!(["alpha", "beta"].contains(&again.slug.as_str()));
     });
 }
+
+// ---------- connect ----------
+
+#[test]
+fn connect_argv_quotes_dest_and_bin_for_both_shells() {
+    let d = tempfile::tempdir().unwrap();
+    let args_out = d.path().join("args.txt");
+    let ssh = script(d.path(), "echo ssh", &format!("for a in \"$@\"; do echo \"$a\"; done > '{}'", args_out.display()));
+    let f = Finca { name: "my box".into(), ssh: "me@it's here".into(), grove_bin: "/opt/my grove/gro've".into(), color: None };
+    let argv = with_env(&ssh, d.path(), || connect_argv(&f));
+    let st = std::process::Command::new(&argv[0]).args(&argv[1..]).status().unwrap();
+    assert!(st.success());
+    let got: Vec<String> = std::fs::read_to_string(&args_out).unwrap().lines().map(str::to_string).collect();
+    // The remote shell receives the bin still quoted, so it survives there too.
+    assert_eq!(got, vec!["-t".to_string(), "me@it's here".into(), sh_quote("/opt/my grove/gro've")]);
+}
+
+#[test]
+fn connect_failure_pauses_with_the_exit_code() {
+    let d = tempfile::tempdir().unwrap();
+    let ssh = script(d.path(), "bad ssh", "echo 'no route' >&2; exit 255");
+    let f = Finca { name: "pi".into(), ssh: "x".into(), grove_bin: "/g".into(), color: None };
+    let argv = with_env(&ssh, d.path(), || connect_argv(&f));
+    let out = std::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(b"\n")?;
+            c.wait_with_output()
+        })
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("exited (255)") && text.contains("Enter"), "{text}");
+}
+
+#[test]
+fn finca_session_has_its_own_key_table_and_no_prefix() {
+    let d = tempfile::tempdir().unwrap();
+    let conf = d.path().join("tmux.conf");
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    let tmux = crate::tmux::Tmux { config: Some(conf), ..crate::tmux::Tmux::new(format!("grove-test-{}-finca", std::process::id())) };
+    struct Kill<'a>(&'a crate::tmux::Tmux);
+    impl Drop for Kill<'_> {
+        fn drop(&mut self) {
+            self.0.kill_server();
+        }
+    }
+    let _k = Kill(&tmux);
+    tmux.new_session_detached("grove", "dashboard", d.path(), &["sleep".into(), "30".into()]).unwrap();
+    let ssh = script(d.path(), "idle ssh", "sleep 30");
+    let f = Finca { name: "therver".into(), ssh: "x".into(), grove_bin: "/g".into(), color: Some("#5c6bc0".into()) };
+
+    assert!(with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap(), "created");
+    assert!(!with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap(), "reused, not duplicated");
+    let opt = |o: &str| {
+        String::from_utf8(tmux.cmd().args(["show-options", "-v", "-t", "=finca-therver:", o]).output().unwrap().stdout).unwrap()
+    };
+    assert_eq!(opt("key-table").trim(), "grove-finca");
+    assert_eq!(opt("prefix").trim(), "None");
+    let keys = String::from_utf8(tmux.cmd().args(["list-keys", "-T", "grove-finca"]).output().unwrap().stdout).unwrap();
+    assert!(keys.contains("C-q") && keys.contains("switch-client -t =grove"), "{keys}");
+    assert_eq!(keys.lines().count(), 1, "only C-q in the finca table: {keys}");
+
+    disconnect(&tmux, "therver");
+    assert!(!tmux.has_session("finca-therver"));
+}

@@ -26,6 +26,11 @@ use crate::tmux::Tmux;
 /// Grove's own tmux server, so its config never touches your default one.
 const TMUX_SOCKET: &str = "grove";
 
+/// `$GROVE_TMUX_SOCKET` (tests) or Grove's own server.
+fn tmux_socket() -> String {
+    std::env::var("GROVE_TMUX_SOCKET").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| TMUX_SOCKET.into())
+}
+
 #[derive(Parser)]
 #[command(
     name = "grove",
@@ -137,7 +142,7 @@ fn add(paths: &Paths, path: Option<PathBuf>) -> Result<()> {
 
 fn grove_tmux(paths: &Paths) -> Tmux {
     Tmux {
-        socket: Some(TMUX_SOCKET.into()),
+        socket: Some(tmux_socket()),
         config: Some(paths.run.join("tmux.conf")),
     }
 }
@@ -172,7 +177,7 @@ fn start(paths: &Paths) -> Result<()> {
     paths.ensure()?;
     let exe = std::env::current_exe().context("locating the grove binary")?;
     let exe = exe.canonicalize().unwrap_or(exe);
-    runfiles::write_all(paths, &exe)?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session)?;
 
     let tmux = grove_tmux(paths);
     let session = &cfg.tmux_session;
@@ -197,7 +202,7 @@ fn start(paths: &Paths) -> Result<()> {
 
     let inside = std::env::var("TMUX").unwrap_or_default();
     let target = format!("={session}");
-    if inside.contains(&format!("/{TMUX_SOCKET},")) {
+    if inside.contains(&format!("/{},", tmux_socket())) {
         // Already inside Grove: just go to the dashboard.
         tmux.select_window(&format!("{target}:0"))?;
         return Ok(());
@@ -236,6 +241,7 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
         }
         FincaCmd::Rm { name } => {
             let f = store.remove_finca(&name)?;
+            finca::disconnect(&grove_tmux(paths), &f.slug());
             println!("Removed finca {}", f.name);
         }
         FincaCmd::Ls => {

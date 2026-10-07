@@ -202,7 +202,7 @@ fn start_with_missing_project_dir_creates_nothing() {
 fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
     let e = env();
     let conf = e.paths.run.join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf()).unwrap();
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
     let tmux = Tmux {
         config: Some(conf),
         ..Tmux::new(format!("grove-test-{}-dash", std::process::id()))
@@ -252,7 +252,7 @@ fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
 fn stale_dashboard_is_restarted_and_fresh_one_left_alone() {
     let e = env();
     let conf = e.paths.run.join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf()).unwrap();
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
     let tmux = Tmux {
         config: Some(conf),
         ..Tmux::new(format!("grove-test-{}-fresh", std::process::id()))
