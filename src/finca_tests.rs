@@ -419,3 +419,45 @@ fn connect_runs_remote_grove_through_a_login_shell_with_awkward_paths() {
         "ran login=yes"
     );
 }
+
+#[test]
+fn when_the_finca_connection_ends_the_client_returns_to_grove() {
+    let d = tempfile::tempdir().unwrap();
+    let conf = d.path().join("tmux.conf");
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    let inner = format!("grove-test-{}-ret", std::process::id());
+    let host = format!("grove-test-{}-rethost", std::process::id());
+    let tmux = crate::tmux::Tmux { config: Some(conf.clone()), ..crate::tmux::Tmux::new(inner.clone()) };
+    let host_tmux = crate::tmux::Tmux::new(host.clone());
+    struct Kill<'a>(&'a crate::tmux::Tmux, &'a crate::tmux::Tmux);
+    impl Drop for Kill<'_> {
+        fn drop(&mut self) {
+            self.0.kill_server();
+            self.1.kill_server();
+        }
+    }
+    let _k = Kill(&tmux, &host_tmux);
+    host_tmux.new_session_detached("keepalive", "k", d.path(), &["sleep".into(), "30".into()]).unwrap();
+    tmux.new_session_detached("grove", "dashboard", d.path(), &["sleep".into(), "30".into()]).unwrap();
+    // The "remote grove" quits cleanly after a moment, like pressing q there.
+    let ssh = script(d.path(), "quitting ssh", "sleep 2; exit 0");
+    let f = Finca { name: "box".into(), ssh: "x".into(), grove_bin: "/g".into(), color: None };
+    with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap();
+    // A real client (in a pane of another server) attached to the finca.
+    host_tmux
+        .new_session_detached(
+            "h",
+            "h",
+            d.path(),
+            &["tmux".into(), "-L".into(), inner.clone(), "attach".into(), "-t".into(), "=finca-box".into()],
+        )
+        .unwrap();
+    let client_session = || {
+        let out = tmux.cmd().args(["list-clients", "-F", "#{client_session}"]).output().unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    assert_eq!(client_session(), "finca-box");
+    std::thread::sleep(std::time::Duration::from_millis(2500));
+    assert_eq!(client_session(), "grove", "client should land back on the dashboard, not be detached");
+}

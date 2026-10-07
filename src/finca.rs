@@ -274,6 +274,9 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<bool>
     tmux.new_session_detached(&name, &f.name, &home, &connect_argv(f))?;
     tmux.set_option(&name, "key-table", "grove-finca")?;
     tmux.set_option(&name, "prefix", "None")?;
+    // When ssh ends (remote q, dropped link) move the client to another
+    // session (normally the dashboard) instead of detaching it.
+    tmux.set_option(&name, "detach-on-destroy", "off")?;
     if let Some(c) = &f.color {
         let _ = tmux.set_option(&name, "status-style", &format!("bg={c},fg=#ffffff"));
     }
