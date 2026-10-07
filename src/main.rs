@@ -153,7 +153,13 @@ fn start(paths: &Paths) -> Result<()> {
     }
     // Also brings window 0 back if the dashboard ever died.
     let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
-    launch::ensure_dashboard(&tmux, session, &paths.home, &argv)?;
+    let stamp = launch::build_stamp(&exe);
+    if launch::ensure_dashboard(&tmux, session, &paths.home, &argv)? {
+        tmux.set_window_option(&format!("{session}:0"), "@grove_build", &stamp)?;
+    } else {
+        // After a reinstall, the running dashboard is still the old code.
+        launch::ensure_fresh_dashboard(&tmux, session, &stamp)?;
+    }
     // The dashboard offers this folder as the default for `a` (add project).
     if let Ok(cwd) = std::env::current_dir() {
         let _ = tmux.set_environment(session, "GROVE_CWD", &cwd.to_string_lossy());

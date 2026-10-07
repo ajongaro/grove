@@ -247,3 +247,51 @@ fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
     assert!(index0(&tmux));
     tmux.kill_server();
 }
+
+#[test]
+fn stale_dashboard_is_restarted_and_fresh_one_left_alone() {
+    let e = env();
+    let conf = e.paths.run.join("tmux.conf");
+    std::fs::write(&conf, crate::runfiles::tmux_conf()).unwrap();
+    let tmux = Tmux {
+        config: Some(conf),
+        ..Tmux::new(format!("grove-test-{}-fresh", std::process::id()))
+    };
+    let argv = vec!["sleep".to_string(), "30".to_string()];
+    let pane_pid = |t: &Tmux| {
+        let out = t
+            .cmd()
+            .args(["display-message", "-p", "-t", "grove:0", "#{pane_pid}"])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap();
+    let first = pane_pid(&tmux);
+
+    // An unstamped dashboard (started by an older grove) counts as stale.
+    assert!(ensure_fresh_dashboard(&tmux, "grove", "build-1").unwrap());
+    let second = pane_pid(&tmux);
+    assert_ne!(first, second, "window 0 should have been respawned");
+
+    // Same build: nothing happens.
+    assert!(!ensure_fresh_dashboard(&tmux, "grove", "build-1").unwrap());
+    assert_eq!(pane_pid(&tmux), second);
+
+    // Newer build installed: restarted again.
+    assert!(ensure_fresh_dashboard(&tmux, "grove", "build-2").unwrap());
+    assert_ne!(pane_pid(&tmux), second);
+    tmux.kill_server();
+}
+
+#[test]
+fn build_stamp_changes_when_the_binary_is_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("grove");
+    std::fs::write(&bin, "v1").unwrap();
+    let a = build_stamp(&bin);
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(&bin, "v2 longer").unwrap();
+    assert_ne!(a, build_stamp(&bin));
+    assert_eq!(build_stamp(&dir.path().join("missing")), "unknown");
+}

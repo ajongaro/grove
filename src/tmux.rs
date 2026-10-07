@@ -130,6 +130,20 @@ impl Tmux {
         check(&out, &["display-popup"]).map(|_| ())
     }
 
+    /// A window option's value (e.g. a user option like `@grove_build`).
+    pub fn window_option(&self, target: &str, option: &str) -> Option<String> {
+        let v = self
+            .run(&["show-window-options", "-v", "-t", target, option])
+            .ok()?;
+        Some(v.trim().to_string()).filter(|v| !v.is_empty())
+    }
+
+    /// Kills whatever runs in the window and restarts its original command.
+    pub fn respawn_window(&self, target: &str) -> Result<()> {
+        self.run(&["respawn-window", "-k", "-t", target])
+            .map(|_| ())
+    }
+
     /// Sets a session-level environment variable.
     pub fn set_environment(&self, session: &str, key: &str, value: &str) -> Result<()> {
         self.run(&["set-environment", "-t", &format!("={session}"), key, value])

@@ -203,6 +203,33 @@ pub fn ensure_dashboard(
     Ok(true)
 }
 
+/// Identifies the installed grove build: its size and modification time.
+pub fn build_stamp(exe: &std::path::Path) -> String {
+    match std::fs::metadata(exe) {
+        Ok(m) => {
+            let mtime = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            format!("{}-{mtime}", m.len())
+        }
+        Err(_) => "unknown".into(),
+    }
+}
+
+/// Restarts window 0 if its dashboard came from a different build than
+/// `stamp` (or predates stamping). Returns whether it restarted.
+pub fn ensure_fresh_dashboard(tmux: &Tmux, session: &str, stamp: &str) -> Result<bool> {
+    let target = format!("{session}:0");
+    if tmux.window_option(&target, "@grove_build").as_deref() == Some(stamp) {
+        return Ok(false);
+    }
+    tmux.respawn_window(&target)?;
+    tmux.set_window_option(&target, "@grove_build", stamp)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 #[path = "launch_tests.rs"]
 mod tests;
