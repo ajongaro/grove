@@ -262,13 +262,13 @@ fn connect_argv_quotes_dest_and_bin_for_both_shells() {
         .lines()
         .map(str::to_string)
         .collect();
-    // The remote shell receives the bin still quoted, so it survives there too.
+    // The remote shell gets one string that runs the quoted bin via a login shell.
     assert_eq!(
         got,
         vec![
             "-t".to_string(),
             "me@it's here".into(),
-            sh_quote("/opt/my grove/gro've")
+            remote_login_cmd("/opt/my grove/gro've")
         ]
     );
 }
@@ -373,4 +373,48 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
 
     disconnect(&tmux, "therver");
     assert!(!tmux.has_session("finca-therver"));
+}
+
+#[test]
+fn connect_runs_remote_grove_through_a_login_shell_with_awkward_paths() {
+    let d = tempfile::tempdir().unwrap();
+    let marker = d.path().join("ran.txt");
+    let dir = d.path().join("my grove");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Records that it ran, and whether it saw the login shell's PATH entry.
+    let bin = script(
+        &dir,
+        "gro've",
+        &format!(
+            "echo \"ran login=${{GROVE_LOGIN_MARK:-no}}\" > '{}'",
+            marker.display()
+        ),
+    );
+    let remote_home = d.path().join("remote home");
+    std::fs::create_dir_all(&remote_home).unwrap();
+    // A login shell reads ~/.profile; a plain `sh -c` would not.
+    std::fs::write(
+        remote_home.join(".profile"),
+        "export GROVE_LOGIN_MARK=yes\n",
+    )
+    .unwrap();
+    let ssh = fake_ssh(d.path(), None);
+    let f = Finca {
+        name: "box".into(),
+        ssh: "me@it's here".into(),
+        grove_bin: bin.to_string_lossy().into(),
+        color: None,
+    };
+    let argv = with_env(&ssh, &remote_home, || connect_argv(&f));
+    let st = std::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .env("SHELL", "/bin/sh")
+        .env("FAKE_HOME", &remote_home)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    assert_eq!(
+        std::fs::read_to_string(&marker).unwrap().trim(),
+        "ran login=yes"
+    );
 }

@@ -238,16 +238,23 @@ pub fn session_name(slug: &str) -> String {
     format!("finca-{slug}")
 }
 
+/// The command string ssh hands the remote shell: `bin` run via a login shell.
+pub fn remote_login_cmd(bin: &str) -> String {
+    format!("exec \"$SHELL\" -lc {}", sh_quote(&sh_quote(bin)))
+}
+
 /// `sh -c` command that runs interactive ssh into the finca's grove and,
 /// if ssh fails, pauses so the error can be read.
 pub fn connect_argv(f: &Finca) -> Vec<String> {
-    // Quoted twice for the bin: once for this local sh, once more so the
-    // remote login shell also sees one argument.
+    // Run grove under the remote user's login shell so its profile PATH
+    // applies (e.g. Homebrew's tmux and claude on macOS). Quoting layers:
+    // this local sh → ssh's remote shell → the login shell's -c.
+    let remote = remote_login_cmd(&f.grove_bin);
     let ssh = format!(
         "{} -t {} {}",
         sh_quote(&ssh_program()),
         sh_quote(&f.ssh),
-        sh_quote(&sh_quote(&f.grove_bin))
+        sh_quote(&remote)
     );
     let script = format!(
         "{ssh} || {{ code=$?; echo; echo \"ssh to {} exited ($code) — press Enter to close\"; read _; }}",
