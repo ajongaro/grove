@@ -206,7 +206,7 @@ fn reconcile_ends_vanished_and_flags_needs_you() {
     tm.new_session_detached("grove", "dash", &t.root, &sleeper())
         .unwrap();
     let live = tm
-        .new_window("grove", "p:s1", &t.root, &[], &sleeper())
+        .new_window("grove", "p:needy", &t.root, &[], &sleeper())
         .unwrap();
     let s = &t.ctx.store;
     s.save_session(&sess("needy", "p", State::NeedsYou, Some(&live)))
@@ -218,21 +218,16 @@ fn reconcile_ends_vanished_and_flags_needs_you() {
     assert_eq!(s.get_session("gone").unwrap().state, State::Ended);
     assert_eq!(s.get_session("needy").unwrap().state, State::NeedsYou);
     assert_eq!(flagged.get(&live), Some(&true));
-    let style = String::from_utf8(
-        tm.cmd()
-            .args([
-                "show-window-options",
-                "-v",
-                "-t",
-                &live,
-                "window-status-style",
-            ])
+    let name = |id: &str| {
+        let out = tm
+            .cmd()
+            .args(["display-message", "-p", "-t", id, "#{window_name}"])
             .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
-    assert!(style.contains("red"), "{style:?}");
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    // The marker is in the name so it shows under any status-bar theme.
+    assert_eq!(name(&live), "⚑ p:needy");
 
     // Leaving needs_you clears the flag.
     let mut n = s.get_session("needy").unwrap();
@@ -240,6 +235,7 @@ fn reconcile_ends_vanished_and_flags_needs_you() {
     s.save_session(&n).unwrap();
     reconcile(&t.ctx, &mut flagged).unwrap();
     assert_eq!(flagged.get(&live), Some(&false));
+    assert_eq!(name(&live), "p:needy");
 }
 
 #[test]

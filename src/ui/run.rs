@@ -30,7 +30,8 @@ pub enum Outcome {
     Message(String),
 }
 
-const NEEDS_YOU_STYLE: &str = "bg=red,fg=white,bold";
+/// Prefix on the tmux window name of a session that needs you.
+const NEEDS_YOU_MARK: &str = "⚑ ";
 const RECONCILE_EVERY: Duration = Duration::from_secs(2);
 const FINCA_POLL_EVERY: Duration = Duration::from_secs(30);
 const FINCA_POLL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -153,16 +154,15 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
         if flagged.get(w) == Some(&want) {
             continue;
         }
-        let style = if want {
-            NEEDS_YOU_STYLE.to_string()
+        // The marker goes in the window name (launch names windows
+        // "<project>:<session>") so it shows under any status-bar theme.
+        let base = format!("{}:{}", s.project, s.name);
+        let name = if want {
+            format!("{NEEDS_YOU_MARK}{base}")
         } else {
-            match ctx.store.get_project(&s.project).ok().and_then(|p| p.color) {
-                Some(c) => format!("fg={c}"),
-                None => "default".to_string(),
-            }
+            base
         };
-        ctx.tmux
-            .set_window_option(w, "window-status-style", &style)?;
+        ctx.tmux.rename_window(w, &name)?;
         flagged.insert(w.clone(), want);
     }
     Ok(())

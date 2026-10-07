@@ -144,6 +144,10 @@ impl Tmux {
             .map(|_| ())
     }
 
+    pub fn rename_window(&self, id: &str, name: &str) -> Result<()> {
+        self.run(&["rename-window", "-t", id, name]).map(|_| ())
+    }
+
     /// Sets a session option.
     pub fn set_option(&self, session: &str, option: &str, value: &str) -> Result<()> {
         // set-option takes a pane target; an exact session match needs the ":".
