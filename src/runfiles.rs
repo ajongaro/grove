@@ -93,7 +93,7 @@ bind -T copy-mode-vi v send-keys -X begin-selection
 
 # --- Pane navigation, vim-aware (inlined vim-tmux-navigator) ------------------
 is_vim="ps -o state= -o comm= -t '#{pane_tty}' \
-    | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|l?n?vim?x?|fzf)(diff)?$'"
+    | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|l?n?vim?x?|fzf|grove)(diff)?$'"
 bind -n C-h if-shell "$is_vim" "send-keys C-h" "select-pane -L"
 bind -n C-j if-shell "$is_vim" "send-keys C-j" "select-pane -D"
 bind -n C-k if-shell "$is_vim" "send-keys C-k" "select-pane -U"
@@ -237,6 +237,10 @@ mod tests {
     fn tmux_conf_inlines_vim_tmux_navigator() {
         let (_d, p) = paths();
         let c = tmux_conf("grove", &p, None);
+        assert!(
+            c.contains("view|l?n?vim?x?|fzf|grove"),
+            "the dashboard gets C-h/j/k/l like vim does"
+        );
         assert!(c.contains("is_vim="), "{c}");
         for (key, dir) in [("C-h", "L"), ("C-j", "D"), ("C-k", "U"), ("C-l", "R")] {
             let line = format!(

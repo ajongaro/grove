@@ -821,3 +821,38 @@ fn removing_selected_finca_clamps_selection() {
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
     screen(&app, 80, 10);
 }
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
+#[test]
+fn ctrl_j_and_ctrl_k_cycle_completions_both_ways() {
+    let (_d, base) = dirs(&["grove", "grove-fi", "groves"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.completions.len(), 3);
+    handle_key(&mut app, ctrl('j'));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+    handle_key(&mut app, ctrl('j'));
+    assert_eq!(prompt_text(&app), format!("{base}grove-fi/"));
+    handle_key(&mut app, ctrl('k'));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+    handle_key(&mut app, ctrl('k'));
+    assert_eq!(
+        prompt_text(&app),
+        format!("{base}groves/"),
+        "wraps to the last"
+    );
+    assert_eq!(app.completions.len(), 3, "list stays open while cycling");
+}
+
+#[test]
+fn ctrl_j_k_without_a_list_change_nothing() {
+    let (_d, base) = dirs(&["grove", "grove-fi"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, ctrl('j'));
+    handle_key(&mut app, ctrl('k'));
+    assert_eq!(prompt_text(&app), format!("{base}gr"));
+    assert!(app.completions.is_empty());
+}

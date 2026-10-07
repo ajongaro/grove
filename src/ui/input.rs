@@ -27,6 +27,15 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
         tab_complete(app, kind, input);
         return Action::None;
     }
+    // C-j / C-k step through an open match list (down / up).
+    if key.modifiers.contains(KeyModifiers::CONTROL)
+        && let KeyCode::Char(c @ ('j' | 'k')) = key.code
+    {
+        if !app.completions.is_empty() {
+            cycle_completion(app, kind, if c == 'j' { 1 } else { -1 });
+        }
+        return Action::None;
+    }
     // Any other key ends a Tab cycle.
     app.completions.clear();
     app.completion_idx = None;
@@ -75,14 +84,7 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
 /// each further Tab puts the next one in the prompt.
 fn tab_complete(app: &mut App, kind: PromptKind, input: String) {
     if !app.completions.is_empty() {
-        let next = app
-            .completion_idx
-            .map_or(0, |i| (i + 1) % app.completions.len());
-        app.completion_idx = Some(next);
-        app.mode = Mode::Prompt {
-            kind,
-            input: app.completions[next].clone(),
-        };
+        cycle_completion(app, kind, 1);
         return;
     }
     let c = complete_path(&input);
@@ -232,4 +234,20 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
         }
         _ => None,
     }
+}
+
+/// Puts the next (`step` = 1) or previous (-1) match in the prompt, wrapping.
+/// From no selection, forward starts at the first match and back at the last.
+fn cycle_completion(app: &mut App, kind: PromptKind, step: isize) {
+    let n = app.completions.len() as isize;
+    let next = match app.completion_idx {
+        Some(i) => (i as isize + step).rem_euclid(n),
+        None if step > 0 => 0,
+        None => n - 1,
+    } as usize;
+    app.completion_idx = Some(next);
+    app.mode = Mode::Prompt {
+        kind,
+        input: app.completions[next].clone(),
+    };
 }
