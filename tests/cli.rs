@@ -258,3 +258,37 @@ fn finca_rm_closes_an_open_connection_session() {
     let _ = std::fs::remove_file(sock.trim());
     assert!(!still, "finca session should be closed");
 }
+
+#[test]
+fn add_new_creates_folder_with_git() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let proj = dir.path().join("Play").join("fresh");
+    let out = grove(&home)
+        .args(["add", "--new"])
+        .arg(&proj)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(proj.join(".git").is_dir());
+    assert!(home.join("projects/fresh.toml").is_file());
+}
+
+#[test]
+fn add_missing_folder_without_a_terminal_suggests_new() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = grove(&dir.path().join("home"))
+        .args(["add"])
+        .arg(dir.path().join("nope"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--new"), "{err}");
+    assert!(!dir.path().join("nope").exists());
+}

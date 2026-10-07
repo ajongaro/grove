@@ -293,3 +293,48 @@ fn add_prompt_default_follows_the_folder_grove_was_run_from() {
     refresh_cwd(&t.ctx, &mut app);
     assert_eq!(app.cwd, "/Users/me/Play/foo");
 }
+
+#[test]
+fn create_project_makes_nested_dirs_with_git_and_registers() {
+    let t = setup("create");
+    let dir = t.root.join("Play").join("New Thing");
+    let name = create_project_at(&t.ctx.store, &dir.to_string_lossy()).unwrap();
+    assert_eq!(name, "New Thing");
+    assert!(dir.join(".git").is_dir(), "git init ran");
+    assert_eq!(
+        t.ctx.store.get_project("new-thing").unwrap().path,
+        dir.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn create_project_refuses_existing_paths() {
+    let t = setup("create-exists");
+    let file = t.root.join("a-file");
+    std::fs::write(&file, "x").unwrap();
+    let err = create_project_at(&t.ctx.store, &file.to_string_lossy())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("already exists"), "{err}");
+    let dir = t.root.join("a-dir");
+    std::fs::create_dir(&dir).unwrap();
+    assert!(create_project_at(&t.ctx.store, &dir.to_string_lossy()).is_err());
+    assert!(t.ctx.store.list_projects().is_empty());
+}
+
+#[test]
+fn perform_create_project_reports_in_footer() {
+    let t = setup("create-msg");
+    let dir = t.root.join("fresh");
+    let out = perform(
+        &t.ctx,
+        Action::CreateProject {
+            path: dir.to_string_lossy().into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(&out, Outcome::Message(m) if m.contains("fresh") && m.contains("git")),
+        "{out:?}"
+    );
+}

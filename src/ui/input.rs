@@ -11,6 +11,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     }
     match app.mode.clone() {
         Mode::Prompt { kind, input } => prompt_key(app, kind, input, key),
+        Mode::ConfirmCreate { path } => match key.code {
+            KeyCode::Char('y' | 'Y') => {
+                app.mode = Mode::Normal;
+                Action::CreateProject { path }
+            }
+            // Anything else goes back to the prompt, text intact.
+            _ => {
+                app.mode = Mode::Prompt {
+                    kind: PromptKind::AddProject,
+                    input: path,
+                };
+                Action::None
+            }
+        },
         Mode::Confirm { session_id, .. } => {
             app.mode = Mode::Normal;
             match key.code {
@@ -56,7 +70,13 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                     None => Action::None,
                 },
                 PromptKind::AddProject if text.is_empty() => Action::None,
-                PromptKind::AddProject => Action::AddProject { path: text },
+                PromptKind::AddProject if crate::config::expand_tilde(&text).exists() => {
+                    Action::AddProject { path: text }
+                }
+                PromptKind::AddProject => {
+                    app.mode = Mode::ConfirmCreate { path: text };
+                    Action::None
+                }
             }
         }
         KeyCode::Backspace => {

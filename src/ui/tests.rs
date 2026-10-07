@@ -280,9 +280,11 @@ fn a_prompts_with_cwd_default() {
     assert!(
         matches!(&app.mode, Mode::Prompt { kind: PromptKind::AddProject, input } if input == "/home/me/code/newproj")
     );
+    // That folder doesn't exist, so Enter offers to create it.
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
     assert_eq!(
-        handle_key(&mut app, key(KeyCode::Enter)),
-        Action::AddProject {
+        app.mode,
+        Mode::ConfirmCreate {
             path: "/home/me/code/newproj".into()
         }
     );
@@ -855,4 +857,68 @@ fn ctrl_j_k_without_a_list_change_nothing() {
     handle_key(&mut app, ctrl('k'));
     assert_eq!(prompt_text(&app), format!("{base}gr"));
     assert!(app.completions.is_empty());
+}
+
+// ---------- creating a project folder ----------
+
+#[test]
+fn enter_on_missing_path_asks_to_create() {
+    let (_d, base) = dirs(&["existing"]);
+    let mut app = add_prompt_at(&format!("{base}brand-new"));
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    assert_eq!(
+        app.mode,
+        Mode::ConfirmCreate {
+            path: format!("{base}brand-new")
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::CreateProject {
+            path: format!("{base}brand-new")
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn declining_create_returns_to_the_prompt_with_text() {
+    let (_d, base) = dirs(&[]);
+    let mut app = add_prompt_at(&format!("{base}brand-new"));
+    handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    assert_eq!(prompt_text(&app), format!("{base}brand-new"));
+}
+
+#[test]
+fn enter_on_existing_path_adds_without_asking() {
+    let (_d, base) = dirs(&["existing"]);
+    let mut app = add_prompt_at(&format!("{base}existing"));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::AddProject {
+            path: format!("{base}existing")
+        }
+    );
+}
+
+#[test]
+fn tilde_paths_are_checked_after_expansion() {
+    let mut app = add_prompt_at("~");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::AddProject { path: "~".into() }
+    );
+}
+
+#[test]
+fn create_confirmation_is_rendered() {
+    let (_d, base) = dirs(&[]);
+    let mut app = add_prompt_at(&format!("{base}brand-new"));
+    handle_key(&mut app, key(KeyCode::Enter));
+    let s = screen(&app, 140, 20);
+    assert!(
+        s.contains("Create") && s.contains("brand-new") && s.contains("git"),
+        "{s}"
+    );
 }

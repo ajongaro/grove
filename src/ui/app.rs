@@ -23,8 +23,18 @@ pub enum PromptKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     Normal,
-    Prompt { kind: PromptKind, input: String },
-    Confirm { session_id: String, label: String },
+    Prompt {
+        kind: PromptKind,
+        input: String,
+    },
+    Confirm {
+        session_id: String,
+        label: String,
+    },
+    /// The add-project path doesn't exist: offer to create it.
+    ConfirmCreate {
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,14 +69,35 @@ pub struct FincaRow {
 pub enum Action {
     None,
     Quit,
-    NewSession { slug: String, name: Option<String> },
-    AddProject { path: String },
-    Jump { window: String },
-    Kill { session_id: String },
-    EditProject { slug: String },
-    OpenWiki { slug: String },
-    ClearEnded { slug: String },
-    ConnectFinca { slug: String },
+    NewSession {
+        slug: String,
+        name: Option<String>,
+    },
+    AddProject {
+        path: String,
+    },
+    /// Create the folder (with git init) and register it.
+    CreateProject {
+        path: String,
+    },
+    Jump {
+        window: String,
+    },
+    Kill {
+        session_id: String,
+    },
+    EditProject {
+        slug: String,
+    },
+    OpenWiki {
+        slug: String,
+    },
+    ClearEnded {
+        slug: String,
+    },
+    ConnectFinca {
+        slug: String,
+    },
 }
 
 #[derive(Debug, Clone)]

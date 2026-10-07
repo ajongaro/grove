@@ -67,6 +67,19 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 area,
             );
         }
+        Mode::ConfirmCreate { path } => {
+            let area = popup(frame.area(), 70, 3);
+            frame.render_widget(Clear, area);
+            frame.render_widget(
+                Paragraph::new(format!("Create {path} and git init it?  y / n")).block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(" New project folder ")
+                        .fg(ACCENT),
+                ),
+                area,
+            );
+        }
         Mode::Normal => {}
     }
 }
@@ -103,7 +116,10 @@ fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
         width: prompt.width,
         height: rows as u16 + 2,
     };
-    let title = format!(" {} matches — Tab or C-j/C-k to cycle ", app.completions.len());
+    let title = format!(
+        " {} matches — Tab or C-j/C-k to cycle ",
+        app.completions.len()
+    );
     let mut state = ListState::default().with_selected(app.completion_idx.map(|i| i - start));
     frame.render_widget(Clear, area);
     frame.render_stateful_widget(

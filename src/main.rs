@@ -48,7 +48,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Register a project directory (default: the current directory).
-    Add { path: Option<PathBuf> },
+    Add {
+        path: Option<PathBuf>,
+        /// Create the folder (and git init it) if it doesn't exist, without asking.
+        #[arg(long)]
+        new: bool,
+    },
     /// Manage fincas: other machines running their own Grove.
     #[command(subcommand)]
     Finca(FincaCmd),
@@ -101,7 +106,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Some(Cmd::Add { path }) => exit_on_err(add(&paths, path)),
+        Some(Cmd::Add { path, new }) => exit_on_err(add(&paths, path, new)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
@@ -132,14 +137,34 @@ fn run_hook(paths: Paths) {
     }
 }
 
-fn add(paths: &Paths, path: Option<PathBuf>) -> Result<()> {
+fn add(paths: &Paths, path: Option<PathBuf>, new: bool) -> Result<()> {
+    use std::io::{BufRead, IsTerminal, Write};
     paths.ensure()?;
     let path = match path {
         Some(p) => p,
         None => std::env::current_dir()?,
     };
-    let name = ui::run::add_project_at(&Store::new(paths.clone()), &path.to_string_lossy())?;
-    println!("Added project {name}");
+    let store = Store::new(paths.clone());
+    let text = path.to_string_lossy().into_owned();
+    if config::expand_tilde(&text).exists() {
+        let name = ui::run::add_project_at(&store, &text)?;
+        println!("Added project {name}");
+        return Ok(());
+    }
+    if !new {
+        if !std::io::stdin().is_terminal() {
+            bail!("{text} doesn't exist; use `grove add --new {text}` to create it");
+        }
+        print!("{text} doesn't exist. Create it and git init it? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().lock().read_line(&mut answer)?;
+        if !answer.trim().eq_ignore_ascii_case("y") {
+            bail!("not created");
+        }
+    }
+    let name = ui::run::create_project_at(&store, &text)?;
+    println!("Created project {name} (git init)");
     Ok(())
 }
 

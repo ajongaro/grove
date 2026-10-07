@@ -51,6 +51,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
             Outcome::Message(format!("Started {} in {}", s.name, project.name))
         }
+        Action::CreateProject { path } => Outcome::Message(format!(
+            "Created {} (git init)",
+            create_project_at(store, &path)?
+        )),
         Action::AddProject { path } => {
             Outcome::Message(format!("Added {}", add_project_at(store, &path)?))
         }
@@ -109,6 +113,43 @@ fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
         .collect();
     argv.push(target.to_string());
     ctx.tmux.display_popup(&ctx.store.paths.home, &argv)
+}
+
+/// Creates the folder at `path` (and any missing parents), runs `git init`
+/// in it, and registers it as a project. Refuses an existing path.
+pub fn create_project_at(store: &Store, path: &str) -> Result<String> {
+    let dir = expand_tilde(path.trim());
+    if dir.exists() {
+        bail!(
+            "{} already exists; use add (a) for an existing folder",
+            dir.display()
+        );
+    }
+    // Remember the topmost folder we create, to undo cleanly if git fails.
+    let mut first_new = dir.clone();
+    while let Some(parent) = first_new.parent() {
+        if parent.exists() {
+            break;
+        }
+        first_new = parent.to_path_buf();
+    }
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .arg(&dir)
+        .output();
+    match git {
+        Ok(o) if o.status.success() => {}
+        other => {
+            let _ = std::fs::remove_dir_all(&first_new);
+            let why = match other {
+                Ok(o) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                Err(e) => e.to_string(),
+            };
+            bail!("git init failed in {}: {why}", dir.display());
+        }
+    }
+    add_project_at(store, &dir.to_string_lossy())
 }
 
 /// Registers the directory at `path` as a project named after the folder.
