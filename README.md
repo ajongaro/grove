@@ -54,6 +54,38 @@ Session states: **starting** → **working** ⇄ **needs you** (permission promp
 → **your turn** (Claude finished) → **ended**. A session that needs you also
 turns its tmux window tab red.
 
+## Fincas (other machines)
+
+A **finca** is another machine running its own Grove: therver and
+pi-five-ssd today. Your local dashboard lists them under **Fincas**. Each
+row shows live sessions and ⚑ needs-you, polled over SSH every 30s, and
+the footer counts remote sessions that need you.
+
+- **Enter** on a finca opens that machine's own Grove dashboard. Every key
+  goes to it.
+- **`C-q`** comes back to your local dashboard. The connection stays open, so
+  Enter returns instantly.
+- Selecting a finca shows its sessions read-only. To start, kill or edit
+  sessions, connect.
+
+```sh
+grove finca add therver therver@therver.local   # needs key-based SSH + grove installed there
+grove finca ls
+grove finca rm therver
+grove status            # what this machine reports (--json for fincas)
+scripts/deploy-fincas.sh [therver|pi]   # rebuild + install grove on the fincas
+```
+
+Setting up a new finca:
+1. Install tmux.
+2. Install Claude Code and log in.
+3. Install Grove in `~/.local/bin`.
+4. Set `claude_config_dir` in its `~/.grove/config.toml` (therver and the Pi
+   use `~/.claude`).
+
+Its Grove runs through your login shell over SSH, so Homebrew and
+`~/.local/bin` tools are found.
+
 ## Files (`~/.grove`, or `$GROVE_HOME`)
 
 ```
@@ -61,6 +93,7 @@ config.toml               settings (below)
 projects/<slug>.toml      name, path, color, summary
 wiki/<slug>/<section>.md  wiki sections (title = first "# " heading)
 sessions/<uuid>.json      one per session: state, window, message
+fincas/<slug>.toml        name, ssh destination, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
 grove.log                 errors from hooks / MCP
 ```
@@ -95,9 +128,10 @@ Each file does one job, so new features usually touch one or two:
 | `src/launch.rs` | builds the `claude` command + window env |
 | `src/tmux.rs` | tmux CLI wrapper (takes a socket, ready for remote hosts) |
 | `src/mcp.rs` | MCP tools |
+| `src/status.rs` | the `status --json` document fincas report |
+| `src/finca.rs` | finca files, SSH probe, poller, connect |
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop |
 
-Sessions already carry a `host` field (`"local"`) for v2 remote machines.
 
 ```sh
 cargo test     # ~114 tests, including real tmux servers on throwaway sockets
