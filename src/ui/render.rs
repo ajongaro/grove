@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::app::{App, Mode, Pane, PromptKind, format_age};
+use super::app::{App, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
 const ACCENT: Color = Color::Rgb(102, 187, 106);
@@ -18,8 +18,19 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
-    render_projects(frame, app, left);
-    render_sessions(frame, app, right, now);
+    if app.fincas.is_empty() {
+        render_projects(frame, app, left);
+    } else {
+        let rows = (app.fincas.len() as u16 + 2).min(left.height / 2).max(3);
+        let [projects, fincas] =
+            Layout::vertical([Constraint::Min(3), Constraint::Length(rows)]).areas(left);
+        render_projects(frame, app, projects);
+        render_fincas(frame, app, fincas, now);
+    }
+    match app.selected_finca() {
+        Some(f) => render_finca_detail(frame, app, f, right, now),
+        None => render_sessions(frame, app, right, now),
+    }
     render_footer(frame, app, footer);
 
     match &app.mode {
@@ -160,11 +171,130 @@ fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
             ListItem::new(Line::from(spans))
         })
         .collect();
-    let mut state = ListState::default().with_selected(Some(app.proj_idx));
+    // The selection may be down in the fincas list instead.
+    let selected = (app.proj_idx < app.projects.len()).then_some(app.proj_idx);
+    let mut state = ListState::default().with_selected(selected);
     let list = List::new(items)
         .block(block)
         .highlight_style(highlight(app.pane == Pane::Projects));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
+    use crate::finca::Reach;
+    let block = pane_block(
+        "Fincas",
+        app.pane == Pane::Projects && app.selected_finca().is_some(),
+    );
+    let items: Vec<ListItem> = app
+        .fincas
+        .iter()
+        .map(|f| {
+            let color = parse_hex(f.color.as_deref()).unwrap_or(ACCENT);
+            let name = Span::raw(f.name.clone());
+            let line = match (&f.error, &f.reach) {
+                (Some(_), _) => vec![
+                    Span::raw("✗ ").red(),
+                    name.red(),
+                    Span::raw(" (bad file)").dark_gray(),
+                ],
+                (None, None) => vec![
+                    Span::raw("◌ ").dark_gray(),
+                    name,
+                    Span::raw("  checking…").dark_gray(),
+                ],
+                (None, Some(Reach::Reachable(st))) => {
+                    let mut v = vec![Span::styled("● ", Style::new().fg(color)), name];
+                    v.push(Span::raw(format!("  {} live", st.live)).dark_gray());
+                    if st.needs_you > 0 {
+                        v.push(Span::raw(format!("  ⚑{}", st.needs_you)).red().bold());
+                    }
+                    v
+                }
+                (None, Some(Reach::Unreachable { .. })) => {
+                    let since = f
+                        .last_ok
+                        .map_or("never".to_string(), |t| format_age(t, now));
+                    vec![
+                        Span::raw("○ ").dark_gray(),
+                        name.dark_gray(),
+                        Span::raw(format!("  unreachable · {since}")).dark_gray(),
+                    ]
+                }
+                (None, Some(Reach::NeedsUpdate)) => {
+                    vec![
+                        Span::raw("◐ ").yellow(),
+                        name,
+                        Span::raw("  needs update").yellow(),
+                    ]
+                }
+            };
+            ListItem::new(Line::from(line))
+        })
+        .collect();
+    let selected = app.proj_idx.checked_sub(app.projects.len());
+    let mut state = ListState::default().with_selected(selected);
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight(app.pane == Pane::Projects));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// Read-only view of a finca's sessions, from its latest (or last good) status.
+fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, now: DateTime<Utc>) {
+    use crate::finca::Reach;
+    let host = f
+        .last_status
+        .as_ref()
+        .map(|s| format!(" ({})", s.host))
+        .unwrap_or_default();
+    let title = format!("Finca — {}{host}", f.name);
+    let block = pane_block(&title, app.pane == Pane::Sessions);
+    let mut lines: Vec<Line> = Vec::new();
+    match &f.reach {
+        None => lines.push(Line::raw("Checking…").dark_gray()),
+        Some(Reach::NeedsUpdate) => lines.push(
+            Line::raw(format!("{}'s grove is too old to report status — run scripts/deploy-fincas.sh. Enter still connects.", f.name))
+                .yellow(),
+        ),
+        Some(Reach::Unreachable { error }) => {
+            let since = f.last_ok.map_or("never reachable".to_string(), |t| format!("last reachable {} ago", format_age(t, now)));
+            lines.push(Line::raw(format!("Unreachable: {error}")).red());
+            lines.push(Line::raw(format!("({since}; showing last known sessions)")).dark_gray());
+            lines.push(Line::raw(""));
+        }
+        Some(Reach::Reachable(_)) => {}
+    }
+    if let Some(st) = &f.last_status {
+        let mut any = false;
+        for p in st.projects.iter().filter(|p| !p.sessions.is_empty()) {
+            any = true;
+            lines.push(Line::raw(p.name.clone()).bold());
+            for s in &p.sessions {
+                let color = state_color(s.state);
+                lines.push(Line::from(vec![
+                    Span::styled("  ● ", Style::new().fg(color)),
+                    Span::raw(format!("{:<14}", s.name)).bold(),
+                    Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
+                    Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
+                ]));
+                if let Some(m) = &s.message {
+                    lines.push(Line::styled(format!("      {m}"), Style::new().fg(color)));
+                }
+            }
+        }
+        if !any {
+            lines.push(Line::raw(format!("No live sessions on {}.", f.name)).dark_gray());
+        }
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::raw("Enter: connect · C-q: come back").dark_gray());
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(block),
+        area,
+    );
 }
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
@@ -218,8 +348,18 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let mut spans = Vec::new();
     let n = app.needs_you_count();
     if n > 0 {
+        let remote: Vec<String> = app
+            .remote_needs_you()
+            .iter()
+            .map(|(name, k)| format!("{k} on {name}"))
+            .collect();
+        let detail = if remote.is_empty() {
+            String::new()
+        } else {
+            format!("({}) ", remote.join(", "))
+        };
         spans.push(
-            Span::raw(format!(" ⚑ {n} needs you "))
+            Span::raw(format!(" ⚑ {n} needs you {detail}"))
                 .white()
                 .on_red()
                 .bold(),

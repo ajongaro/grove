@@ -228,7 +228,12 @@ fn renamed_project_file_is_reported_not_split() {
 }
 
 fn finca(name: &str) -> crate::finca::Finca {
-    crate::finca::Finca { name: name.into(), ssh: format!("me@{name}.local"), grove_bin: "/u/bin/grove".into(), color: None }
+    crate::finca::Finca {
+        name: name.into(),
+        ssh: format!("me@{name}.local"),
+        grove_bin: "/u/bin/grove".into(),
+        color: None,
+    }
 }
 
 #[test]
@@ -238,7 +243,10 @@ fn fincas_crud() {
     s.add_finca(&finca("therver")).unwrap();
     s.add_finca(&finca("Pi Five SSD")).unwrap();
     assert!(s.paths.fincas.join("pi-five-ssd.toml").is_file());
-    assert_eq!(s.get_finca("pi-five-ssd").unwrap().ssh, "me@Pi Five SSD.local");
+    assert_eq!(
+        s.get_finca("pi-five-ssd").unwrap().ssh,
+        "me@Pi Five SSD.local"
+    );
     assert_eq!(s.list_fincas().len(), 2);
     assert!(s.add_finca(&finca("therver")).is_err(), "duplicate");
     let removed = s.remove_finca("therver").unwrap();
@@ -252,7 +260,11 @@ fn malformed_or_renamed_finca_file_is_an_error_row() {
     let (_d, s) = store();
     s.paths.ensure().unwrap();
     std::fs::write(s.paths.fincas.join("broken.toml"), "name = [").unwrap();
-    std::fs::write(s.paths.fincas.join("box.toml"), "name = \"other\"\nssh = \"x\"\ngrove_bin = \"/g\"\n").unwrap();
+    std::fs::write(
+        s.paths.fincas.join("box.toml"),
+        "name = \"other\"\nssh = \"x\"\ngrove_bin = \"/g\"\n",
+    )
+    .unwrap();
     let all = s.list_fincas();
     assert_eq!(all.len(), 2);
     assert!(all.iter().all(|r| r.is_err()));

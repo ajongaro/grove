@@ -32,6 +32,8 @@ pub enum Outcome {
 
 const NEEDS_YOU_STYLE: &str = "bg=red,fg=white,bold";
 const RECONCILE_EVERY: Duration = Duration::from_secs(2);
+const FINCA_POLL_EVERY: Duration = Duration::from_secs(30);
+const FINCA_POLL_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
     let store = &ctx.store;
@@ -78,6 +80,11 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             let dir = store.paths.wiki.join(&slug);
             std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
             open_in_editor(ctx, &dir.to_string_lossy())?;
+            Outcome::Nothing
+        }
+        Action::ConnectFinca { slug } => {
+            let f = store.get_finca(&slug)?;
+            crate::finca::connect(&ctx.tmux, &f)?;
             Outcome::Nothing
         }
         Action::ClearEnded { slug } => {
@@ -189,6 +196,15 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
         &ctx.store.paths.projects,
         notify::RecursiveMode::NonRecursive,
     )?;
+    // Separate watcher for fincas: only their changes should trigger an
+    // immediate re-poll (session files change constantly).
+    let (ftx, frx) = mpsc::channel::<()>();
+    let mut finca_watcher = notify::recommended_watcher(move |_res| {
+        let _ = ftx.send(());
+    })?;
+    finca_watcher.watch(&ctx.store.paths.fincas, notify::RecursiveMode::NonRecursive)?;
+    let poller =
+        crate::finca::Poller::start(ctx.store.clone(), FINCA_POLL_EVERY, FINCA_POLL_TIMEOUT);
 
     let cwd = std::env::current_dir()
         .map(|d| d.to_string_lossy().into_owned())
@@ -197,7 +213,7 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     app.reload(&ctx.store);
 
     let mut terminal = ratatui::init();
-    let result = event_loop(&ctx, &mut app, &mut terminal, &rx);
+    let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller);
     ratatui::restore();
     result
 }
@@ -207,6 +223,8 @@ fn event_loop(
     app: &mut App,
     terminal: &mut ratatui::DefaultTerminal,
     rx: &mpsc::Receiver<()>,
+    finca_rx: &mpsc::Receiver<()>,
+    poller: &crate::finca::Poller,
 ) -> Result<()> {
     let mut flagged = HashMap::new();
     let mut last_reconcile = Instant::now() - RECONCILE_EVERY;
@@ -234,6 +252,14 @@ fn event_loop(
                 Err(e) => app.footer = Some(format!("{e:#}")),
             }
             app.reload(&ctx.store);
+        }
+        while let Ok(r) = poller.results.try_recv() {
+            app.apply_poll(r);
+        }
+        if finca_rx.try_recv().is_ok() {
+            while finca_rx.try_recv().is_ok() {}
+            app.reload(&ctx.store);
+            poller.kick();
         }
         // Hook writes land here; coalesce bursts into one reload.
         if rx.try_recv().is_ok() {

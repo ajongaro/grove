@@ -544,3 +544,280 @@ fn match_list_is_rendered_under_the_prompt() {
     assert!(s.contains("grove-fi/"), "{s}");
     assert!(s.contains("Tab"), "{s}");
 }
+
+// ---------- fincas ----------
+
+use crate::finca::{Finca, PollResult, Reach};
+use crate::status::{ProjectStatus, SessionStatus, Status};
+
+fn remote_status(host: &str, needy: usize, working: usize) -> Status {
+    let mut sessions = Vec::new();
+    for i in 0..needy {
+        sessions.push(SessionStatus {
+            name: format!("n{i}"),
+            state: State::NeedsYou,
+            message: Some("Permission needed: Bash".into()),
+            updated_at: t0(),
+        });
+    }
+    for i in 0..working {
+        sessions.push(SessionStatus {
+            name: format!("w{i}"),
+            state: State::Working,
+            message: None,
+            updated_at: t0(),
+        });
+    }
+    Status {
+        version: 1,
+        host: host.into(),
+        generated_at: t0(),
+        needs_you: needy,
+        live: needy + working,
+        projects: vec![ProjectStatus {
+            name: "btt".into(),
+            slug: "btt".into(),
+            sessions,
+        }],
+    }
+}
+
+fn with_fincas(
+    projects: &[&str],
+    local: &[Session],
+    fincas: &[&str],
+) -> (tempfile::TempDir, Store, App) {
+    let (d, s) = store_with(projects, local);
+    for f in fincas {
+        s.add_finca(&Finca {
+            name: f.to_string(),
+            ssh: format!("me@{f}"),
+            grove_bin: "/g".into(),
+            color: None,
+        })
+        .unwrap();
+    }
+    let mut app = App::new("/x".into());
+    app.reload(&s);
+    (d, s, app)
+}
+
+fn poll(app: &mut App, slug: &str, reach: Reach, at: chrono::DateTime<Utc>) {
+    app.apply_poll(PollResult {
+        slug: slug.into(),
+        reach,
+        at,
+    });
+}
+
+#[test]
+fn fincas_listed_under_projects_with_counts() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["therver", "pi-five-ssd", "old"]);
+    poll(
+        &mut app,
+        "therver",
+        Reach::Reachable(remote_status("therver", 2, 1)),
+        t0(),
+    );
+    poll(
+        &mut app,
+        "pi-five-ssd",
+        Reach::Unreachable {
+            error: "timed out".into(),
+        },
+        t0(),
+    );
+    poll(&mut app, "old", Reach::NeedsUpdate, t0());
+    let s = screen(&app, 110, 24);
+    for needle in [
+        "Fincas",
+        "therver",
+        "3 live",
+        "⚑2",
+        "pi-five-ssd",
+        "unreachable",
+        "needs update",
+    ] {
+        assert!(s.contains(needle), "missing {needle:?}\n{s}");
+    }
+}
+
+#[test]
+fn unpolled_finca_shows_checking() {
+    let (_d, _s, app) = with_fincas(&[], &[], &["therver"]);
+    assert!(screen(&app, 100, 20).contains("checking"));
+}
+
+#[test]
+fn footer_counts_remote_needs_you() {
+    let (_d, _s, mut app) = with_fincas(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::NeedsYou, Some("@1"))],
+        &["therver"],
+    );
+    poll(
+        &mut app,
+        "therver",
+        Reach::Reachable(remote_status("therver", 2, 0)),
+        t0(),
+    );
+    assert_eq!(app.needs_you_count(), 3);
+    let s = screen(&app, 110, 20);
+    assert!(s.contains("3 needs you (2 on therver)"), "{s}");
+}
+
+#[test]
+fn selection_moves_from_projects_into_fincas() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["therver", "pi"]);
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+    handle_key(&mut app, ch('j'));
+    assert!(app.selected_project().is_none());
+    assert_eq!(app.selected_finca().unwrap().slug, "pi");
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.selected_finca().unwrap().slug, "therver");
+    handle_key(&mut app, ch('j'));
+    assert_eq!(
+        app.selected_finca().unwrap().slug,
+        "therver",
+        "stays at the end"
+    );
+    handle_key(&mut app, ch('k'));
+    handle_key(&mut app, ch('k'));
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+}
+
+#[test]
+fn fincas_only_still_navigable_and_connectable() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    assert_eq!(app.selected_finca().unwrap().slug, "therver");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::ConnectFinca {
+            slug: "therver".into()
+        }
+    );
+    let s = screen(&app, 100, 20);
+    assert!(s.contains("No projects yet"), "{s}");
+}
+
+#[test]
+fn finca_detail_shows_remote_sessions_grouped_by_project() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    poll(
+        &mut app,
+        "therver",
+        Reach::Reachable(remote_status("therver", 1, 1)),
+        t0(),
+    );
+    let s = screen(&app, 110, 24);
+    for needle in [
+        "Finca — therver",
+        "btt",
+        "n0",
+        "needs you",
+        "Permission needed: Bash",
+        "w0",
+        "working",
+    ] {
+        assert!(s.contains(needle), "missing {needle:?}\n{s}");
+    }
+}
+
+#[test]
+fn unreachable_finca_keeps_last_known_sessions_marked_stale() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    poll(
+        &mut app,
+        "therver",
+        Reach::Reachable(remote_status("therver", 1, 0)),
+        t0() - Duration::minutes(10),
+    );
+    poll(
+        &mut app,
+        "therver",
+        Reach::Unreachable {
+            error: "Connection refused".into(),
+        },
+        t0(),
+    );
+    let s = screen(&app, 110, 24);
+    assert!(s.contains("n0"), "last-known sessions kept\n{s}");
+    assert!(s.contains("Connection refused"), "{s}");
+    assert!(
+        s.contains("12m"),
+        "age since last success (render time is t0+2m)\n{s}"
+    );
+}
+
+#[test]
+fn session_keys_on_a_finca_point_to_connecting() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    for c in ['n', 'e', 'w', 'c', 'x'] {
+        assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
+        assert_eq!(app.mode, Mode::Normal, "{c}");
+        assert!(
+            app.footer.as_deref().is_some_and(|f| f.contains("connect")),
+            "{c}: {:?}",
+            app.footer
+        );
+    }
+    handle_key(&mut app, ch('a'));
+    assert!(matches!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::AddProject,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn enter_in_sessions_pane_on_a_finca_connects() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    app.pane = Pane::Sessions;
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::ConnectFinca {
+            slug: "therver".into()
+        }
+    );
+}
+
+#[test]
+fn reload_keeps_finca_selection_and_poll_state() {
+    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["therver"]);
+    handle_key(&mut app, ch('j'));
+    poll(
+        &mut app,
+        "therver",
+        Reach::Reachable(remote_status("therver", 1, 0)),
+        t0(),
+    );
+    s.add_project(&Project {
+        name: "beta".into(),
+        path: "/b".into(),
+        color: None,
+        summary: None,
+    })
+    .unwrap();
+    app.reload(&s);
+    assert_eq!(app.selected_finca().unwrap().slug, "therver");
+    assert_eq!(app.needs_you_count(), 1);
+}
+
+#[test]
+fn poll_for_unknown_finca_is_ignored() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    poll(&mut app, "ghost", Reach::NeedsUpdate, t0());
+    assert_eq!(app.fincas.len(), 1);
+}
+
+#[test]
+fn removing_selected_finca_clamps_selection() {
+    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["therver"]);
+    handle_key(&mut app, ch('j'));
+    s.remove_finca("therver").unwrap();
+    app.reload(&s);
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+    screen(&app, 80, 10);
+}

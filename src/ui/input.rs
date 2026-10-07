@@ -104,6 +104,9 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     {
         return Action::None;
     }
+    if let Some(action) = finca_key(app, key.code) {
+        return action;
+    }
     match key.code {
         KeyCode::Char('q') => Action::Quit,
         KeyCode::Char('j') | KeyCode::Down => {
@@ -189,7 +192,10 @@ fn usable_project(app: &mut App) -> Option<String> {
 
 fn move_selection(app: &mut App, delta: isize) {
     let (idx, len) = match app.pane {
-        Pane::Projects => (&mut app.proj_idx, app.projects.len()),
+        Pane::Projects => {
+            let len = app.left_len();
+            (&mut app.proj_idx, len)
+        }
         Pane::Sessions => {
             let len = app.visible_sessions().len();
             (&mut app.sess_idx, len)
@@ -202,5 +208,28 @@ fn move_selection(app: &mut App, delta: isize) {
     *idx = (*idx as isize + delta).clamp(0, len as isize - 1) as usize;
     if app.pane == Pane::Projects {
         app.sess_idx = 0;
+    }
+}
+
+/// Keys that mean something different when a finca is selected. `None`
+/// falls through to the normal handling (navigation, `a`, `q`, Tab).
+fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    let f = app.selected_finca()?;
+    let (slug, name, error) = (f.slug.clone(), f.name.clone(), f.error.clone());
+    match code {
+        KeyCode::Enter => Some(match error {
+            Some(e) => {
+                app.footer = Some(format!("{name} can't be used: {e}"));
+                Action::None
+            }
+            None => Action::ConnectFinca { slug },
+        }),
+        KeyCode::Char('n' | 'e' | 'w' | 'c' | 'x') => {
+            app.footer = Some(format!(
+                "Sessions on {name} are managed there: connect with Enter (C-q to come back)"
+            ));
+            Some(Action::None)
+        }
+        _ => None,
     }
 }

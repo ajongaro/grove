@@ -127,7 +127,9 @@ impl Store {
             .map(|f| {
                 std::fs::read_to_string(&f)
                     .map_err(|e| e.to_string())
-                    .and_then(|t| toml::from_str::<crate::finca::Finca>(&t).map_err(|e| e.to_string()))
+                    .and_then(|t| {
+                        toml::from_str::<crate::finca::Finca>(&t).map_err(|e| e.to_string())
+                    })
                     .and_then(|x| {
                         let stem = f.file_stem().unwrap_or_default().to_string_lossy();
                         if x.slug() == stem {
@@ -142,11 +144,21 @@ impl Store {
     }
     pub fn get_finca(&self, name_or_slug: &str) -> Result<crate::finca::Finca> {
         let slug = slugify(name_or_slug);
-        let all: Vec<_> = self.list_fincas().into_iter().filter_map(Result::ok).collect();
-        all.iter().find(|f| f.slug() == slug).cloned().ok_or_else(|| {
-            let names: Vec<_> = all.iter().map(|f| f.name.as_str()).collect();
-            anyhow!("no finca named {name_or_slug:?}; fincas: {}", list_or_none(&names))
-        })
+        let all: Vec<_> = self
+            .list_fincas()
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
+        all.iter()
+            .find(|f| f.slug() == slug)
+            .cloned()
+            .ok_or_else(|| {
+                let names: Vec<_> = all.iter().map(|f| f.name.as_str()).collect();
+                anyhow!(
+                    "no finca named {name_or_slug:?}; fincas: {}",
+                    list_or_none(&names)
+                )
+            })
     }
     pub fn add_finca(&self, f: &crate::finca::Finca) -> Result<()> {
         let slug = f.slug();

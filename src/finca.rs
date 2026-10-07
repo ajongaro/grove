@@ -25,7 +25,10 @@ impl Finca {
 
 /// `$GROVE_SSH`, else `ssh`. Tests point this at a fake.
 pub fn ssh_program() -> String {
-    std::env::var("GROVE_SSH").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "ssh".into())
+    std::env::var("GROVE_SSH")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "ssh".into())
 }
 
 /// Options for every non-interactive ssh call.
@@ -65,7 +68,9 @@ pub fn probe(dest: &str, bin: Option<&str>) -> Result<String> {
         .with_context(|| format!("running {}", ssh_program()))?;
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
     match out.status.code() {
-        Some(0) if stdout.starts_with('/') => Ok(stdout.lines().last().unwrap_or(&stdout).to_string()),
+        Some(0) if stdout.starts_with('/') => {
+            Ok(stdout.lines().last().unwrap_or(&stdout).to_string())
+        }
         Some(NO_GROVE) => bail!(
             "no grove found on {dest} (looked in {}{}); install it there first",
             if bin.is_some() { "--bin, " } else { "" },
@@ -82,7 +87,9 @@ pub fn probe(dest: &str, bin: Option<&str>) -> Result<String> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reach {
     Reachable(crate::status::Status),
-    Unreachable { error: String },
+    Unreachable {
+        error: String,
+    },
     /// Grove is there but too old (or too new) to report status.
     NeedsUpdate,
 }
@@ -111,7 +118,11 @@ pub fn poll_one(f: &Finca, timeout: std::time::Duration) -> Reach {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return Reach::Unreachable { error: format!("can't run {}: {e}", ssh_program()) },
+        Err(e) => {
+            return Reach::Unreachable {
+                error: format!("can't run {}: {e}", ssh_program()),
+            };
+        }
     };
     // Drain both pipes on threads so a chatty child can't block on a full pipe.
     let drain = |mut r: Box<dyn Read + Send>| {
@@ -134,11 +145,17 @@ pub fn poll_one(f: &Finca, timeout: std::time::Duration) -> Reach {
                 break None;
             }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-            Err(e) => return Reach::Unreachable { error: e.to_string() },
+            Err(e) => {
+                return Reach::Unreachable {
+                    error: e.to_string(),
+                };
+            }
         }
     };
     let Some(status) = status else {
-        return Reach::Unreachable { error: format!("timed out after {}s", timeout.as_secs_f32()) };
+        return Reach::Unreachable {
+            error: format!("timed out after {}s", timeout.as_secs_f32()),
+        };
     };
     // The killed ssh's descendants may still hold the pipes; only join after exit.
     let stdout = out.join().unwrap_or_default();
@@ -147,10 +164,14 @@ pub fn poll_one(f: &Finca, timeout: std::time::Duration) -> Reach {
         Some(0) => match crate::status::parse(&stdout) {
             Ok(st) => Reach::Reachable(st),
             Err(crate::status::ParseError::WrongVersion(_)) => Reach::NeedsUpdate,
-            Err(crate::status::ParseError::Invalid(e)) => Reach::Unreachable { error: format!("bad status output: {e}") },
+            Err(crate::status::ParseError::Invalid(e)) => Reach::Unreachable {
+                error: format!("bad status output: {e}"),
+            },
         },
         // ssh itself failed: network, auth, host key.
-        Some(255) => Reach::Unreachable { error: stderr.trim().to_string() },
+        Some(255) => Reach::Unreachable {
+            error: stderr.trim().to_string(),
+        },
         // grove ran but didn't know `status` (clap usage error) or failed.
         _ => Reach::NeedsUpdate,
     }
@@ -163,12 +184,20 @@ pub struct Poller {
 }
 
 impl Poller {
-    pub fn start(store: crate::store::Store, interval: std::time::Duration, timeout: std::time::Duration) -> Self {
+    pub fn start(
+        store: crate::store::Store,
+        interval: std::time::Duration,
+        timeout: std::time::Duration,
+    ) -> Self {
         let (tx, results) = std::sync::mpsc::channel();
         let (kick, kicked) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             loop {
-                let fincas: Vec<Finca> = store.list_fincas().into_iter().filter_map(Result::ok).collect();
+                let fincas: Vec<Finca> = store
+                    .list_fincas()
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .collect();
                 // Poll in parallel so one slow finca doesn't delay the rest.
                 let handles: Vec<_> = fincas
                     .into_iter()
@@ -176,7 +205,12 @@ impl Poller {
                         let tx = tx.clone();
                         std::thread::spawn(move || {
                             let reach = poll_one(&f, timeout);
-                            tx.send(PollResult { slug: f.slug(), reach, at: chrono::Utc::now() }).is_ok()
+                            tx.send(PollResult {
+                                slug: f.slug(),
+                                reach,
+                                at: chrono::Utc::now(),
+                            })
+                            .is_ok()
                         })
                     })
                     .collect();
@@ -209,7 +243,12 @@ pub fn session_name(slug: &str) -> String {
 pub fn connect_argv(f: &Finca) -> Vec<String> {
     // Quoted twice for the bin: once for this local sh, once more so the
     // remote login shell also sees one argument.
-    let ssh = format!("{} -t {} {}", sh_quote(&ssh_program()), sh_quote(&f.ssh), sh_quote(&sh_quote(&f.grove_bin)));
+    let ssh = format!(
+        "{} -t {} {}",
+        sh_quote(&ssh_program()),
+        sh_quote(&f.ssh),
+        sh_quote(&sh_quote(&f.grove_bin))
+    );
     let script = format!(
         "{ssh} || {{ code=$?; echo; echo \"ssh to {} exited ($code) — press Enter to close\"; read _; }}",
         f.name.replace(['"', '$', '`', '\\'], "")
@@ -222,7 +261,9 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<bool>
     if tmux.has_session(&name) {
         return Ok(false);
     }
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_else(|| "/".into());
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| "/".into());
     tmux.new_session_detached(&name, &f.name, &home, &connect_argv(f))?;
     tmux.set_option(&name, "key-table", "grove-finca")?;
     tmux.set_option(&name, "prefix", "None")?;

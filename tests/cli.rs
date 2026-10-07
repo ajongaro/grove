@@ -84,14 +84,22 @@ fn status_json_reports_local_sessions() {
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join("projects")).unwrap();
     std::fs::create_dir_all(home.join("sessions")).unwrap();
-    std::fs::write(home.join("projects/demo.toml"), "name = \"demo\"\npath = \"/tmp\"\n").unwrap();
+    std::fs::write(
+        home.join("projects/demo.toml"),
+        "name = \"demo\"\npath = \"/tmp\"\n",
+    )
+    .unwrap();
     std::fs::write(
         home.join("sessions/a.json"),
         r#"{"id":"a","project":"demo","name":"s1","host":"local","tmux_window":"@1","state":"needs_you","message":"m","created_at":"2026-10-07T10:00:00Z","updated_at":"2026-10-07T10:00:00Z"}"#,
     )
     .unwrap();
     let out = grove(&home).args(["status", "--json"]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["version"], 1);
     assert_eq!(v["needs_you"], 1);
@@ -118,19 +126,40 @@ fn finca_add_ls_rm() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     let (ssh, remote_home) = fake_remote(dir.path());
-    let run = |args: &[&str]| grove(&home).args(args).env("GROVE_SSH", &ssh).env("FAKE_HOME", &remote_home).output().unwrap();
+    let run = |args: &[&str]| {
+        grove(&home)
+            .args(args)
+            .env("GROVE_SSH", &ssh)
+            .env("FAKE_HOME", &remote_home)
+            .output()
+            .unwrap()
+    };
 
     let out = run(&["finca", "add", "therver", "therver@therver.local"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let toml = std::fs::read_to_string(home.join("fincas/therver.toml")).unwrap();
     assert!(toml.contains("ssh = \"therver@therver.local\""), "{toml}");
-    assert!(toml.contains(&format!("grove_bin = \"{}\"", remote_home.join(".local/bin/grove").display())), "{toml}");
+    assert!(
+        toml.contains(&format!(
+            "grove_bin = \"{}\"",
+            remote_home.join(".local/bin/grove").display()
+        )),
+        "{toml}"
+    );
 
     let out = run(&["finca", "ls"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("therver"));
 
     let out = run(&["finca", "rm", "therver"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(!home.join("fincas/therver.toml").exists());
 }
 
@@ -139,9 +168,17 @@ fn finca_add_failure_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     let ssh = dir.path().join("failing ssh");
-    std::fs::write(&ssh, "#!/bin/sh\necho 'Permission denied (publickey)' >&2\nexit 255\n").unwrap();
+    std::fs::write(
+        &ssh,
+        "#!/bin/sh\necho 'Permission denied (publickey)' >&2\nexit 255\n",
+    )
+    .unwrap();
     std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let out = grove(&home).args(["finca", "add", "pi", "admin@pi"]).env("GROVE_SSH", &ssh).output().unwrap();
+    let out = grove(&home)
+        .args(["finca", "add", "pi", "admin@pi"])
+        .env("GROVE_SSH", &ssh)
+        .output()
+        .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("Permission denied"));
     assert!(!home.join("fincas/pi.toml").exists());
@@ -153,16 +190,35 @@ fn finca_rm_closes_an_open_connection_session() {
     let home = dir.path().join("home");
     let (ssh, remote_home) = fake_remote(dir.path());
     let socket = format!("grove-test-{}-clirm", std::process::id());
-    let tmux = |args: &[&str]| Command::new("tmux").args(["-L", &socket, "-f", "/dev/null"]).args(args).output().unwrap();
+    let tmux = |args: &[&str]| {
+        Command::new("tmux")
+            .args(["-L", &socket, "-f", "/dev/null"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
     let run = |args: &[&str]| {
-        grove(&home).args(args).env("GROVE_SSH", &ssh).env("FAKE_HOME", &remote_home).env("GROVE_TMUX_SOCKET", &socket).output().unwrap()
+        grove(&home)
+            .args(args)
+            .env("GROVE_SSH", &ssh)
+            .env("FAKE_HOME", &remote_home)
+            .env("GROVE_TMUX_SOCKET", &socket)
+            .output()
+            .unwrap()
     };
     assert!(run(&["finca", "add", "box", "me@box"]).status.success());
+    // Keeps the server alive after rm closes finca-box, so cleanup can find it.
+    tmux(&["new-session", "-d", "-s", "keepalive", "sleep", "30"]);
     tmux(&["new-session", "-d", "-s", "finca-box", "sleep", "30"]);
     let out = run(&["finca", "rm", "box"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let still = tmux(&["has-session", "-t", "=finca-box"]).status.success();
-    let sock = String::from_utf8(tmux(&["display-message", "-p", "#{socket_path}"]).stdout).unwrap();
+    let sock =
+        String::from_utf8(tmux(&["display-message", "-p", "#{socket_path}"]).stdout).unwrap();
     tmux(&["kill-server"]);
     let _ = std::fs::remove_file(sock.trim());
     assert!(!still, "finca session should be closed");

@@ -80,7 +80,8 @@ pub fn build(store: &Store, host: &str) -> Status {
 pub fn parse(json: &str) -> Result<Status, ParseError> {
     // Check the version before the full shape, so a future format with
     // different fields reports "needs update" rather than "invalid".
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| ParseError::Invalid(e.to_string()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| ParseError::Invalid(e.to_string()))?;
     match v.get("version").and_then(serde_json::Value::as_u64) {
         Some(n) if n == STATUS_VERSION as u64 => {}
         Some(n) => return Err(ParseError::WrongVersion(n as u32)),
@@ -110,7 +111,13 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let s = Store::new(Paths::new(d.path().join("home")));
         for name in ["alpha", "beta"] {
-            s.add_project(&Project { name: name.into(), path: "/x".into(), color: None, summary: None }).unwrap();
+            s.add_project(&Project {
+                name: name.into(),
+                path: "/x".into(),
+                color: None,
+                summary: None,
+            })
+            .unwrap();
         }
         let mk = |id: &str, project: &str, state: State, msg: Option<&str>| Session {
             id: id.into(),
@@ -123,9 +130,17 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        s.save_session(&mk("1", "alpha", State::NeedsYou, Some("Permission needed: Bash"))).unwrap();
-        s.save_session(&mk("2", "alpha", State::Working, None)).unwrap();
-        s.save_session(&mk("3", "alpha", State::Ended, None)).unwrap();
+        s.save_session(&mk(
+            "1",
+            "alpha",
+            State::NeedsYou,
+            Some("Permission needed: Bash"),
+        ))
+        .unwrap();
+        s.save_session(&mk("2", "alpha", State::Working, None))
+            .unwrap();
+        s.save_session(&mk("3", "alpha", State::Ended, None))
+            .unwrap();
         (d, s)
     }
 
@@ -177,7 +192,10 @@ mod tests {
 
     #[test]
     fn garbage_is_invalid() {
-        assert!(matches!(parse("error: unrecognized subcommand 'status'"), Err(ParseError::Invalid(_))));
+        assert!(matches!(
+            parse("error: unrecognized subcommand 'status'"),
+            Err(ParseError::Invalid(_))
+        ));
         assert!(matches!(parse("{}"), Err(ParseError::Invalid(_))));
     }
 }

@@ -61,7 +61,13 @@ impl Paths {
     }
 
     pub fn ensure(&self) -> Result<()> {
-        for d in [&self.projects, &self.wiki, &self.sessions, &self.run, &self.fincas] {
+        for d in [
+            &self.projects,
+            &self.wiki,
+            &self.sessions,
+            &self.run,
+            &self.fincas,
+        ] {
             std::fs::create_dir_all(d).with_context(|| format!("creating {}", d.display()))?;
         }
         Ok(())

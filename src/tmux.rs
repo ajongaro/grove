@@ -147,7 +147,8 @@ impl Tmux {
     /// Sets a session option.
     pub fn set_option(&self, session: &str, option: &str, value: &str) -> Result<()> {
         // set-option takes a pane target; an exact session match needs the ":".
-        self.run(&["set-option", "-t", &format!("={session}:"), option, value]).map(|_| ())
+        self.run(&["set-option", "-t", &format!("={session}:"), option, value])
+            .map(|_| ())
     }
 
     /// Moves the current client to `target`.
@@ -156,7 +157,8 @@ impl Tmux {
     }
 
     pub fn kill_session(&self, name: &str) -> Result<()> {
-        self.run(&["kill-session", "-t", &format!("={name}")]).map(|_| ())
+        self.run(&["kill-session", "-t", &format!("={name}")])
+            .map(|_| ())
     }
 
     /// Sets a session-level environment variable.

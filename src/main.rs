@@ -28,7 +28,10 @@ const TMUX_SOCKET: &str = "grove";
 
 /// `$GROVE_TMUX_SOCKET` (tests) or Grove's own server.
 fn tmux_socket() -> String {
-    std::env::var("GROVE_TMUX_SOCKET").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| TMUX_SOCKET.into())
+    std::env::var("GROVE_TMUX_SOCKET")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| TMUX_SOCKET.into())
 }
 
 #[derive(Parser)]
@@ -236,7 +239,12 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
     match cmd {
         FincaCmd::Add { name, ssh, bin } => {
             let grove_bin = finca::probe(&ssh, bin.as_deref())?;
-            store.add_finca(&finca::Finca { name: name.clone(), ssh, grove_bin: grove_bin.clone(), color: None })?;
+            store.add_finca(&finca::Finca {
+                name: name.clone(),
+                ssh,
+                grove_bin: grove_bin.clone(),
+                color: None,
+            })?;
             println!("Added finca {name} (grove at {grove_bin})");
         }
         FincaCmd::Rm { name } => {
