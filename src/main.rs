@@ -193,7 +193,7 @@ fn start(paths: &Paths) -> Result<()> {
     let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
     let stamp = launch::build_stamp(&exe);
     if launch::ensure_dashboard(&tmux, session, &paths.home, &argv)? {
-        tmux.set_window_option(&format!("{session}:0"), "@grove_build", &stamp)?;
+        tmux.set_window_option(&launch::dashboard_target(session), "@grove_build", &stamp)?;
     } else {
         // After a reinstall, the running dashboard is still the old code.
         launch::ensure_fresh_dashboard(&tmux, session, &stamp)?;
@@ -207,7 +207,7 @@ fn start(paths: &Paths) -> Result<()> {
     let target = format!("={session}");
     if inside.contains(&format!("/{},", tmux_socket())) {
         // Already inside Grove: just go to the dashboard.
-        tmux.select_window(&format!("{target}:0"))?;
+        tmux.select_window(&launch::dashboard_target(session))?;
         return Ok(());
     }
     // Outside tmux, or inside another tmux server (nests; TMUX must be unset).

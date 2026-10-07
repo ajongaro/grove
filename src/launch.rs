@@ -157,6 +157,15 @@ pub fn start_with_bin(
 
 /// Makes sure the Grove tmux session exists with the dashboard in window 0,
 /// recreating either if missing. Returns whether anything was created.
+/// The dashboard window's name; it's found by name, not index, so any
+/// base-index works.
+pub const DASHBOARD: &str = "dashboard";
+
+/// tmux target for the dashboard window of `session`.
+pub fn dashboard_target(session: &str) -> String {
+    format!("={session}:={DASHBOARD}")
+}
+
 pub fn ensure_dashboard(
     tmux: &Tmux,
     session: &str,
@@ -174,12 +183,12 @@ pub fn ensure_dashboard(
             "-t",
             &format!("={session}"),
             "-F",
-            "#{window_index}",
+            "#{window_name}",
         ])
         .output()?;
     if String::from_utf8_lossy(&out.stdout)
         .lines()
-        .any(|l| l == "0")
+        .any(|l| l == DASHBOARD)
     {
         return Ok(false);
     }
@@ -189,9 +198,9 @@ pub fn ensure_dashboard(
             "new-window",
             "-d",
             "-t",
-            &format!("={session}:0"),
+            &format!("={session}:"),
             "-n",
-            "dashboard",
+            DASHBOARD,
             "-c",
         ])
         .arg(cwd)
@@ -221,7 +230,7 @@ pub fn build_stamp(exe: &std::path::Path) -> String {
 /// Restarts window 0 if its dashboard came from a different build than
 /// `stamp` (or predates stamping). Returns whether it restarted.
 pub fn ensure_fresh_dashboard(tmux: &Tmux, session: &str, stamp: &str) -> Result<bool> {
-    let target = format!("{session}:0");
+    let target = dashboard_target(session);
     if tmux.window_option(&target, "@grove_build").as_deref() == Some(stamp) {
         return Ok(false);
     }

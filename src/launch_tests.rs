@@ -199,10 +199,10 @@ fn start_with_missing_project_dir_creates_nothing() {
 }
 
 #[test]
-fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
+fn ensure_dashboard_creates_session_then_restores_a_missing_dashboard() {
     let e = env();
     let conf = e.paths.run.join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove", &e.paths, None)).unwrap();
     let tmux = Tmux {
         config: Some(conf),
         ..Tmux::new(format!("grove-test-{}-dash", std::process::id()))
@@ -211,19 +211,13 @@ fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
     let index0 = |t: &Tmux| {
         let out = t
             .cmd()
-            .args([
-                "list-windows",
-                "-t",
-                "=grove",
-                "-F",
-                "#{window_index}:#{window_name}",
-            ])
+            .args(["list-windows", "-t", "=grove", "-F", "#{window_name}"])
             .output()
             .unwrap();
         String::from_utf8(out.stdout)
             .unwrap()
             .lines()
-            .any(|l| l == "0:dashboard")
+            .any(|l| l == "dashboard")
     };
     assert!(
         ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap(),
@@ -238,7 +232,7 @@ fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
     // A session window keeps the tmux session alive while window 0 dies.
     tmux.new_window("grove", "p:s1", &e.proj_dir, &[], &argv)
         .unwrap();
-    tmux.kill_window("=grove:0").unwrap();
+    tmux.kill_window("=grove:=dashboard").unwrap();
     assert!(!index0(&tmux));
     assert!(
         ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap(),
@@ -252,7 +246,7 @@ fn ensure_dashboard_creates_session_then_restores_missing_window_zero() {
 fn stale_dashboard_is_restarted_and_fresh_one_left_alone() {
     let e = env();
     let conf = e.paths.run.join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    std::fs::write(&conf, crate::runfiles::tmux_conf("grove", &e.paths, None)).unwrap();
     let tmux = Tmux {
         config: Some(conf),
         ..Tmux::new(format!("grove-test-{}-fresh", std::process::id()))
@@ -261,7 +255,13 @@ fn stale_dashboard_is_restarted_and_fresh_one_left_alone() {
     let pane_pid = |t: &Tmux| {
         let out = t
             .cmd()
-            .args(["display-message", "-p", "-t", "grove:0", "#{pane_pid}"])
+            .args([
+                "display-message",
+                "-p",
+                "-t",
+                "=grove:=dashboard",
+                "#{pane_pid}",
+            ])
             .output()
             .unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_string()

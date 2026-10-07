@@ -313,7 +313,15 @@ fn connect_failure_pauses_with_the_exit_code() {
 fn finca_session_has_its_own_key_table_and_no_prefix() {
     let d = tempfile::tempdir().unwrap();
     let conf = d.path().join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    std::fs::write(
+        &conf,
+        crate::runfiles::tmux_conf(
+            "grove",
+            &crate::config::Paths::new(d.path().join("conf-home")),
+            None,
+        ),
+    )
+    .unwrap();
     let tmux = crate::tmux::Tmux {
         config: Some(conf),
         ..crate::tmux::Tmux::new(format!("grove-test-{}-finca", std::process::id()))
@@ -430,7 +438,15 @@ fn connect_runs_remote_grove_through_a_login_shell_with_awkward_paths() {
 fn when_the_finca_connection_ends_the_client_returns_to_grove() {
     let d = tempfile::tempdir().unwrap();
     let conf = d.path().join("tmux.conf");
-    std::fs::write(&conf, crate::runfiles::tmux_conf("grove")).unwrap();
+    std::fs::write(
+        &conf,
+        crate::runfiles::tmux_conf(
+            "grove",
+            &crate::config::Paths::new(d.path().join("conf-home")),
+            None,
+        ),
+    )
+    .unwrap();
     let inner = format!("grove-test-{}-ret", std::process::id());
     let host = format!("grove-test-{}-rethost", std::process::id());
     let tmux = crate::tmux::Tmux {
