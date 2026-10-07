@@ -79,7 +79,7 @@ fn start_reports_bad_config() {
 }
 
 #[test]
-fn status_json_reports_local_sessions() {
+fn status_json_reports_only_sessions_with_a_live_window() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join("projects")).unwrap();
@@ -89,22 +89,57 @@ fn status_json_reports_local_sessions() {
         "name = \"demo\"\npath = \"/tmp\"\n",
     )
     .unwrap();
-    std::fs::write(
-        home.join("sessions/a.json"),
-        r#"{"id":"a","project":"demo","name":"s1","host":"local","tmux_window":"@1","state":"needs_you","message":"m","created_at":"2026-10-07T10:00:00Z","updated_at":"2026-10-07T10:00:00Z"}"#,
-    )
-    .unwrap();
-    let out = grove(&home).args(["status", "--json"]).output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
+    let socket = format!("grove-test-{}-status", std::process::id());
+    let tmux = |args: &[&str]| {
+        Command::new("tmux")
+            .args(["-L", &socket, "-f", "/dev/null"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let status = || {
+        let out = grove(&home)
+            .args(["status", "--json"])
+            .env("GROVE_TMUX_SOCKET", &socket)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    let write_session = |window: &str| {
+        std::fs::write(
+            home.join("sessions/a.json"),
+            format!(r#"{{"id":"a","project":"demo","name":"s1","host":"local","tmux_window":"{window}","state":"needs_you","message":"m","created_at":"2026-10-07T10:00:00Z","updated_at":"2026-10-07T10:00:00Z"}}"#),
+        )
+        .unwrap();
+    };
+
+    // No Grove tmux server (e.g. after a reboot): the stale file isn't live.
+    write_session("@1");
+    let v = status();
+    assert_eq!(
+        (v["version"].as_u64(), v["needs_you"].as_u64()),
+        (Some(1), Some(0))
     );
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["version"], 1);
-    assert_eq!(v["needs_you"], 1);
-    assert_eq!(v["projects"][0]["sessions"][0]["name"], "s1");
     assert!(v["host"].as_str().is_some_and(|h| !h.is_empty()));
+
+    // With the session's window running, it is.
+    tmux(&["new-session", "-d", "-s", "grove", "sleep", "30"]);
+    let w =
+        String::from_utf8(tmux(&["display-message", "-p", "-t", "grove:0", "#{window_id}"]).stdout)
+            .unwrap();
+    write_session(w.trim());
+    let v = status();
+    let sock =
+        String::from_utf8(tmux(&["display-message", "-p", "#{socket_path}"]).stdout).unwrap();
+    tmux(&["kill-server"]);
+    let _ = std::fs::remove_file(sock.trim());
+    assert_eq!(v["needs_you"], 1, "{v}");
+    assert_eq!(v["projects"][0]["sessions"][0]["name"], "s1");
 }
 
 /// Fake ssh + a fake grove in the "remote" home's ~/.local/bin.

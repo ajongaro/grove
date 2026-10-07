@@ -41,8 +41,10 @@ pub enum ParseError {
     WrongVersion(u32),
 }
 
-/// Snapshot of the local store. Ended sessions are left out.
-pub fn build(store: &Store, host: &str) -> Status {
+/// Snapshot of the local store. Only sessions whose tmux window is in
+/// `live_windows` count: session files can say needs_you long after a
+/// reboot or a dead tmux server.
+pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
     let sessions = store.list_sessions(None);
     let projects: Vec<ProjectStatus> = store
         .list_projects()
@@ -54,6 +56,11 @@ pub fn build(store: &Store, host: &str) -> Status {
                 sessions: sessions
                     .iter()
                     .filter(|s| s.project == slug && s.state != State::Ended)
+                    .filter(|s| {
+                        s.tmux_window
+                            .as_ref()
+                            .is_some_and(|w| live_windows.contains(w))
+                    })
                     .map(|s| SessionStatus {
                         name: s.name.clone(),
                         state: s.state,
@@ -144,10 +151,27 @@ mod tests {
         (d, s)
     }
 
+    /// Every test session lives in window @1.
+    fn live() -> Vec<String> {
+        vec!["@1".to_string()]
+    }
+
+    #[test]
+    fn sessions_whose_window_is_gone_are_not_reported() {
+        // After a reboot or tmux-server death the session files still say
+        // needs_you, but nothing is running.
+        let (_d, s) = store();
+        let st = build(&s, "pi", &[]);
+        assert_eq!((st.live, st.needs_you), (0, 0));
+        assert!(st.projects.iter().all(|p| p.sessions.is_empty()));
+        let st = build(&s, "pi", &["@9".to_string()]);
+        assert_eq!(st.live, 0);
+    }
+
     #[test]
     fn build_counts_and_omits_ended() {
         let (_d, s) = store();
-        let st = build(&s, "therver");
+        let st = build(&s, "therver", &live());
         assert_eq!(st.version, STATUS_VERSION);
         assert_eq!(st.host, "therver");
         assert_eq!(st.needs_you, 1);
@@ -162,21 +186,21 @@ mod tests {
     #[test]
     fn empty_store_is_a_valid_status() {
         let d = tempfile::tempdir().unwrap();
-        let st = build(&Store::new(Paths::new(d.path().join("nope"))), "h");
+        let st = build(&Store::new(Paths::new(d.path().join("nope"))), "h", &[]);
         assert_eq!((st.live, st.needs_you, st.projects.len()), (0, 0, 0));
     }
 
     #[test]
     fn round_trips_through_json() {
         let (_d, s) = store();
-        let st = build(&s, "therver");
+        let st = build(&s, "therver", &live());
         assert_eq!(parse(&serde_json::to_string(&st).unwrap()).unwrap(), st);
     }
 
     #[test]
     fn unknown_fields_are_tolerated() {
         let (_d, s) = store();
-        let mut v = serde_json::to_value(build(&s, "h")).unwrap();
+        let mut v = serde_json::to_value(build(&s, "h", &live())).unwrap();
         v["future_field"] = serde_json::json!({"x": 1});
         v["projects"][0]["also_new"] = serde_json::json!(true);
         assert!(parse(&v.to_string()).is_ok());
@@ -185,7 +209,7 @@ mod tests {
     #[test]
     fn other_versions_are_detected() {
         let (_d, s) = store();
-        let mut v = serde_json::to_value(build(&s, "h")).unwrap();
+        let mut v = serde_json::to_value(build(&s, "h", &live())).unwrap();
         v["version"] = serde_json::json!(2);
         assert_eq!(parse(&v.to_string()), Err(ParseError::WrongVersion(2)));
     }

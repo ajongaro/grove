@@ -220,7 +220,13 @@ fn start(paths: &Paths) -> Result<()> {
 }
 
 fn print_status(paths: &Paths, json: bool) {
-    let st = status::build(&Store::new(paths.clone()), &status::hostname());
+    // Windows of the running Grove tmux session; none if the server is down
+    // (e.g. after a reboot), so stale session files don't report as live.
+    let session = load_config(paths)
+        .map(|c| c.tmux_session)
+        .unwrap_or_else(|_| "grove".into());
+    let windows = grove_tmux(paths).list_windows(&session).unwrap_or_default();
+    let st = status::build(&Store::new(paths.clone()), &status::hostname(), &windows);
     if json {
         println!("{}", serde_json::to_string(&st).expect("status serializes"));
         return;
