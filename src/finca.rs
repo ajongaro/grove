@@ -251,7 +251,7 @@ pub fn connect_argv(f: &Finca) -> Vec<String> {
     // this local sh → ssh's remote shell → the login shell's -c.
     let remote = remote_login_cmd(&f.grove_bin);
     let ssh = format!(
-        "{} -t {} {}",
+        "{} -t -o ServerAliveInterval=15 -o ServerAliveCountMax=3 {} {}",
         sh_quote(&ssh_program()),
         sh_quote(&f.ssh),
         sh_quote(&remote)
