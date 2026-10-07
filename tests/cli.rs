@@ -77,3 +77,24 @@ fn start_reports_bad_config() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("config.toml"));
 }
+
+#[test]
+fn status_json_reports_local_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join("projects")).unwrap();
+    std::fs::create_dir_all(home.join("sessions")).unwrap();
+    std::fs::write(home.join("projects/demo.toml"), "name = \"demo\"\npath = \"/tmp\"\n").unwrap();
+    std::fs::write(
+        home.join("sessions/a.json"),
+        r#"{"id":"a","project":"demo","name":"s1","host":"local","tmux_window":"@1","state":"needs_you","message":"m","created_at":"2026-10-07T10:00:00Z","updated_at":"2026-10-07T10:00:00Z"}"#,
+    )
+    .unwrap();
+    let out = grove(&home).args(["status", "--json"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["needs_you"], 1);
+    assert_eq!(v["projects"][0]["sessions"][0]["name"], "s1");
+    assert!(v["host"].as_str().is_some_and(|h| !h.is_empty()));
+}

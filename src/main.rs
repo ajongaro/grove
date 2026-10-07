@@ -6,6 +6,7 @@ mod mcp;
 mod model;
 mod runfiles;
 mod state;
+mod status;
 mod store;
 mod tmux;
 mod ui;
@@ -39,6 +40,12 @@ struct Cli {
 enum Cmd {
     /// Register a project directory (default: the current directory).
     Add { path: Option<PathBuf> },
+    /// Print this machine's sessions (used by other Groves to poll fincas).
+    Status {
+        /// Machine-readable output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Internal: the dashboard that runs in tmux window 0.
     #[command(hide = true)]
     Dashboard,
@@ -66,6 +73,7 @@ fn main() {
             }
         }
         Some(Cmd::Add { path }) => exit_on_err(add(&paths, path)),
+        Some(Cmd::Status { json }) => print_status(&paths, json),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),
     }
@@ -179,4 +187,18 @@ fn start(paths: &Paths) -> Result<()> {
         .env_remove("TMUX")
         .exec();
     Err(err).context("attaching to the grove tmux session")
+}
+
+fn print_status(paths: &Paths, json: bool) {
+    let st = status::build(&Store::new(paths.clone()), &status::hostname());
+    if json {
+        println!("{}", serde_json::to_string(&st).expect("status serializes"));
+        return;
+    }
+    println!("{}: {} live, {} need you", st.host, st.live, st.needs_you);
+    for p in &st.projects {
+        for s in &p.sessions {
+            println!("  {}:{}  {}", p.name, s.name, s.state.label());
+        }
+    }
 }
