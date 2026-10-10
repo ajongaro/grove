@@ -28,17 +28,18 @@ Needs tmux ≥ 3.2 and `claude` on your PATH.
 ## Use
 
 ```sh
-grove add ~/Play/some-project   # or `grove add` inside the folder
+grove add ~/code/some-project   # or `grove add` inside the folder
 grove                           # open the dashboard (attaches tmux)
 ```
 
 Grove runs on its **own tmux server** (`tmux -L grove`), so its key bindings
-never touch your normal tmux.
+never touch your normal tmux, and your `~/.tmux.conf` doesn't apply there.
+Grove keeps stock tmux keys and adds only its own. Put your own setup
+(prefix, splits, theme) in `~/.grove/tmux.local.conf`, which is loaded last.
 
 | Key | Where | Does |
 |---|---|---|
 | `C-y` | anywhere | back to the dashboard |
-| `C-h` / `C-l` | anywhere | previous / next window |
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
@@ -56,8 +57,8 @@ turns its tmux window tab red.
 
 ## Fincas (other machines)
 
-A **finca** is another machine running its own Grove: therver and
-pi-five-ssd today. Your local dashboard lists them under **Fincas**. Each
+A **finca** is another machine running its own Grove, such as a home
+server or a Raspberry Pi. Your local dashboard lists them under **Fincas**. Each
 row shows live sessions and ⚑ needs-you, polled over SSH every 30s, and
 the footer counts remote sessions that need you.
 
@@ -72,20 +73,20 @@ the footer counts remote sessions that need you.
   tries the backup, and Enter connects to whichever one answered last.
 
 ```sh
-grove finca add therver therver@therver.local   # needs key-based SSH + grove installed there
-grove finca add therver therver@therver.local --backup therver@therver.<tailnet>.ts.net
+grove finca add homebox me@homebox.local   # needs key-based SSH + grove installed there
+grove finca add homebox me@homebox.local --backup me@homebox.<tailnet>.ts.net
 grove finca ls
-grove finca rm therver
+grove finca rm homebox
 grove status            # what this machine reports (--json for fincas)
-scripts/deploy-fincas.sh [therver|pi]   # rebuild + install grove on the fincas
+scripts/deploy-fincas.sh [name...]   # build + install grove on your fincas
 ```
 
 Setting up a new finca:
 1. Install tmux.
 2. Install Claude Code and log in.
 3. Install Grove in `~/.local/bin`.
-4. Set `claude_config_dir` in its `~/.grove/config.toml` (therver and the Pi
-   use `~/.claude`).
+4. Set `claude_config_dir` in its `~/.grove/config.toml` (e.g.
+   `~/.claude`).
 
 Its Grove runs through your login shell over SSH, so Homebrew and
 `~/.local/bin` tools are found.
@@ -94,6 +95,7 @@ Its Grove runs through your login shell over SSH, so Homebrew and
 
 ```
 config.toml               settings (below)
+tmux.local.conf           your own tmux setup for Grove's server (optional)
 projects/<slug>.toml      name, path, color, summary
 wiki/<slug>/<section>.md  wiki sections (title = first "# " heading)
 sessions/<uuid>.json      one per session: state, window, message
@@ -138,6 +140,6 @@ Each file does one job, so new features usually touch one or two:
 
 
 ```sh
-cargo test     # ~114 tests, including real tmux servers on throwaway sockets
+cargo test     # ~200 tests, including real tmux servers on throwaway sockets
 cargo clippy --all-targets -- -D warnings
 ```

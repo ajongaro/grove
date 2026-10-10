@@ -1,34 +1,72 @@
 #!/usr/bin/env bash
-# Build and install grove on the fincas, then print each one's version.
-#   scripts/deploy-fincas.sh            # both
-#   scripts/deploy-fincas.sh therver    # just one (therver | pi)
-# Overridable: MAC_FINCA (default therver@therver.local), PI_FINCA (admin@pi-five-ssd.local).
-# Each finca's dashboard restarts on its own the next time grove is opened there.
+# Build and install grove on your fincas, then print each one's version.
+#   scripts/deploy-fincas.sh              # every finca in ~/.grove/fincas
+#   scripts/deploy-fincas.sh therver pi   # just these (finca file names)
+# A finca with this machine's OS and CPU gets the local release build; any
+# other builds from source there (needs cargo on it). Each one tries its
+# `ssh` destination, then its `backup`. grove goes to the finca file's
+# grove_bin. Each finca's dashboard restarts on its own the next time grove
+# is opened there.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MAC_FINCA=${MAC_FINCA:-therver@therver.local}
-PI_FINCA=${PI_FINCA:-admin@pi-five-ssd.local}
-targets=${1:-all}
+fincas_dir=${GROVE_HOME:-$HOME/.grove}/fincas
+ssh_opts=(-o BatchMode=yes -o ConnectTimeout=5)
 
-# This laptop's Xcode toolchain is broken; the CLT + 26.5 SDK link fine.
-if [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]]; then
-  export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-  export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+# Prints a string value from a flat TOML file: field <file> <key>
+field() { sed -n "s/^$2 *= *\"\(.*\)\"$/\1/p" "$1" | head -1; }
+
+if [[ $# -gt 0 ]]; then
+  files=()
+  for name in "$@"; do files+=("$fincas_dir/$name.toml"); done
+else
+  shopt -s nullglob
+  files=("$fincas_dir"/*.toml)
 fi
+[[ ${#files[@]} -gt 0 ]] || { echo "no fincas in $fincas_dir" >&2; exit 1; }
 
-if [[ $targets == all || $targets == therver ]]; then
-  echo "== therver: building macOS arm64 locally"
-  cargo build --release --quiet
-  ssh "$MAC_FINCA" 'mkdir -p ~/.local/bin'
-  scp -q target/release/grove "$MAC_FINCA:.local/bin/grove.new"
+here="$(uname -s) $(uname -m | sed 's/aarch64/arm64/')"
+built_here=no
+failed=()
+
+for f in "${files[@]}"; do
+  [[ -f $f ]] || { echo "no finca file $f" >&2; failed+=("$f"); continue; }
+  name=$(field "$f" name)
+  bin=$(field "$f" grove_bin)
+  dest=
+  for d in "$(field "$f" ssh)" "$(field "$f" backup)"; do
+    if [[ -n $d ]] && ssh "${ssh_opts[@]}" "$d" true 2>/dev/null; then
+      dest=$d
+      break
+    fi
+  done
+  if [[ -z $dest ]]; then
+    echo "== $name: unreachable, skipped" >&2
+    failed+=("$name")
+    continue
+  fi
+
+  there=$(ssh "${ssh_opts[@]}" "$dest" 'echo "$(uname -s) $(uname -m)"' | sed 's/aarch64/arm64/')
   # Rename over the old binary so a running grove keeps its (old) inode.
-  ssh "$MAC_FINCA" 'mv -f ~/.local/bin/grove.new ~/.local/bin/grove && ~/.local/bin/grove --version'
-fi
+  swap="mv -f '$bin.new' '$bin' && '$bin' --version"
+  if [[ $there == "$here" ]]; then
+    echo "== $name ($dest, $there): copying the local build"
+    if [[ $built_here == no ]]; then
+      cargo build --release --quiet
+      built_here=yes
+    fi
+    ssh "${ssh_opts[@]}" "$dest" "mkdir -p \"\$(dirname '$bin')\""
+    scp -q target/release/grove "$dest:$bin.new"
+    ssh "${ssh_opts[@]}" "$dest" "$swap"
+  else
+    echo "== $name ($dest, $there): building from source there"
+    ssh "${ssh_opts[@]}" "$dest" 'mkdir -p ~/src/grove'
+    rsync -a --delete --exclude target --exclude .git --exclude .superpowers ./ "$dest:src/grove/"
+    ssh "${ssh_opts[@]}" "$dest" "set -e; if [ -f ~/.cargo/env ]; then . ~/.cargo/env; fi; cd ~/src/grove; cargo build --release --quiet; mkdir -p \"\$(dirname '$bin')\"; install -m 755 target/release/grove '$bin.new'; $swap"
+  fi
+done
 
-if [[ $targets == all || $targets == pi ]]; then
-  echo "== pi-five-ssd: syncing source and building on the Pi"
-  ssh "$PI_FINCA" 'mkdir -p ~/src/grove'
-  rsync -a --delete --exclude target --exclude .git --exclude .superpowers ./ "$PI_FINCA:src/grove/"
-  ssh "$PI_FINCA" 'set -e; . ~/.cargo/env; cd ~/src/grove; cargo build --release --quiet; mkdir -p ~/.local/bin; install -m 755 target/release/grove ~/.local/bin/grove.new; mv -f ~/.local/bin/grove.new ~/.local/bin/grove; ~/.local/bin/grove --version'
+if [[ ${#failed[@]} -gt 0 ]]; then
+  echo "not deployed: ${failed[*]}" >&2
+  exit 1
 fi
