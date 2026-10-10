@@ -53,6 +53,15 @@ enum Cmd {
         /// Create the folder (and git init it) if it doesn't exist, without asking.
         #[arg(long)]
         new: bool,
+        /// Claude account for its sessions (a name from config.toml).
+        #[arg(long)]
+        account: Option<String>,
+    },
+    /// Show or set the Claude account a project's sessions use.
+    Account {
+        project: String,
+        /// An account name from config.toml; omit to show the current one.
+        name: Option<String>,
     },
     /// Manage fincas: other machines running their own Grove.
     #[command(subcommand)]
@@ -110,7 +119,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Some(Cmd::Add { path, new }) => exit_on_err(add(&paths, path, new)),
+        Some(Cmd::Add { path, new, account }) => exit_on_err(add(&paths, path, new, account)),
+        Some(Cmd::Account { project, name }) => exit_on_err(account_cmd(&paths, &project, name)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
@@ -141,9 +151,14 @@ fn run_hook(paths: Paths) {
     }
 }
 
-fn add(paths: &Paths, path: Option<PathBuf>, new: bool) -> Result<()> {
+fn add(paths: &Paths, path: Option<PathBuf>, new: bool, account: Option<String>) -> Result<()> {
     use std::io::{BufRead, IsTerminal, Write};
     paths.ensure()?;
+    // Check the account before creating anything.
+    let cfg = load_config(paths)?;
+    if let Some(a) = &account {
+        cfg.account(Some(a))?;
+    }
     let path = match path {
         Some(p) => p,
         None => std::env::current_dir()?,
@@ -153,7 +168,7 @@ fn add(paths: &Paths, path: Option<PathBuf>, new: bool) -> Result<()> {
     if config::expand_tilde(&text).exists() {
         let name = ui::run::add_project_at(&store, &text)?;
         println!("Added project {name}");
-        return Ok(());
+        return set_account(&store, &cfg, &name, account);
     }
     if !new {
         if !std::io::stdin().is_terminal() {
@@ -169,6 +184,41 @@ fn add(paths: &Paths, path: Option<PathBuf>, new: bool) -> Result<()> {
     }
     let name = ui::run::create_project_at(&store, &text)?;
     println!("Created project {name} (git init)");
+    set_account(&store, &cfg, &name, account)
+}
+
+/// Stores `account` on the project (the default account is stored as none).
+fn set_account(store: &Store, cfg: &Config, project: &str, account: Option<String>) -> Result<()> {
+    let Some(name) = account else {
+        return Ok(());
+    };
+    let a = cfg.account(Some(&name))?;
+    let mut p = store.get_project(project)?;
+    p.account = (a.name != cfg.default_account().name).then_some(a.name.clone());
+    store.save_project(&p)?;
+    println!(
+        "{} sessions use the {} account ({})",
+        p.name,
+        a.name,
+        a.dir.display()
+    );
+    Ok(())
+}
+
+fn account_cmd(paths: &Paths, project: &str, name: Option<String>) -> Result<()> {
+    let cfg = load_config(paths)?;
+    let store = Store::new(paths.clone());
+    if name.is_some() {
+        return set_account(&store, &cfg, project, name);
+    }
+    let p = store.get_project(project)?;
+    let a = cfg.account(p.account.as_deref())?;
+    println!(
+        "{} sessions use the {} account ({})",
+        p.name,
+        a.name,
+        a.dir.display()
+    );
     Ok(())
 }
 

@@ -38,6 +38,7 @@ fn project(e: &Env) -> Project {
         path: e.proj_dir.clone(),
         color: Some("#2e8b57".into()),
         summary: None,
+        account: None,
     }
 }
 
@@ -158,6 +159,64 @@ fn next_session_name_skips_live_names() {
     assert_eq!(next_session_name(&store, "other"), "s1");
 }
 
+/// `cfg` plus a `work` account whose dir exists.
+fn cfg_with_work(e: &Env) -> (Config, PathBuf) {
+    let work = e.proj_dir.parent().unwrap().join("claude work");
+    std::fs::create_dir_all(&work).unwrap();
+    let mut c = cfg(e);
+    c.accounts.insert(
+        "work".into(),
+        crate::config::AccountConfig {
+            dir: work.to_string_lossy().into(),
+            color: Some("#e8a33d".into()),
+        },
+    );
+    (c, work)
+}
+
+#[test]
+fn build_uses_the_projects_account() {
+    let e = env();
+    let (c, work) = cfg_with_work(&e);
+    let mut p = project(&e);
+    p.account = Some("work".into());
+    let spec = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude").unwrap();
+    assert_eq!(
+        env_val(&spec, "CLAUDE_CONFIG_DIR"),
+        Some(work.to_str().unwrap())
+    );
+    assert_eq!(spec.account.name, "work");
+    // No account: the default.
+    let spec = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", "/b/claude").unwrap();
+    assert_eq!(
+        env_val(&spec, "CLAUDE_CONFIG_DIR"),
+        Some(e.claude_dir.to_str().unwrap())
+    );
+}
+
+#[test]
+fn build_refuses_unknown_or_missing_account() {
+    let e = env();
+    let mut c = cfg(&e);
+    let mut p = project(&e);
+    p.account = Some("work".into());
+    let err = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("unknown account \"work\""), "{err}");
+    c.accounts.insert(
+        "work".into(),
+        crate::config::AccountConfig {
+            dir: "/definitely/not/here".into(),
+            color: None,
+        },
+    );
+    let err = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("/definitely/not/here"), "{err}");
+}
+
 #[test]
 fn start_opens_window_and_records_session() {
     let e = env();
@@ -179,7 +238,13 @@ fn start_opens_window_and_records_session() {
     )
     .unwrap();
     let windows = tmux.list_windows("grove").unwrap();
+    let w = s.tmux_window.clone().unwrap();
+    let account = tmux.window_option(&w, "@grove_account");
+    let account_color = tmux.window_option(&w, "@grove_account_color");
     tmux.kill_server();
+    // The default account, named after its dir ("claude play" → itself).
+    assert_eq!(account.as_deref(), Some("claude play"));
+    assert_eq!(account_color.as_deref(), Some("default"));
     assert_eq!(s.state, State::Starting);
     assert_eq!(s.name, "s1");
     assert_eq!(s.host, "local");

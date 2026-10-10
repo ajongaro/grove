@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
-use crate::config::{Config, Paths, claude_dir};
+use crate::config::{Account, Config, Paths, account_dir};
 use crate::model::{Project, Session, State};
 use crate::store::Store;
 use crate::tmux::Tmux;
@@ -12,6 +12,7 @@ use crate::tmux::Tmux;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LaunchSpec {
     pub window_name: String,
+    pub account: Account,
     pub cwd: PathBuf,
     pub env: Vec<(String, String)>,
     pub argv: Vec<String>,
@@ -38,7 +39,8 @@ fn build_with_bin(
     name: &str,
     bin: &str,
 ) -> Result<LaunchSpec> {
-    let account = claude_dir(cfg)?;
+    let account = cfg.account(project.account.as_deref())?;
+    let account_path = account_dir(&account)?;
     if !project.path.is_dir() {
         bail!(
             "project directory {} does not exist",
@@ -62,9 +64,10 @@ fn build_with_bin(
     argv.extend(cfg.claude_args.iter().cloned());
     Ok(LaunchSpec {
         window_name,
+        account,
         cwd: project.path.clone(),
         env: vec![
-            ("CLAUDE_CONFIG_DIR".into(), lossy(account)),
+            ("CLAUDE_CONFIG_DIR".into(), lossy(account_path)),
             ("GROVE_HOME".into(), lossy(paths.home.clone())),
             ("GROVE_PROJECT".into(), slug),
             ("GROVE_SESSION".into(), session_id.into()),
@@ -146,6 +149,13 @@ pub fn start_with_bin(
     if let Some(color) = &project.color {
         let _ = tmux.set_window_option(&window, "window-status-style", &format!("fg={color}"));
     }
+    // Read by @grove_account_tag in the status bar (runfiles.rs).
+    let _ = tmux.set_window_option(&window, "@grove_account", &spec.account.name);
+    let _ = tmux.set_window_option(
+        &window,
+        "@grove_account_color",
+        spec.account.color.as_deref().unwrap_or("default"),
+    );
     // Re-read: a hook may already have moved the state on.
     if let Some(latest) = store.get_session(&session.id) {
         session = latest;

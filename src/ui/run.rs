@@ -172,6 +172,7 @@ pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
         path: dir,
         color: None,
         summary: None,
+        account: None,
     })?;
     Ok(name)
 }
@@ -253,6 +254,7 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut app = App::new(cwd);
+    app.cfg = ctx.cfg.clone();
     app.reload(&ctx.store);
 
     let mut terminal = ratatui::init();

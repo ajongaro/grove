@@ -123,6 +123,7 @@ mod tests {
                 path: "/x".into(),
                 color: None,
                 summary: None,
+                account: None,
             })
             .unwrap();
         }

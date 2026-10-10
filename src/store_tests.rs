@@ -14,6 +14,7 @@ fn proj(name: &str) -> Project {
         path: "/tmp/x".into(),
         color: None,
         summary: None,
+        account: None,
     }
 }
 

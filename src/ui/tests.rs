@@ -38,6 +38,7 @@ fn store_with(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, St
                 path: format!("/code/{p}").into(),
                 color: None,
                 summary: None,
+                account: None,
             })
             .unwrap();
     }
@@ -103,6 +104,7 @@ fn reload_keeps_selection_on_same_project() {
         path: "/a".into(),
         color: None,
         summary: None,
+        account: None,
     })
     .unwrap();
     app.reload(&s);
@@ -832,6 +834,7 @@ fn reload_keeps_finca_selection_and_poll_state() {
         path: "/b".into(),
         color: None,
         summary: None,
+        account: None,
     })
     .unwrap();
     app.reload(&s);
@@ -953,4 +956,25 @@ fn create_confirmation_is_rendered() {
         s.contains("Create") && s.contains("brand-new") && s.contains("git"),
         "{s}"
     );
+}
+
+#[test]
+fn project_rows_name_their_claude_account() {
+    let (_d, s) = store_with(&["mine", "job", "typo"], &[]);
+    for (name, account) in [("job", "work"), ("typo", "wrok")] {
+        let mut p = s.get_project(name).unwrap();
+        p.account = Some(account.into());
+        s.save_project(&p).unwrap();
+    }
+    let mut app = App::new("/x".into());
+    app.cfg = toml::from_str(
+        "claude_config_dir = \"~/.claude-play\"\n[accounts.work]\ndir = \"~/.claude-work\"\n",
+    )
+    .unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 12);
+    for row in ["● mine  play", "● job  work", "● typo  wrok?"] {
+        assert!(out.contains(row), "missing {row}\n{out}");
+    }
+    assert!(out.contains("Sessions — job · work"), "{out}");
 }

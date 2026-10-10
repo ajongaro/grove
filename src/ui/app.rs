@@ -43,6 +43,8 @@ pub struct ProjectRow {
     pub name: String,
     pub path: PathBuf,
     pub color: Option<String>,
+    /// The project file's `account`; None means the default account.
+    pub account: Option<String>,
     /// Set when the project file couldn't be parsed.
     pub error: Option<String>,
 }
@@ -122,6 +124,8 @@ pub struct App {
     pub completions: Vec<String>,
     /// Which match the prompt currently shows, once Tab cycles.
     pub completion_idx: Option<usize>,
+    /// For naming each project's Claude account.
+    pub cfg: crate::config::Config,
 }
 
 impl App {
@@ -138,6 +142,15 @@ impl App {
             cwd,
             completions: Vec::new(),
             completion_idx: None,
+            cfg: crate::config::Config::default(),
+        }
+    }
+
+    /// The project's account name and color; Err holds the unknown name.
+    pub fn account_of(&self, p: &ProjectRow) -> Result<(String, Option<String>), String> {
+        match self.cfg.account(p.account.as_deref()) {
+            Ok(a) => Ok((a.name, a.color)),
+            Err(_) => Err(p.account.clone().unwrap_or_default()),
         }
     }
 
@@ -157,6 +170,7 @@ impl App {
                     name: p.name,
                     path: p.path,
                     color: p.color,
+                    account: p.account,
                     error: None,
                 },
                 Err((path, err)) => {
@@ -170,6 +184,7 @@ impl App {
                         name: stem,
                         path,
                         color: None,
+                        account: None,
                         error: Some(err),
                     }
                 }

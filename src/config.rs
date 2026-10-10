@@ -1,5 +1,6 @@
 //! Grove settings (`config.toml`) and the on-disk layout under `GROVE_HOME`.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -8,8 +9,16 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Injected as CLAUDE_CONFIG_DIR into every session Grove launches.
+    /// The default account: injected as CLAUDE_CONFIG_DIR into every session
+    /// whose project doesn't name another account.
     pub claude_config_dir: String,
+    /// The default account's name in the dashboard and status bar. Empty
+    /// means one derived from the directory (`~/.claude-play` → `play`).
+    pub account_name: String,
+    #[serde(default)]
+    pub account_color: Option<String>,
+    /// Other Claude accounts, by name. A project picks one with `account`.
+    pub accounts: BTreeMap<String, AccountConfig>,
     pub tmux_session: String,
     /// Empty means `$EDITOR`, then `vi`.
     pub editor: String,
@@ -21,10 +30,83 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             claude_config_dir: "~/.claude".into(),
+            account_name: String::new(),
+            account_color: None,
+            accounts: BTreeMap::new(),
             tmux_session: "grove".into(),
             editor: String::new(),
             claude_args: Vec::new(),
         }
+    }
+}
+
+/// `[accounts.<name>]` in config.toml.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccountConfig {
+    /// Its CLAUDE_CONFIG_DIR, e.g. `~/.claude-work`.
+    pub dir: String,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// A Claude account a session runs on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Account {
+    pub name: String,
+    /// Expanded; not checked to exist (see `account_dir`).
+    pub dir: PathBuf,
+    pub color: Option<String>,
+}
+
+impl Config {
+    pub fn default_account(&self) -> Account {
+        let name = if self.account_name.is_empty() {
+            derive_account_name(&self.claude_config_dir)
+        } else {
+            self.account_name.clone()
+        };
+        Account {
+            name,
+            dir: expand_tilde(&self.claude_config_dir),
+            color: self.account_color.clone(),
+        }
+    }
+
+    /// The account a project names, or the default for `None`.
+    pub fn account(&self, name: Option<&str>) -> Result<Account> {
+        let default = self.default_account();
+        let Some(name) = name.filter(|n| *n != default.name) else {
+            return Ok(default);
+        };
+        match self.accounts.get(name) {
+            Some(a) => Ok(Account {
+                name: name.to_string(),
+                dir: expand_tilde(&a.dir),
+                color: a.color.clone(),
+            }),
+            None => {
+                let known: Vec<&str> = std::iter::once(default.name.as_str())
+                    .chain(self.accounts.keys().map(String::as_str))
+                    .collect();
+                bail!(
+                    "unknown account \"{name}\"; config.toml has: {}",
+                    known.join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// `~/.claude-work` → `work`; plain `~/.claude` → `default`.
+fn derive_account_name(dir: &str) -> String {
+    let base = dir.trim_end_matches('/').rsplit('/').next().unwrap_or(dir);
+    let base = base.trim_start_matches('.');
+    let name = base.strip_prefix("claude-").unwrap_or(base);
+    if name.is_empty() || name == "claude" {
+        "default".into()
+    } else {
+        name.to_string()
     }
 }
 
@@ -97,17 +179,22 @@ pub fn expand_tilde(p: &str) -> PathBuf {
     }
 }
 
-/// The expanded Claude config dir. Errors if it doesn't exist: Grove never
-/// falls back to the default `~/.claude` account.
+/// The default account's config dir. Errors if it doesn't exist.
 pub fn claude_dir(cfg: &Config) -> Result<PathBuf> {
-    let dir = expand_tilde(&cfg.claude_config_dir);
-    if !dir.is_dir() {
+    account_dir(&cfg.default_account())
+}
+
+/// The account's config dir. Errors if it doesn't exist: Grove never lets
+/// Claude fall back to some other account.
+pub fn account_dir(a: &Account) -> Result<PathBuf> {
+    if !a.dir.is_dir() {
         bail!(
-            "Claude config dir {} does not exist (claude_config_dir in config.toml); refusing to launch on another account",
-            dir.display()
+            "Claude config dir {} for account \"{}\" does not exist (config.toml); refusing to launch on another account",
+            a.dir.display(),
+            a.name
         );
     }
-    Ok(dir)
+    Ok(a.dir.clone())
 }
 
 pub fn editor(cfg: &Config) -> String {
@@ -185,6 +272,51 @@ mod tests {
         };
         let err = claude_dir(&c).unwrap_err().to_string();
         assert!(err.contains("/definitely/not/here"), "{err}");
+    }
+
+    #[test]
+    fn account_names_derive_from_the_dir() {
+        assert_eq!(derive_account_name("~/.claude-play"), "play");
+        assert_eq!(derive_account_name("~/.claude-work/"), "work");
+        assert_eq!(derive_account_name("~/.claude"), "default");
+        assert_eq!(derive_account_name("/srv/acme"), "acme");
+    }
+
+    #[test]
+    fn accounts_from_config_toml() {
+        let c: Config = toml::from_str(
+            "claude_config_dir = \"/c/play\"\naccount_name = \"personal\"\n\
+             [accounts.work]\ndir = \"/c/work\"\ncolor = \"#e8a33d\"\n",
+        )
+        .unwrap();
+        let d = c.account(None).unwrap();
+        assert_eq!(
+            (d.name.as_str(), d.dir.to_str().unwrap()),
+            ("personal", "/c/play")
+        );
+        assert_eq!(c.account(Some("personal")).unwrap(), d);
+        let w = c.account(Some("work")).unwrap();
+        assert_eq!(w.dir, PathBuf::from("/c/work"));
+        assert_eq!(w.color.as_deref(), Some("#e8a33d"));
+        let err = c.account(Some("wrok")).unwrap_err().to_string();
+        assert!(
+            err.contains("wrok") && err.contains("personal, work"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn account_dir_names_the_account_when_missing() {
+        let a = Account {
+            name: "work".into(),
+            dir: "/definitely/not/here".into(),
+            color: None,
+        };
+        let err = account_dir(&a).unwrap_err().to_string();
+        assert!(
+            err.contains("\"work\"") && err.contains("/definitely/not/here"),
+            "{err}"
+        );
     }
 
     #[test]

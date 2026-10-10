@@ -21,6 +21,7 @@ fn add(m: &GroveMcp, name: &str) {
             path: format!("/code/{name}").into(),
             color: None,
             summary: None,
+            account: None,
         })
         .unwrap();
 }

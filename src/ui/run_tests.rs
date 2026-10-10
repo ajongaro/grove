@@ -177,6 +177,7 @@ fn new_session_for_missing_project_dir_is_an_error() {
             path: "/no/such".into(),
             color: None,
             summary: None,
+            account: None,
         })
         .unwrap();
     assert!(

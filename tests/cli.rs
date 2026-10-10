@@ -292,3 +292,55 @@ fn add_missing_folder_without_a_terminal_suggests_new() {
     assert!(err.contains("--new"), "{err}");
     assert!(!dir.path().join("nope").exists());
 }
+
+#[test]
+fn add_with_account_and_account_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let (play, work) = (dir.path().join("play"), dir.path().join("work"));
+    for d in [&home, &play, &work, &dir.path().join("acme")] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    std::fs::write(
+        home.join("config.toml"),
+        format!(
+            "claude_config_dir = \"{}\"\n[accounts.work]\ndir = \"{}\"\n",
+            play.display(),
+            work.display()
+        ),
+    )
+    .unwrap();
+    let run = |args: &[&str]| grove(&home).args(args).output().unwrap();
+    let text = |o: &std::process::Output| {
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        )
+    };
+
+    let acme = dir.path().join("acme");
+    let out = run(&["add", acme.to_str().unwrap(), "--account", "nope"]);
+    assert!(
+        !out.status.success() && text(&out).contains("unknown account"),
+        "{}",
+        text(&out)
+    );
+    assert!(
+        !home.join("projects/acme.toml").exists(),
+        "nothing added for a bad account"
+    );
+
+    let out = run(&["add", acme.to_str().unwrap(), "--account", "work"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let toml = std::fs::read_to_string(home.join("projects/acme.toml")).unwrap();
+    assert!(toml.contains("account = \"work\""), "{toml}");
+
+    let out = run(&["account", "acme"]);
+    assert!(text(&out).contains("work account"), "{}", text(&out));
+    // Back to the default account: stored as no account at all.
+    let out = run(&["account", "acme", "play"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let toml = std::fs::read_to_string(home.join("projects/acme.toml")).unwrap();
+    assert!(!toml.contains("account"), "{toml}");
+}

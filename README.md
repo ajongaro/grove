@@ -4,8 +4,8 @@ A tmux dashboard for running and supervising Claude Code sessions across your
 projects.
 
 - **Projects:** each has a folder, a color and a summary.
-- **Sessions:** each Claude Code session runs in its own tmux window, on the
-  Claude account you set with `claude_config_dir`.
+- **Sessions:** each Claude Code session runs in its own tmux window, on its
+  project's Claude account (see [More than one Claude account](#more-than-one-claude-account)).
 - **Signals:** the dashboard shows which sessions are working, which need you
   (a permission prompt), and which are waiting for your next message.
 - **Wiki:** per-project Markdown notes that Claude can read and write through
@@ -92,7 +92,7 @@ Its Grove runs through your login shell over SSH, so Homebrew and
 ```
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
-projects/<slug>.toml      name, path, color, summary
+projects/<slug>.toml      name, path, color, summary, account
 wiki/<slug>/<section>.md  wiki sections (title = first "# " heading)
 sessions/<uuid>.json      one per session: state, window, message
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
@@ -107,6 +107,32 @@ tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
 ```
+
+### More than one Claude account
+
+Each project can run on its own Claude account, e.g. personal and work.
+Name the extra accounts in `config.toml`; `claude_config_dir` stays the
+default account:
+
+```toml
+claude_config_dir = "~/.claude-personal"   # shown as "personal"
+# account_name = "home"                    # optional: name it yourself
+# account_color = "#7aa2f7"
+
+[accounts.work]
+dir = "~/.claude-work"
+color = "#e8a33d"
+```
+
+```sh
+grove add ~/code/acme-api --account work   # new project on the work account
+grove account acme-api work                # move an existing project
+grove account acme-api                     # which account it uses
+```
+
+The dashboard shows each project's account next to its name, and the tmux
+status bar shows the account of the window you're in. A project naming an
+account that isn't in `config.toml` won't start sessions (shown as `name?`).
 
 Grove never edits `~/.claude*/settings.json`. Hooks are passed per session
 with `--settings run/hooks.json` and the MCP server with

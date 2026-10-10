@@ -81,11 +81,21 @@ bind -n C-y select-window -t :=dashboard
          bind r source-file \"{}\" \\; display \"Reloaded Grove tmux config\"\n\
          {copy}\
          \n# Your own setup, loaded last.\n\
-         source-file -q \"{}\"\n",
+         source-file -q \"{}\"\n\
+         {ACCOUNT_TAG}",
         self_path.display(),
         local_path.display(),
     )
 }
+
+/// The window's Claude account (window options set at launch, launch.rs) in
+/// front of status-right, whatever status-right your own setup chose. `-F`
+/// copies the current value in once; the match keeps reloads from repeating it.
+const ACCOUNT_TAG: &str = r##"
+# The current window's Claude account, in front of status-right.
+set -g @grove_account_tag "#{?@grove_account,#[fg=#{@grove_account_color}#,bold]#{@grove_account}#[default] ,}"
+if -F "#{m:*grove_account_tag*,#{status-right}}" "" "set -gF status-right '##{E:@grove_account_tag}#{status-right}'"
+"##;
 
 pub fn clipboard_cmd(os: &str, over_ssh: bool, has: &dyn Fn(&str) -> bool) -> Option<String> {
     if over_ssh {
@@ -198,10 +208,10 @@ mod tests {
             p.home.join("tmux.local.conf").display()
         );
         let at = c.find(&local).expect("local tweaks sourced");
-        assert!(
-            c[at..].lines().count() <= 2,
-            "local tweaks must come last:\n{}",
-            &c[at..]
+        assert_eq!(
+            c[at + local.len()..].trim(),
+            ACCOUNT_TAG.trim(),
+            "only the account tag may follow local tweaks"
         );
         assert!(c.contains(&format!(
             "bind r source-file \"{}\"",
@@ -256,13 +266,13 @@ mod tests {
         std::fs::create_dir_all(&p.home).unwrap();
         std::fs::write(
             p.home.join("tmux.local.conf"),
-            "set -g @grove_local_loaded yes\nset -g base-index 1\n",
+            "set -g @grove_local_loaded yes\nset -g base-index 1\nset -g status-right \"%H:%M\"\n",
         )
         .unwrap();
         let conf = p.home.join("tmux.conf");
         std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"))).unwrap();
         let tmux = crate::tmux::Tmux {
-            config: Some(conf),
+            config: Some(conf.clone()),
             ..crate::tmux::Tmux::new(format!("grove-test-{}-conf", std::process::id()))
         };
         let out = tmux
@@ -279,7 +289,19 @@ mod tests {
         let base = show(&["show-options", "-gv", "base-index"]);
         let local = show(&["show-options", "-gv", "@grove_local_loaded"]);
         let keys = show(&["list-keys"]);
+        // Reloading (prefix r) must not stack the account tag.
+        for _ in 0..2 {
+            tmux.cmd().arg("source-file").arg(&conf).status().unwrap();
+        }
+        let status_right = show(&["show-options", "-gv", "status-right"]);
+        tmux.cmd()
+            .args(["set", "-w", "-t", "grove", "@grove_account", "work"])
+            .status()
+            .unwrap();
+        let tag = show(&["display", "-p", "-t", "grove", "#{E:@grove_account_tag}"]);
         tmux.kill_server();
+        assert_eq!(status_right.trim(), "#{E:@grove_account_tag}%H:%M");
+        assert!(tag.contains("work"), "{tag}");
         assert!(
             out.status.success() && errs.is_empty(),
             "tmux rejected the config: {errs}"

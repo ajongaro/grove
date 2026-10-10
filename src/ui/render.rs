@@ -184,6 +184,7 @@ fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
             if let Some(n) = needs.get(&p.slug) {
                 spans.push(Span::raw(format!("  ⚑{n}")).red().bold());
             }
+            spans.push(account_span(app, p));
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -315,7 +316,10 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let title = match app.selected_project() {
-        Some(p) => format!("Sessions — {}", p.name),
+        Some(p) => match app.account_of(p) {
+            Ok((account, _)) => format!("Sessions — {} · {account}", p.name),
+            Err(_) => format!("Sessions — {}", p.name),
+        },
         None => "Sessions".to_string(),
     };
     let block = pane_block(&title, app.pane == Pane::Sessions);
@@ -389,6 +393,20 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// The project's Claude account, in its color; an unknown one in red.
+fn account_span(app: &App, p: &super::app::ProjectRow) -> Span<'static> {
+    match app.account_of(p) {
+        Ok((name, color)) => Span::styled(
+            format!("  {name}"),
+            match parse_hex(color.as_deref()) {
+                Some(c) => Style::new().fg(c),
+                None => Style::new().dark_gray(),
+            },
+        ),
+        Err(name) => Span::raw(format!("  {name}?")).red(),
+    }
 }
 
 fn highlight(focused: bool) -> Style {
