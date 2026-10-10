@@ -1,11 +1,11 @@
 # Grove
 
 A tmux dashboard for running and supervising Claude Code sessions across your
-projects. A stripped-down, personal take on Yeehaw.
+projects.
 
 - **Projects:** each has a folder, a color and a summary.
-- **Sessions:** each Claude Code session runs in its own tmux window, always
-  on the `~/.claude-play` account.
+- **Sessions:** each Claude Code session runs in its own tmux window, on the
+  Claude account you set with `claude_config_dir`.
 - **Signals:** the dashboard shows which sessions are working, which need you
   (a permission prompt), and which are waiting for your next message.
 - **Wiki:** per-project Markdown notes that Claude can read and write through
@@ -20,10 +20,6 @@ cargo install --path .
 ```
 
 Needs tmux ≥ 3.2 and `claude` on your PATH.
-
-> **This Mac:** Xcode's `xcodebuild` is currently broken and the Command Line
-> Tools' 27.0 SDK won't link, so build with:
-> `DEVELOPER_DIR=/Library/Developer/CommandLineTools SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk cargo install --path .`
 
 ## Use
 
@@ -106,7 +102,7 @@ grove.log                 errors from hooks / MCP
 
 ```toml
 # ~/.grove/config.toml — every key is optional
-claude_config_dir = "~/.claude-play"   # CLAUDE_CONFIG_DIR for every session
+claude_config_dir = "~/.claude"        # CLAUDE_CONFIG_DIR for every session
 tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]

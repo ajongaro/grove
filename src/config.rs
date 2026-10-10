@@ -20,7 +20,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            claude_config_dir: "~/.claude-play".into(),
+            claude_config_dir: "~/.claude".into(),
             tmux_session: "grove".into(),
             editor: String::new(),
             claude_args: Vec::new(),
@@ -135,9 +135,9 @@ mod tests {
     }
 
     #[test]
-    fn defaults_point_at_claude_play() {
+    fn defaults_point_at_claude_codes_own_dir() {
         let c = Config::default();
-        assert_eq!(c.claude_config_dir, "~/.claude-play");
+        assert_eq!(c.claude_config_dir, "~/.claude");
         assert_eq!(c.tmux_session, "grove");
         assert!(c.claude_args.is_empty());
     }
@@ -156,7 +156,7 @@ mod tests {
         std::fs::write(p.config_file(), "tmux_session = \"g2\"\n").unwrap();
         let c = load_config(&p).unwrap();
         assert_eq!(c.tmux_session, "g2");
-        assert_eq!(c.claude_config_dir, "~/.claude-play");
+        assert_eq!(c.claude_config_dir, "~/.claude");
     }
 
     #[test]
@@ -170,8 +170,8 @@ mod tests {
     #[test]
     fn tilde_expands_to_home() {
         assert_eq!(
-            expand_tilde("~/.claude-play"),
-            PathBuf::from(home()).join(".claude-play")
+            expand_tilde("~/.claude-work"),
+            PathBuf::from(home()).join(".claude-work")
         );
         assert_eq!(expand_tilde("~"), PathBuf::from(home()));
         assert_eq!(expand_tilde("/abs/path"), PathBuf::from("/abs/path"));
