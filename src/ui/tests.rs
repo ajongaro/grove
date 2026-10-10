@@ -596,6 +596,7 @@ fn with_fincas(
             ssh: format!("me@{f}"),
             grove_bin: "/g".into(),
             color: None,
+            backup: None,
         })
         .unwrap();
     }
@@ -605,11 +606,40 @@ fn with_fincas(
 }
 
 fn poll(app: &mut App, slug: &str, reach: Reach, at: chrono::DateTime<Utc>) {
+    let via = matches!(reach, Reach::Reachable(_)).then(|| format!("me@{slug}"));
     app.apply_poll(PollResult {
         slug: slug.into(),
         reach,
+        via,
         at,
     });
+}
+
+#[test]
+fn enter_connects_via_the_destination_that_last_answered() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    app.apply_poll(PollResult {
+        slug: "therver".into(),
+        reach: Reach::Reachable(remote_status("therver", 0, 0)),
+        via: Some("me@therver.ts.net".into()),
+        at: t0(),
+    });
+    // A later failed poll keeps the last good destination.
+    poll(
+        &mut app,
+        "therver",
+        Reach::Unreachable {
+            error: "timed out".into(),
+        },
+        t0(),
+    );
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::ConnectFinca {
+            slug: "therver".into(),
+            via: Some("me@therver.ts.net".into())
+        }
+    );
 }
 
 #[test]
@@ -695,7 +725,8 @@ fn fincas_only_still_navigable_and_connectable() {
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::ConnectFinca {
-            slug: "therver".into()
+            slug: "therver".into(),
+            via: None
         }
     );
     let s = screen(&app, 100, 20);
@@ -780,7 +811,8 @@ fn enter_in_sessions_pane_on_a_finca_connects() {
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::ConnectFinca {
-            slug: "therver".into()
+            slug: "therver".into(),
+            via: None
         }
     );
 }

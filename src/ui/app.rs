@@ -62,6 +62,8 @@ pub struct FincaRow {
     /// Last successful status and when it arrived, kept while unreachable.
     pub last_status: Option<crate::status::Status>,
     pub last_ok: Option<DateTime<Utc>>,
+    /// The destination that last answered a poll; Enter connects there.
+    pub via: Option<String>,
 }
 
 /// What the event loop should do after a key press.
@@ -97,6 +99,8 @@ pub enum Action {
     },
     ConnectFinca {
         slug: String,
+        /// The destination that last answered; None means the primary.
+        via: Option<String>,
     },
 }
 
@@ -215,6 +219,7 @@ impl App {
         if let crate::finca::Reach::Reachable(st) = &r.reach {
             row.last_status = Some(st.clone());
             row.last_ok = Some(r.at);
+            row.via = r.via;
         }
         row.reach = Some(r.reach);
         row.checked_at = Some(r.at);
@@ -336,7 +341,8 @@ fn load_fincas(store: &Store, old: Vec<FincaRow>) -> Vec<FincaRow> {
                     reach: prev.as_ref().and_then(|p| p.reach.clone()),
                     checked_at: prev.as_ref().and_then(|p| p.checked_at),
                     last_status: prev.as_ref().and_then(|p| p.last_status.clone()),
-                    last_ok: prev.and_then(|p| p.last_ok),
+                    last_ok: prev.as_ref().and_then(|p| p.last_ok),
+                    via: prev.and_then(|p| p.via),
                     slug,
                 }
             }
@@ -355,6 +361,7 @@ fn load_fincas(store: &Store, old: Vec<FincaRow>) -> Vec<FincaRow> {
                     checked_at: None,
                     last_status: None,
                     last_ok: None,
+                    via: None,
                 }
             }
         })

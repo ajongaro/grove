@@ -87,9 +87,11 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             open_in_editor(ctx, &dir.to_string_lossy())?;
             Outcome::Nothing
         }
-        Action::ConnectFinca { slug } => {
+        Action::ConnectFinca { slug, via } => {
             let f = store.get_finca(&slug)?;
-            crate::finca::connect(&ctx.tmux, &f)?;
+            // A stale via (backup since removed from the file) falls back to ssh.
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            crate::finca::connect(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
         Action::ClearEnded { slug } => {

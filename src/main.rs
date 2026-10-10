@@ -84,6 +84,10 @@ enum FincaCmd {
         /// grove's path on that machine, if not in a usual place.
         #[arg(long)]
         bin: Option<String>,
+        /// SSH destination to fall back to when the first doesn't answer,
+        /// e.g. a Tailscale name for when you're away from home.
+        #[arg(long)]
+        backup: Option<String>,
     },
     /// Forget a finca.
     Rm { name: String },
@@ -268,13 +272,25 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
     paths.ensure()?;
     let store = Store::new(paths.clone());
     match cmd {
-        FincaCmd::Add { name, ssh, bin } => {
-            let grove_bin = finca::probe(&ssh, bin.as_deref())?;
+        FincaCmd::Add {
+            name,
+            ssh,
+            bin,
+            backup,
+        } => {
+            // Either destination will do, so adding works away from home too.
+            let grove_bin = match (finca::probe(&ssh, bin.as_deref()), &backup) {
+                (Ok(b), _) => b,
+                (Err(e), None) => return Err(e),
+                (Err(e), Some(dest)) => finca::probe(dest, bin.as_deref())
+                    .map_err(|e2| anyhow::anyhow!("{e:#}\n\nbackup: {e2:#}"))?,
+            };
             store.add_finca(&finca::Finca {
                 name: name.clone(),
                 ssh,
                 grove_bin: grove_bin.clone(),
                 color: None,
+                backup,
             })?;
             println!("Added finca {name} (grove at {grove_bin})");
         }
@@ -286,7 +302,13 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
         FincaCmd::Ls => {
             for r in store.list_fincas() {
                 match r {
-                    Ok(f) => println!("{}\t{}\t{}", f.name, f.ssh, f.grove_bin),
+                    Ok(f) => println!(
+                        "{}\t{}\t{}\t{}",
+                        f.name,
+                        f.ssh,
+                        f.backup.as_deref().unwrap_or("-"),
+                        f.grove_bin
+                    ),
                     Err((path, e)) => println!("{}\terror: {e}", path.display()),
                 }
             }

@@ -233,6 +233,7 @@ fn finca(name: &str) -> crate::finca::Finca {
         ssh: format!("me@{name}.local"),
         grove_bin: "/u/bin/grove".into(),
         color: None,
+        backup: None,
     }
 }
 

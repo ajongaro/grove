@@ -103,6 +103,7 @@ fn finca_with_bin(bin: &std::path::Path) -> Finca {
         ssh: "me@box".into(),
         grove_bin: bin.to_string_lossy().into(),
         color: None,
+        backup: None,
     }
 }
 
@@ -196,6 +197,7 @@ fn poller_reports_every_finca_and_responds_to_kick() {
             ssh: "x".into(),
             grove_bin: bin.to_string_lossy().into(),
             color: None,
+            backup: None,
         })
         .unwrap();
     store
@@ -204,6 +206,7 @@ fn poller_reports_every_finca_and_responds_to_kick() {
             ssh: "y".into(),
             grove_bin: "/nope".into(),
             color: None,
+            backup: None,
         })
         .unwrap();
     let ssh = fake_ssh(d.path(), None);
@@ -232,6 +235,115 @@ fn poller_reports_every_finca_and_responds_to_kick() {
     });
 }
 
+// ---------- backup ----------
+
+/// Like `fake_ssh`, but `me@home` is unreachable.
+fn ssh_without_home(dir: &std::path::Path) -> std::path::PathBuf {
+    script(
+        dir,
+        "ssh no home",
+        "while [ $# -gt 0 ]; do case \"$1\" in -o) shift 2;; -t|-T) shift;; *) break;; esac; done\n\
+         if [ \"$1\" = me@home ]; then echo 'ssh: Could not resolve hostname home' >&2; exit 255; fi\n\
+         shift\nHOME=\"$FAKE_HOME\" exec sh -c \"$*\"",
+    )
+}
+
+fn away_finca(bin: &std::path::Path, backup: Option<&str>) -> Finca {
+    Finca {
+        name: "box".into(),
+        ssh: "me@home".into(),
+        grove_bin: bin.to_string_lossy().into(),
+        color: None,
+        backup: backup.map(Into::into),
+    }
+}
+
+#[test]
+fn poll_falls_back_to_backup() {
+    let d = tempfile::tempdir().unwrap();
+    let bin = fake_grove(d.path(), &status_json("therver"));
+    let ssh = ssh_without_home(d.path());
+    let (reach, via) = with_env(&ssh, d.path(), || {
+        poll_via(
+            &away_finca(&bin, Some("me@box.ts.net")),
+            std::time::Duration::from_secs(5),
+        )
+    });
+    assert!(matches!(reach, Reach::Reachable(_)), "{reach:?}");
+    assert_eq!(via.as_deref(), Some("me@box.ts.net"));
+}
+
+#[test]
+fn poll_prefers_primary_when_it_answers() {
+    let d = tempfile::tempdir().unwrap();
+    let bin = fake_grove(d.path(), &status_json("therver"));
+    let ssh = fake_ssh(d.path(), None);
+    let mut f = away_finca(&bin, Some("me@box.ts.net"));
+    f.ssh = "me@box.local".into();
+    let (_, via) = with_env(&ssh, d.path(), || {
+        poll_via(&f, std::time::Duration::from_secs(5))
+    });
+    assert_eq!(via.as_deref(), Some("me@box.local"));
+}
+
+#[test]
+fn poll_with_both_down_names_each_destination() {
+    let d = tempfile::tempdir().unwrap();
+    let ssh = fake_ssh(d.path(), Some(255));
+    let (reach, via) = with_env(&ssh, d.path(), || {
+        poll_via(
+            &away_finca(std::path::Path::new("/g"), Some("me@box.ts.net")),
+            std::time::Duration::from_secs(5),
+        )
+    });
+    assert_eq!(via, None);
+    assert!(
+        matches!(&reach, Reach::Unreachable { error }
+            if error.contains("me@home:") && error.contains("me@box.ts.net:")),
+        "{reach:?}"
+    );
+}
+
+#[test]
+fn finca_file_without_backup_still_parses() {
+    let f: Finca =
+        toml::from_str("name = \"pi\"\nssh = \"a@pi.local\"\ngrove_bin = \"/g\"\n").unwrap();
+    assert_eq!(f.backup, None);
+    assert_eq!(f.destinations().collect::<Vec<_>>(), ["a@pi.local"]);
+    let with = toml::to_string(&Finca {
+        backup: Some("a@pi.ts.net".into()),
+        ..f
+    })
+    .unwrap();
+    assert!(with.contains("backup = \"a@pi.ts.net\""), "{with}");
+}
+
+#[test]
+fn connect_argv_uses_the_given_destination() {
+    let d = tempfile::tempdir().unwrap();
+    let args_out = d.path().join("args.txt");
+    let ssh = script(
+        d.path(),
+        "echo ssh",
+        &format!(
+            "for a in \"$@\"; do echo \"$a\"; done > '{}'",
+            args_out.display()
+        ),
+    );
+    let f = away_finca(std::path::Path::new("/g"), Some("me@box.ts.net"));
+    let argv = with_env(&ssh, d.path(), || connect_argv(&f, "me@box.ts.net"));
+    assert!(
+        std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let got = std::fs::read_to_string(&args_out).unwrap();
+    assert!(got.lines().any(|l| l == "me@box.ts.net"), "{got}");
+    assert!(!got.lines().any(|l| l == "me@home"), "{got}");
+}
+
 // ---------- connect ----------
 
 #[test]
@@ -251,8 +363,9 @@ fn connect_argv_quotes_dest_and_bin_for_both_shells() {
         ssh: "me@it's here".into(),
         grove_bin: "/opt/my grove/gro've".into(),
         color: None,
+        backup: None,
     };
-    let argv = with_env(&ssh, d.path(), || connect_argv(&f));
+    let argv = with_env(&ssh, d.path(), || connect_argv(&f, &f.ssh));
     let st = std::process::Command::new(&argv[0])
         .args(&argv[1..])
         .status()
@@ -289,8 +402,9 @@ fn connect_failure_pauses_with_the_exit_code() {
         ssh: "x".into(),
         grove_bin: "/g".into(),
         color: None,
+        backup: None,
     };
-    let argv = with_env(&ssh, d.path(), || connect_argv(&f));
+    let argv = with_env(&ssh, d.path(), || connect_argv(&f, &f.ssh));
     let out = std::process::Command::new(&argv[0])
         .args(&argv[1..])
         .stdin(std::process::Stdio::piped())
@@ -346,14 +460,15 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
         ssh: "x".into(),
         grove_bin: "/g".into(),
         color: Some("#5c6bc0".into()),
+        backup: None,
     };
 
     assert!(
-        with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap(),
+        with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap(),
         "created"
     );
     assert!(
-        !with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap(),
+        !with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap(),
         "reused, not duplicated"
     );
     let opt = |o: &str| {
@@ -419,8 +534,9 @@ fn connect_runs_remote_grove_through_a_login_shell_with_awkward_paths() {
         ssh: "me@it's here".into(),
         grove_bin: bin.to_string_lossy().into(),
         color: None,
+        backup: None,
     };
-    let argv = with_env(&ssh, &remote_home, || connect_argv(&f));
+    let argv = with_env(&ssh, &remote_home, || connect_argv(&f, &f.ssh));
     let st = std::process::Command::new(&argv[0])
         .args(&argv[1..])
         .env("SHELL", "/bin/sh")
@@ -479,8 +595,9 @@ fn when_the_finca_connection_ends_the_client_returns_to_grove() {
         ssh: "x".into(),
         grove_bin: "/g".into(),
         color: None,
+        backup: None,
     };
-    with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f)).unwrap();
+    with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap();
     // A real client (in a pane of another server) attached to the finca.
     host_tmux
         .new_session_detached(

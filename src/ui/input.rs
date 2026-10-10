@@ -237,14 +237,19 @@ fn move_selection(app: &mut App, delta: isize) {
 /// falls through to the normal handling (navigation, `a`, `q`, Tab).
 fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
     let f = app.selected_finca()?;
-    let (slug, name, error) = (f.slug.clone(), f.name.clone(), f.error.clone());
+    let (slug, name, error, via) = (
+        f.slug.clone(),
+        f.name.clone(),
+        f.error.clone(),
+        f.via.clone(),
+    );
     match code {
         KeyCode::Enter => Some(match error {
             Some(e) => {
                 app.footer = Some(format!("{name} can't be used: {e}"));
                 Action::None
             }
-            None => Action::ConnectFinca { slug },
+            None => Action::ConnectFinca { slug, via },
         }),
         KeyCode::Char('n' | 'e' | 'w' | 'c' | 'x') => {
             app.footer = Some(format!(

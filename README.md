@@ -67,9 +67,13 @@ the footer counts remote sessions that need you.
   Enter returns instantly.
 - Selecting a finca shows its sessions read-only. To start, kill or edit
   sessions, connect.
+- A finca can have a **backup** SSH destination, such as its Tailscale
+  name. When the main one doesn't answer (you're away from home), polling
+  tries the backup, and Enter connects to whichever one answered last.
 
 ```sh
 grove finca add therver therver@therver.local   # needs key-based SSH + grove installed there
+grove finca add therver therver@therver.local --backup therver@therver.<tailnet>.ts.net
 grove finca ls
 grove finca rm therver
 grove status            # what this machine reports (--json for fincas)
@@ -93,7 +97,7 @@ config.toml               settings (below)
 projects/<slug>.toml      name, path, color, summary
 wiki/<slug>/<section>.md  wiki sections (title = first "# " heading)
 sessions/<uuid>.json      one per session: state, window, message
-fincas/<slug>.toml        name, ssh destination, grove_bin, color
+fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
 grove.log                 errors from hooks / MCP
 ```

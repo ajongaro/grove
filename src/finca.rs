@@ -15,11 +15,20 @@ pub struct Finca {
     pub grove_bin: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Tried when `ssh` doesn't answer, e.g. a Tailscale name for when
+    /// you're away from the home network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<String>,
 }
 
 impl Finca {
     pub fn slug(&self) -> String {
         slugify(&self.name)
+    }
+
+    /// SSH destinations in the order to try them: `ssh`, then `backup`.
+    pub fn destinations(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.ssh.as_str()).chain(self.backup.as_deref())
     }
 }
 
@@ -99,18 +108,45 @@ pub enum Reach {
 pub struct PollResult {
     pub slug: String,
     pub reach: Reach,
+    /// The destination that answered; None when none did.
+    pub via: Option<String>,
     pub at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Runs `grove status --json` on the finca, killing it after `timeout`.
+/// Polls each destination in turn until one answers.
+#[cfg(test)]
 pub fn poll_one(f: &Finca, timeout: std::time::Duration) -> Reach {
+    poll_via(f, timeout).0
+}
+
+/// Like `poll_one`, also returning the destination that answered. Each
+/// destination gets the full `timeout` (an unresolvable `.local` name can
+/// hang past ssh's ConnectTimeout).
+pub fn poll_via(f: &Finca, timeout: std::time::Duration) -> (Reach, Option<String>) {
+    let mut errors = Vec::new();
+    for dest in f.destinations() {
+        match poll_dest(f, dest, timeout) {
+            Reach::Unreachable { error } => errors.push(if f.backup.is_some() {
+                format!("{dest}: {error}")
+            } else {
+                error
+            }),
+            reach => return (reach, Some(dest.to_string())),
+        }
+    }
+    let error = errors.join("; ");
+    (Reach::Unreachable { error }, None)
+}
+
+/// Runs `grove status --json` at `dest`, killing it after `timeout`.
+fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
     use std::io::Read;
     use std::process::{Command, Stdio};
 
     let remote_cmd = format!("{} status --json", sh_quote(&f.grove_bin));
     let mut child = match Command::new(ssh_program())
         .args(SSH_BATCH_OPTS)
-        .arg(&f.ssh)
+        .arg(dest)
         .arg(remote_cmd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -204,10 +240,11 @@ impl Poller {
                     .map(|f| {
                         let tx = tx.clone();
                         std::thread::spawn(move || {
-                            let reach = poll_one(&f, timeout);
+                            let (reach, via) = poll_via(&f, timeout);
                             tx.send(PollResult {
                                 slug: f.slug(),
                                 reach,
+                                via,
                                 at: chrono::Utc::now(),
                             })
                             .is_ok()
@@ -243,9 +280,10 @@ pub fn remote_login_cmd(bin: &str) -> String {
     format!("exec \"$SHELL\" -lc {}", sh_quote(&sh_quote(bin)))
 }
 
-/// `sh -c` command that runs interactive ssh into the finca's grove and,
-/// if ssh fails, pauses so the error can be read.
-pub fn connect_argv(f: &Finca) -> Vec<String> {
+/// `sh -c` command that runs interactive ssh to `dest` (one of the finca's
+/// destinations) into its grove and, if ssh fails, pauses so the error can
+/// be read.
+pub fn connect_argv(f: &Finca, dest: &str) -> Vec<String> {
     // Run grove under the remote user's login shell so its profile PATH
     // applies (e.g. Homebrew's tmux and claude on macOS). Quoting layers:
     // this local sh → ssh's remote shell → the login shell's -c.
@@ -253,7 +291,7 @@ pub fn connect_argv(f: &Finca) -> Vec<String> {
     let ssh = format!(
         "{} -t -o ServerAliveInterval=15 -o ServerAliveCountMax=3 {} {}",
         sh_quote(&ssh_program()),
-        sh_quote(&f.ssh),
+        sh_quote(dest),
         sh_quote(&remote)
     );
     let script = format!(
@@ -263,7 +301,7 @@ pub fn connect_argv(f: &Finca) -> Vec<String> {
     vec!["sh".into(), "-c".into(), script]
 }
 
-pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<bool> {
+pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> Result<bool> {
     let name = session_name(&f.slug());
     if tmux.has_session(&name) {
         return Ok(false);
@@ -271,7 +309,7 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<bool>
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| "/".into());
-    tmux.new_session_detached(&name, &f.name, &home, &connect_argv(f))?;
+    tmux.new_session_detached(&name, &f.name, &home, &connect_argv(f, dest))?;
     tmux.set_option(&name, "key-table", "grove-finca")?;
     tmux.set_option(&name, "prefix", "None")?;
     // When ssh ends (remote q, dropped link) move the client to another
@@ -283,9 +321,10 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<bool>
     Ok(true)
 }
 
-/// Connects the current client to the finca (creating the session if needed).
-pub fn connect(tmux: &crate::tmux::Tmux, f: &Finca) -> Result<()> {
-    ensure_finca_session(tmux, f)?;
+/// Connects the current client to the finca (creating the session if
+/// needed) at `via`, the destination that last answered a poll, else `ssh`.
+pub fn connect(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result<()> {
+    ensure_finca_session(tmux, f, via.unwrap_or(&f.ssh))?;
     tmux.switch_client(&format!("={}", session_name(&f.slug())))
 }
 
