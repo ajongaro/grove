@@ -5,6 +5,23 @@ use super::*;
 /// at a time.
 pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Poll timeout for fakes that exit on their own (answer or fail). macOS
+/// checks each freshly written executable on its first run (~1s, much more
+/// under a parallel test run), so this is a ceiling, not an expectation.
+const ANSWERS: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Polls `cond` until it holds or `within` passes; returns whether it held.
+fn eventually(within: std::time::Duration, mut cond: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + within;
+    while std::time::Instant::now() < deadline {
+        if cond() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    cond()
+}
+
 fn with_env<T>(ssh: &std::path::Path, fake_home: &std::path::Path, f: impl FnOnce() -> T) -> T {
     let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
@@ -114,9 +131,7 @@ fn poll_reachable_parses_status() {
     std::fs::create_dir_all(&dir).unwrap();
     let bin = fake_grove(&dir, &status_json("therver"));
     let ssh = fake_ssh(d.path(), None);
-    let r = with_env(&ssh, d.path(), || {
-        poll_one(&finca_with_bin(&bin), std::time::Duration::from_secs(5))
-    });
+    let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
     match r {
         Reach::Reachable(st) => assert_eq!(st.host, "therver"),
         other => panic!("{other:?}"),
@@ -128,10 +143,7 @@ fn poll_ssh_failure_is_unreachable() {
     let d = tempfile::tempdir().unwrap();
     let ssh = fake_ssh(d.path(), Some(255));
     let r = with_env(&ssh, d.path(), || {
-        poll_one(
-            &finca_with_bin(std::path::Path::new("/g")),
-            std::time::Duration::from_secs(5),
-        )
+        poll_one(&finca_with_bin(std::path::Path::new("/g")), ANSWERS)
     });
     assert!(
         matches!(&r, Reach::Unreachable { error } if error.contains("Connection refused")),
@@ -148,9 +160,7 @@ fn poll_old_grove_needs_update() {
         "echo \"error: unrecognized subcommand 'status'\" >&2; exit 2",
     );
     let ssh = fake_ssh(d.path(), None);
-    let r = with_env(&ssh, d.path(), || {
-        poll_one(&finca_with_bin(&bin), std::time::Duration::from_secs(5))
-    });
+    let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
     assert_eq!(r, Reach::NeedsUpdate);
 }
 
@@ -160,9 +170,7 @@ fn poll_newer_status_version_needs_update() {
     let json = status_json("h").replace("\"version\":1", "\"version\":9");
     let bin = fake_grove(d.path(), &json);
     let ssh = fake_ssh(d.path(), None);
-    let r = with_env(&ssh, d.path(), || {
-        poll_one(&finca_with_bin(&bin), std::time::Duration::from_secs(5))
-    });
+    let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
     assert_eq!(r, Reach::NeedsUpdate);
 }
 
@@ -171,15 +179,13 @@ fn poll_hanging_finca_times_out() {
     let d = tempfile::tempdir().unwrap();
     let bin = script(d.path(), "slow-grove", "sleep 30");
     let ssh = fake_ssh(d.path(), None);
-    let start = std::time::Instant::now();
-    let r = with_env(&ssh, d.path(), || {
-        poll_one(&finca_with_bin(&bin), std::time::Duration::from_millis(500))
+    // Timed inside with_env: waiting for ENV_LOCK behind other tests isn't polling.
+    let (r, took) = with_env(&ssh, d.path(), || {
+        let start = std::time::Instant::now();
+        let r = poll_one(&finca_with_bin(&bin), std::time::Duration::from_millis(500));
+        (r, start.elapsed())
     });
-    assert!(
-        start.elapsed() < std::time::Duration::from_secs(5),
-        "took {:?}",
-        start.elapsed()
-    );
+    assert!(took < std::time::Duration::from_secs(5), "took {took:?}");
     assert!(
         matches!(&r, Reach::Unreachable { error } if error.contains("timed out")),
         "{r:?}"
@@ -211,16 +217,12 @@ fn poller_reports_every_finca_and_responds_to_kick() {
         .unwrap();
     let ssh = fake_ssh(d.path(), None);
     with_env(&ssh, d.path(), || {
-        let poller = Poller::start(
-            store.clone(),
-            std::time::Duration::from_secs(3600),
-            std::time::Duration::from_secs(5),
-        );
+        let poller = Poller::start(store.clone(), std::time::Duration::from_secs(3600), ANSWERS);
         let mut seen = std::collections::HashMap::new();
         while seen.len() < 2 {
             let r = poller
                 .results
-                .recv_timeout(std::time::Duration::from_secs(10))
+                .recv_timeout(2 * ANSWERS)
                 .expect("first round");
             seen.insert(r.slug.clone(), r.reach);
         }
@@ -229,7 +231,7 @@ fn poller_reports_every_finca_and_responds_to_kick() {
         poller.kick();
         let again = poller
             .results
-            .recv_timeout(std::time::Duration::from_secs(10))
+            .recv_timeout(2 * ANSWERS)
             .expect("kicked round");
         assert!(["alpha", "beta"].contains(&again.slug.as_str()));
     });
@@ -264,10 +266,7 @@ fn poll_falls_back_to_backup() {
     let bin = fake_grove(d.path(), &status_json("therver"));
     let ssh = ssh_without_home(d.path());
     let (reach, via) = with_env(&ssh, d.path(), || {
-        poll_via(
-            &away_finca(&bin, Some("me@box.ts.net")),
-            std::time::Duration::from_secs(5),
-        )
+        poll_via(&away_finca(&bin, Some("me@box.ts.net")), ANSWERS)
     });
     assert!(matches!(reach, Reach::Reachable(_)), "{reach:?}");
     assert_eq!(via.as_deref(), Some("me@box.ts.net"));
@@ -280,9 +279,7 @@ fn poll_prefers_primary_when_it_answers() {
     let ssh = fake_ssh(d.path(), None);
     let mut f = away_finca(&bin, Some("me@box.ts.net"));
     f.ssh = "me@box.local".into();
-    let (_, via) = with_env(&ssh, d.path(), || {
-        poll_via(&f, std::time::Duration::from_secs(5))
-    });
+    let (_, via) = with_env(&ssh, d.path(), || poll_via(&f, ANSWERS));
     assert_eq!(via.as_deref(), Some("me@box.local"));
 }
 
@@ -293,7 +290,7 @@ fn poll_with_both_down_names_each_destination() {
     let (reach, via) = with_env(&ssh, d.path(), || {
         poll_via(
             &away_finca(std::path::Path::new("/g"), Some("me@box.ts.net")),
-            std::time::Duration::from_secs(5),
+            ANSWERS,
         )
     });
     assert_eq!(via, None);
@@ -624,10 +621,9 @@ fn when_the_finca_connection_ends_the_client_returns_to_grove() {
     };
     std::thread::sleep(std::time::Duration::from_millis(800));
     assert_eq!(client_session(), "finca-box");
-    std::thread::sleep(std::time::Duration::from_millis(2500));
-    assert_eq!(
-        client_session(),
-        "grove",
-        "client should land back on the dashboard, not be detached"
+    assert!(
+        eventually(ANSWERS, || client_session() == "grove"),
+        "client should land back on the dashboard, not be detached (on {:?})",
+        client_session()
     );
 }
