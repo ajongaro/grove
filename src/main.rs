@@ -1,4 +1,6 @@
+mod alert;
 mod config;
+mod doctor;
 mod finca;
 mod hook;
 mod launch;
@@ -57,12 +59,16 @@ enum Cmd {
         #[arg(long)]
         account: Option<String>,
     },
+    /// Forget a project. Its folder and wiki are kept.
+    Rm { project: String },
     /// Show or set the Claude account a project's sessions use.
     Account {
         project: String,
         /// An account name from config.toml; omit to show the current one.
         name: Option<String>,
     },
+    /// Check tmux, claude, accounts, projects and fincas; lists every problem.
+    Doctor,
     /// Manage fincas: other machines running their own Grove.
     #[command(subcommand)]
     Finca(FincaCmd),
@@ -120,7 +126,9 @@ fn main() {
             }
         }
         Some(Cmd::Add { path, new, account }) => exit_on_err(add(&paths, path, new, account)),
+        Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Account { project, name }) => exit_on_err(account_cmd(&paths, &project, name)),
+        Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
@@ -205,6 +213,14 @@ fn set_account(store: &Store, cfg: &Config, project: &str, account: Option<Strin
     Ok(())
 }
 
+fn rm(paths: &Paths, project: &str) -> Result<()> {
+    let cfg = load_config(paths)?;
+    let store = Store::new(paths.clone());
+    let msg = ui::run::remove_project(&store, &grove_tmux(paths), &cfg.tmux_session, project)?;
+    println!("{msg}");
+    Ok(())
+}
+
 fn account_cmd(paths: &Paths, project: &str, name: Option<String>) -> Result<()> {
     let cfg = load_config(paths)?;
     let store = Store::new(paths.clone());
@@ -219,6 +235,31 @@ fn account_cmd(paths: &Paths, project: &str, name: Option<String>) -> Result<()>
         a.name,
         a.dir.display()
     );
+    Ok(())
+}
+
+fn doctor(paths: &Paths) -> Result<()> {
+    use doctor::Level;
+    let probes = doctor::Probes {
+        tmux_version: &tmux::version,
+        claude: &|| Some(launch::claude_bin()).filter(|c| c.starts_with('/')),
+        has: &runfiles::on_path,
+        poll: &|f| finca::poll_via(f, std::time::Duration::from_secs(10)),
+    };
+    let checks = doctor::run(paths, &probes);
+    let width = checks.iter().map(|c| c.what.len()).max().unwrap_or(0);
+    for c in &checks {
+        let mark = match c.level {
+            Level::Ok => "✓",
+            Level::Warn => "!",
+            Level::Fail => "✗",
+        };
+        println!("{mark} {:width$}  {}", c.what, c.detail);
+    }
+    let failed = checks.iter().filter(|c| c.level == Level::Fail).count();
+    if failed > 0 {
+        bail!("{failed} problem(s) above");
+    }
     Ok(())
 }
 

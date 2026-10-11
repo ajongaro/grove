@@ -67,6 +67,22 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 area,
             );
         }
+        Mode::ConfirmRemove { name, .. } => {
+            let area = popup(frame.area(), 60, 3);
+            frame.render_widget(Clear, area);
+            frame.render_widget(
+                Paragraph::new(format!(
+                    "Remove project {name}? Its folder and wiki stay.  y / n"
+                ))
+                .block(
+                    Block::bordered()
+                        .border_type(BorderType::Rounded)
+                        .title(" Confirm ")
+                        .fg(Color::Red),
+                ),
+                area,
+            );
+        }
         Mode::ConfirmCreate { path } => {
             let area = popup(frame.area(), 70, 3);
             frame.render_widget(Clear, area);
@@ -389,7 +405,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     match &app.footer {
         Some(msg) => spans.push(Span::raw(msg.clone()).yellow()),
         None => spans.push(
-            Span::raw("enter open/jump · n new · a add · e edit · w wiki · x kill · c clear · tab pane · q detach").dark_gray(),
+            Span::raw("enter open/jump · n new · a add · e edit · w wiki · x kill · c clear · d remove · tab pane · q detach").dark_gray(),
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

@@ -978,3 +978,29 @@ fn project_rows_name_their_claude_account() {
     }
     assert!(out.contains("Sessions — job · work"), "{out}");
 }
+
+#[test]
+fn d_asks_then_removes_the_project_on_y() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    assert_eq!(handle_key(&mut app, ch('d')), Action::None);
+    assert!(screen(&app, 80, 20).contains("Remove project alpha?"));
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::RemoveProject {
+            slug: "alpha".into()
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+    // Anything but y cancels.
+    handle_key(&mut app, ch('d'));
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn d_in_the_sessions_pane_does_nothing() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.pane = Pane::Sessions;
+    assert_eq!(handle_key(&mut app, ch('d')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
+}

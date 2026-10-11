@@ -31,6 +31,10 @@ pub enum Mode {
         session_id: String,
         label: String,
     },
+    ConfirmRemove {
+        slug: String,
+        name: String,
+    },
     /// The add-project path doesn't exist: offer to create it.
     ConfirmCreate {
         path: String,
@@ -97,6 +101,10 @@ pub enum Action {
         slug: String,
     },
     ClearEnded {
+        slug: String,
+    },
+    /// Forget the project (its folder and wiki are kept).
+    RemoveProject {
         slug: String,
     },
     ConnectFinca {

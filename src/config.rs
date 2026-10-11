@@ -24,6 +24,9 @@ pub struct Config {
     pub editor: String,
     /// Extra arguments appended to every `claude` launch.
     pub claude_args: Vec<String>,
+    /// Desktop alerts from the dashboard when a session needs you (here or
+    /// on a finca). Turn off on a finca nobody sits at.
+    pub alerts: bool,
 }
 
 impl Default for Config {
@@ -36,6 +39,7 @@ impl Default for Config {
             tmux_session: "grove".into(),
             editor: String::new(),
             claude_args: Vec::new(),
+            alerts: true,
         }
     }
 }

@@ -93,6 +93,13 @@ impl Store {
     }
 
     /// Sessions (optionally for one project slug), oldest first.
+    /// Deletes the project file. Its wiki and session files are left alone.
+    pub fn remove_project(&self, name_or_slug: &str) -> Result<Project> {
+        let p = self.get_project(name_or_slug)?;
+        std::fs::remove_file(self.project_file(&p.slug()))?;
+        Ok(p)
+    }
+
     pub fn list_sessions(&self, project: Option<&str>) -> Vec<Session> {
         let mut out: Vec<Session> = files_with_ext(&self.paths.sessions, "json")
             .into_iter()

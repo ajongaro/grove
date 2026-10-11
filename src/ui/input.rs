@@ -25,6 +25,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 Action::None
             }
         },
+        Mode::ConfirmRemove { slug, .. } => {
+            app.mode = Mode::Normal;
+            match key.code {
+                KeyCode::Char('y' | 'Y') => Action::RemoveProject { slug },
+                _ => Action::None,
+            }
+        }
         Mode::Confirm { session_id, .. } => {
             app.mode = Mode::Normal;
             match key.code {
@@ -195,6 +202,14 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 KeyCode::Char('e') => Action::EditProject { slug },
                 KeyCode::Char('w') => Action::OpenWiki { slug },
                 KeyCode::Char('c') => Action::ClearEnded { slug },
+                KeyCode::Char('d') if app.pane == Pane::Projects => {
+                    let name = app.selected_project().map(|p| p.name.clone());
+                    app.mode = Mode::ConfirmRemove {
+                        slug,
+                        name: name.unwrap_or_default(),
+                    };
+                    Action::None
+                }
                 _ => Action::None,
             }
         }

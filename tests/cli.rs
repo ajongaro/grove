@@ -344,3 +344,31 @@ fn add_with_account_and_account_command() {
     let toml = std::fs::read_to_string(home.join("projects/acme.toml")).unwrap();
     assert!(!toml.contains("account"), "{toml}");
 }
+
+#[test]
+fn rm_forgets_a_project_but_not_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let proj = dir.path().join("old");
+    std::fs::create_dir_all(&proj).unwrap();
+    // A tmux server with no sessions, so nothing counts as running.
+    let socket = format!("grove-cli-rm-{}", std::process::id());
+    let run = |args: &[&str]| {
+        grove(&home)
+            .env("GROVE_TMUX_SOCKET", &socket)
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["add", proj.to_str().unwrap()]).status.success());
+    let out = run(&["rm", "old"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Removed old"));
+    assert!(!home.join("projects/old.toml").exists());
+    assert!(proj.is_dir());
+    assert!(!run(&["rm", "old"]).status.success(), "already gone");
+}

@@ -94,6 +94,12 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::connect(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::RemoveProject { slug } => Outcome::Message(remove_project(
+            store,
+            &ctx.tmux,
+            &ctx.cfg.tmux_session,
+            &slug,
+        )?),
         Action::ClearEnded { slug } => {
             let ended: Vec<_> = store
                 .list_sessions(Some(&slug))
@@ -177,6 +183,33 @@ pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
     Ok(name)
 }
 
+/// Forgets a project and its ended sessions. Refuses while one of its
+/// sessions is still running in `session`'s windows; the folder and wiki are
+/// never touched, so adding it back brings its wiki back.
+pub fn remove_project(store: &Store, tmux: &Tmux, session: &str, project: &str) -> Result<String> {
+    let p = store.get_project(project)?;
+    let slug = p.slug();
+    // No tmux server (e.g. after a reboot) means nothing is running.
+    let windows = tmux.list_windows(session).unwrap_or_default();
+    let sessions = store.list_sessions(Some(&slug));
+    let running = sessions
+        .iter()
+        .filter(|s| s.state != State::Ended)
+        .filter(|s| s.tmux_window.as_ref().is_some_and(|w| windows.contains(w)))
+        .count();
+    if running > 0 {
+        bail!(
+            "{} has {running} running session(s); kill them first (x)",
+            p.name
+        );
+    }
+    for s in &sessions {
+        store.delete_session(&s.id)?;
+    }
+    store.remove_project(&slug)?;
+    Ok(format!("Removed {} (its folder and wiki are kept)", p.name))
+}
+
 /// Ends sessions whose window vanished and flags windows of sessions that
 /// need you. `flagged` remembers which windows are currently flagged.
 /// Errors (leaving sessions untouched) if the tmux session can't be listed,
@@ -210,6 +243,41 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
         flagged.insert(w.clone(), want);
     }
     Ok(())
+}
+
+/// Every session the dashboard knows of, local and on fincas, for alerts.
+pub fn observe(app: &App) -> Vec<crate::alert::Observed> {
+    let project_name = |slug: &str| {
+        app.projects
+            .iter()
+            .find(|p| p.slug == slug)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| slug.to_string())
+    };
+    let local = app.sessions.iter().map(|s| crate::alert::Observed {
+        key: s.id.clone(),
+        source: "local".into(),
+        state: s.state,
+        window: s.tmux_window.clone(),
+        label: format!("{}:{}", project_name(&s.project), s.name),
+        message: s.message.clone(),
+    });
+    let remote = app.fincas.iter().flat_map(|f| {
+        let st = f.last_status.iter();
+        st.flat_map(move |st| {
+            st.projects.iter().flat_map(move |p| {
+                p.sessions.iter().map(move |s| crate::alert::Observed {
+                    key: format!("{}/{}/{}", f.slug, p.slug, s.name),
+                    source: f.slug.clone(),
+                    state: s.state,
+                    window: None,
+                    label: format!("{} · {}:{}", f.name, p.name, s.name),
+                    message: s.message.clone(),
+                })
+            })
+        })
+    });
+    local.chain(remote).collect()
 }
 
 /// Updates the add-project default from the `GROVE_CWD` that `grove` sets on
@@ -272,8 +340,15 @@ fn event_loop(
     poller: &crate::finca::Poller,
 ) -> Result<()> {
     let mut flagged = HashMap::new();
+    let mut alerts = crate::alert::Alerts::default();
     let mut last_reconcile = Instant::now() - RECONCILE_EVERY;
     loop {
+        if ctx.cfg.alerts {
+            let watched = || ctx.tmux.focused_windows();
+            for a in alerts.check(observe(app), watched) {
+                crate::alert::send(&a);
+            }
+        }
         if last_reconcile.elapsed() >= RECONCILE_EVERY {
             if let Err(e) = reconcile(ctx, &mut flagged) {
                 app.footer = Some(format!("tmux: {e:#}"));

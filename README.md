@@ -26,6 +26,8 @@ Needs tmux ≥ 3.2 and `claude` on your PATH.
 ```sh
 grove add ~/code/some-project   # or `grove add` inside the folder
 grove                           # open the dashboard (attaches tmux)
+grove rm some-project           # forget it (folder and wiki are kept)
+grove doctor                    # check tmux, claude, accounts, projects, fincas
 ```
 
 Grove runs on its **own tmux server** (`tmux -L grove`), so its key bindings
@@ -45,11 +47,18 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `e` / `w` | dashboard | edit project file / wiki folder in `$EDITOR` (popup) |
 | `x` | session | kill it (asks first) |
 | `c` | dashboard | clear ended sessions for the project |
+| `d` | project | remove it from Grove (asks first; folder and wiki are kept) |
 | `q` | dashboard | detach; sessions keep running |
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
 → **your turn** (Claude finished) → **ended**. A session that needs you also
-turns its tmux window tab red.
+gets ⚑ in front of its tmux window name.
+
+While the dashboard runs, it sends a **desktop alert** when a session needs
+you, here or on a finca, unless that session's window is already on screen
+in a focused terminal. It uses `osascript` on macOS and `notify-send` on
+Linux. Set `alerts = false` in `config.toml` to turn alerts off, for example
+on a finca nobody sits at.
 
 ## Fincas (other machines)
 
@@ -106,6 +115,7 @@ claude_config_dir = "~/.claude"        # CLAUDE_CONFIG_DIR for every session
 tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
+alerts = true                          # desktop alerts when a session needs you
 ```
 
 ### More than one Claude account

@@ -339,3 +339,79 @@ fn perform_create_project_reports_in_footer() {
         "{out:?}"
     );
 }
+
+#[test]
+fn remove_project_waits_for_running_sessions_and_keeps_the_wiki() {
+    let t = setup("rm");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let live = tm
+        .new_window("grove", "alpha:s1", &t.root, &[], &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    add_project_at(s, &t.root.to_string_lossy()).unwrap();
+    let slug = s.list_projects()[0].as_ref().unwrap().slug();
+    s.save_session(&sess("run", &slug, State::Working, Some(&live)))
+        .unwrap();
+    s.save_session(&sess("old", &slug, State::Ended, None))
+        .unwrap();
+    s.write_wiki(&slug, "Notes", "kept").unwrap();
+
+    let err = remove_project(s, tm, "grove", &slug).unwrap_err();
+    assert!(format!("{err}").contains("1 running session"), "{err}");
+    assert!(s.get_project(&slug).is_ok());
+
+    tm.kill_window(&live).unwrap();
+    remove_project(s, tm, "grove", &slug).unwrap();
+    assert!(s.get_project(&slug).is_err());
+    assert!(s.list_sessions(Some(&slug)).is_empty());
+    assert_eq!(s.wiki_sections(&slug).len(), 1);
+}
+
+#[test]
+fn observe_names_local_and_finca_sessions() {
+    let t = setup("observe");
+    let mut app = App::new(String::new());
+    app.sessions = vec![sess("1", "alpha", State::NeedsYou, Some("@3"))];
+    let st = crate::status::Status {
+        version: crate::status::STATUS_VERSION,
+        host: "therver".into(),
+        generated_at: chrono::Utc::now(),
+        needs_you: 1,
+        live: 1,
+        projects: vec![crate::status::ProjectStatus {
+            name: "Beta".into(),
+            slug: "beta".into(),
+            sessions: vec![crate::status::SessionStatus {
+                name: "2".into(),
+                state: State::NeedsYou,
+                message: None,
+                updated_at: chrono::Utc::now(),
+            }],
+        }],
+    };
+    let _ = &t;
+    app.fincas = vec![super::super::app::FincaRow {
+        slug: "therver".into(),
+        name: "therver".into(),
+        color: None,
+        error: None,
+        reach: None,
+        checked_at: None,
+        last_status: Some(st),
+        last_ok: None,
+        via: None,
+    }];
+    let seen = observe(&app);
+    let labels: Vec<_> = seen
+        .iter()
+        .map(|o| (o.label.as_str(), o.source.as_str()))
+        .collect();
+    assert_eq!(
+        labels,
+        vec![("alpha:1", "local"), ("therver · Beta:2", "therver")]
+    );
+    assert_eq!(seen[0].window.as_deref(), Some("@3"));
+    assert_eq!(seen[1].key, "therver/beta/2");
+}

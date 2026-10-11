@@ -108,6 +108,19 @@ impl Tmux {
         Ok(out.lines().map(str::to_string).collect())
     }
 
+    /// Windows on screen in a client whose terminal has focus (tmux tracks
+    /// focus through `focus-events`, which Grove's tmux.conf turns on).
+    pub fn focused_windows(&self) -> Vec<String> {
+        let out = self
+            .run(&["list-clients", "-F", "#{window_id} #{client_flags}"])
+            .unwrap_or_default();
+        out.lines()
+            .filter_map(|l| l.split_once(' '))
+            .filter(|(_, flags)| flags.split(',').any(|f| f == "focused"))
+            .map(|(w, _)| w.to_string())
+            .collect()
+    }
+
     pub fn select_window(&self, target: &str) -> Result<()> {
         self.run(&["select-window", "-t", target]).map(|_| ())
     }

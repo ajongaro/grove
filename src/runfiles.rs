@@ -66,6 +66,8 @@ set -sa terminal-overrides ",xterm*:Tc"
 # Window names carry Grove's needs-you marker; programs mustn't overwrite them.
 set -g allow-rename off
 set -g mouse on
+# Lets tmux know when its terminal has focus, so alerts skip what you're watching.
+set -g focus-events on
 # Copies also reach the outer terminal's clipboard (OSC 52), e.g. from a finca.
 set -s set-clipboard on
 set -g status-left "#[bold] GROVE "
@@ -111,7 +113,7 @@ pub fn clipboard_cmd(os: &str, over_ssh: bool, has: &dyn Fn(&str) -> bool) -> Op
 }
 
 /// Whether `prog` is on PATH.
-fn on_path(prog: &str) -> bool {
+pub fn on_path(prog: &str) -> bool {
     std::env::var_os("PATH")
         .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(prog).is_file()))
 }
