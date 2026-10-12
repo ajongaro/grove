@@ -145,7 +145,7 @@ fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
         height: rows as u16 + 2,
     };
     let title = format!(
-        " {} matches — Tab or C-j/C-k to cycle ",
+        " {} matches — Tab or j/k to cycle ",
         app.completions.len()
     );
     let mut state = ListState::default().with_selected(app.completion_idx.map(|i| i - start));

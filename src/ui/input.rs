@@ -53,14 +53,17 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
         tab_complete(app, kind, input);
         return Action::None;
     }
-    // C-j / C-k step through an open match list (down / up).
-    if key.modifiers.contains(KeyModifiers::CONTROL)
-        && let KeyCode::Char(c @ ('j' | 'k')) = key.code
-    {
-        if !app.completions.is_empty() {
+    // j / k (or C-j / C-k) step through an open match list (down / up).
+    // With no list open, plain j and k are just letters.
+    if let KeyCode::Char(c @ ('j' | 'k')) = key.code {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if !app.completions.is_empty() && (ctrl || key.modifiers.is_empty()) {
             cycle_completion(app, kind, if c == 'j' { 1 } else { -1 });
+            return Action::None;
         }
-        return Action::None;
+        if ctrl {
+            return Action::None;
+        }
     }
     // Any other key ends a Tab cycle.
     app.completions.clear();

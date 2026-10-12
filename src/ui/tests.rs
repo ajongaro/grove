@@ -1407,3 +1407,26 @@ fn fincas_title_is_pink() {
         ratatui::style::Color::Rgb(0xf7, 0x76, 0x8e)
     );
 }
+
+#[test]
+fn j_and_k_cycle_an_open_completion_list() {
+    let (_d, base) = dirs(&["grove", "grove-fi", "groves"]);
+    let mut app = add_prompt_at(&format!("{base}gr"));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.completions.len(), 3);
+    handle_key(&mut app, ch('j'));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+    handle_key(&mut app, ch('j'));
+    assert_eq!(prompt_text(&app), format!("{base}grove-fi/"));
+    handle_key(&mut app, ch('k'));
+    assert_eq!(prompt_text(&app), format!("{base}grove/"));
+    assert_eq!(app.completions.len(), 3, "list stays open while cycling");
+}
+
+#[test]
+fn j_and_k_are_letters_when_no_list_is_open() {
+    let (_d, base) = dirs(&[]);
+    let mut app = add_prompt_at(&base);
+    type_keys(&mut app, "jk");
+    assert_eq!(prompt_text(&app), format!("{base}jk"));
+}
