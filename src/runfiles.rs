@@ -75,6 +75,8 @@ set -g status-left-length 12
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
 bind -n C-g select-window -t :=dashboard
+# Older Groves took C-y (Claude's yank); re-sourcing never unbinds it.
+unbind -n C-y
 "##;
     // Finca sessions use the grove-finca table instead of root (finca.rs), so
     // only C-q is intercepted and every other key reaches the remote grove.
@@ -203,8 +205,10 @@ mod tests {
             c.contains("bind -n C-g select-window -t :=dashboard"),
             "{c}"
         );
-        // C-y belongs to Claude (yank); Grove only takes C-g.
-        assert!(!c.contains("C-y"), "{c}");
+        // C-y belongs to Claude (yank); Grove only takes C-g, and releases
+        // the C-y older Groves bound (re-sourcing a config never unbinds).
+        assert!(c.contains("unbind -n C-y"), "{c}");
+        assert!(!c.lines().any(|l| l.starts_with("bind -n C-y")), "{c}");
         assert!(
             c.contains("bind -T grove-finca C-q switch-client -t =g2"),
             "{c}"
