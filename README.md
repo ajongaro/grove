@@ -3,34 +3,111 @@
 A tmux dashboard for running and supervising Claude Code sessions across your
 projects.
 
-- **Projects:** each has a folder, a color and a summary.
-- **Sessions:** each Claude Code session runs in its own tmux window, on its
-  project's Claude account, picked by its folder: `~/Work` → work, else
-  play (see [Play and Work](#more-than-one-claude-account-play-and-work)).
-- **Signals:** the dashboard shows which sessions are working, which need you
-  (a permission prompt), and which are waiting for your next message.
-- **Summary:** each new session starts knowing its project's one-line
-  summary, which Claude can update through Grove's MCP server.
+- **Projects:** each has a folder, a color and a one-line summary.
+- **Sessions:** each Claude Code session runs in its own tmux window. Grove
+  shows which ones are working, which **need you** (a permission prompt) and
+  which are waiting for your next message, and sends a desktop alert when one
+  needs you.
+- **Accounts:** optionally, a project's folder picks its Claude account, for
+  example `~/Work/...` on a work account and everything else on a personal one.
+- **To-do lists:** a small vim-style checklist per project.
+- **Fincas:** other machines running their own Grove (a home server, a
+  Raspberry Pi), listed on your dashboard, one key away over SSH.
 
-Design: [`docs/superpowers/specs/2026-10-06-grove-v1-design.md`](docs/superpowers/specs/2026-10-06-grove-v1-design.md)
+## Setting it up
 
-## Install
+These steps are written so you, or Claude Code working on your machine, can
+follow them top to bottom. Each step ends with a check.
+
+### 1. Prerequisites
+
+| Needs | Check | Install |
+|---|---|---|
+| Rust (cargo) | `cargo --version` | <https://rustup.rs> |
+| tmux 3.2 or newer | `tmux -V` | macOS: `brew install tmux` · Debian/Ubuntu: `sudo apt install tmux` |
+| Claude Code, logged in | `claude --version` | `curl -fsSL https://claude.ai/install.sh \| bash`, then run `claude` once to log in ([docs](https://code.claude.com/docs)) |
+
+macOS and Linux only.
+
+### 2. Install
 
 ```sh
+git clone <this repo> grove && cd grove
 cargo install --path .
 ```
 
-Needs tmux ≥ 3.2 and `claude` on your PATH.
+Check: `grove --version` prints a version. If `grove` isn't found, add
+`~/.cargo/bin` to your `PATH`.
 
-To update: `cargo install --path .` again, then press `R` on the dashboard.
-It refreshes Grove's run files and tmux config and restarts the dashboard
-on the new build. Running sessions aren't touched.
+### 3. Point Grove at your Claude account
 
-## Use
+Grove runs every session with `CLAUDE_CONFIG_DIR` set to one Claude config
+folder, and refuses to start a session if that folder doesn't exist. It never
+silently falls back to another account.
+
+- **One account, Claude Code's default (`~/.claude`)?** Nothing to do.
+- **Claude Code already uses a different folder** (you set `CLAUDE_CONFIG_DIR`
+  yourself)? Create `~/.grove/config.toml` with that folder:
+
+  ```toml
+  claude_config_dir = "~/.claude-personal"
+  ```
+
+- **Two accounts, chosen by folder** (for example personal and work)? See
+  [More than one Claude account](#more-than-one-claude-account). It's three
+  more lines.
+
+Check: `grove doctor` shows `✓ account …` for each account.
+
+### 4. Add projects
 
 ```sh
-grove add ~/code/some-project   # or `grove add` inside the folder
-grove                           # open the dashboard (attaches tmux)
+grove add ~/code/some-project     # a folder that exists
+grove add                         # the current folder
+grove add --new ~/code/new-thing  # create it (with git init) first
+```
+
+Check: `grove doctor` lists `✓ project <name>` with the account it will use.
+
+### 5. Start it
+
+```sh
+grove
+```
+
+This opens (or re-attaches to) the dashboard in tmux. It needs a real
+terminal: run it yourself, not from a script. Press `?` for every key.
+
+`grove doctor` checks everything above at once and lists every problem. A ✓ on
+every line means you're set. A `!` is a warning (for example a finca that's
+offline right now), not a failure.
+
+### Notes for Claude setting this up for someone
+
+- **Ask before configuring:**
+  1. Which folders should become projects?
+  2. One Claude account, or several? If several: which config folder each one
+     uses (each must already be logged in, e.g.
+     `CLAUDE_CONFIG_DIR=~/.claude-work claude`), and which folder of projects
+     goes with each.
+  3. Any other machines to add as fincas? Each needs key-based SSH from this
+     machine and Grove installed there.
+- **Don't edit `~/.claude*/settings.json`.** Grove passes its hooks and MCP
+  server to each session on the command line (`--settings`, `--mcp-config`).
+  There's nothing to install into Claude Code.
+- **Don't run `grove` with no arguments.** It attaches tmux and needs the
+  user's terminal. Use `grove doctor` to verify, then ask the user to run
+  `grove`.
+- `grove add` is non-interactive given a path. Use `--new` to create a folder
+  without the confirmation prompt.
+- The files Grove keeps are plain TOML/JSON/Markdown under `~/.grove` (see
+  [Files](#files-grove-or-grove_home)). `grove doctor` reports malformed ones.
+
+## Using it
+
+```sh
+grove                           # open the dashboard
+grove add ~/code/some-project   # add a project
 grove rm some-project           # forget it (the folder is kept)
 grove doctor                    # check tmux, claude, accounts, projects, fincas
 ```
@@ -48,7 +125,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `Enter` | project | start a session (and jump to it) |
 | `Enter` | session | jump to its window |
 | `n` | dashboard | start a named session |
-| `a` | dashboard | add a project (defaults to the current folder) |
+| `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
 | `r` | session | rename it (tmux window too) |
 | `x` | session | kill it (asks first) |
@@ -59,6 +136,9 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `?` | dashboard | list every key |
 | `q` | dashboard | detach; sessions keep running |
 
+`C-g` is taken from Claude Code inside Grove, where it would open the prompt
+in your editor.
+
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
 → **your turn** (Claude finished) → **ended**. A session that needs you also
 gets ⚑ in front of its tmux window name.
@@ -68,6 +148,20 @@ you, here or on a finca, unless that session's window is already on screen
 in a focused terminal. It uses `osascript` on macOS and `notify-send` on
 Linux. Set `alerts = false` in `config.toml` to turn alerts off, for example
 on a finca nobody sits at.
+
+Each new session starts knowing its project's name, folder and summary.
+Claude can update the summary through Grove's MCP tools (`list_projects`,
+`get_project`, `update_project`).
+
+### Updating
+
+```sh
+git pull && cargo install --path .
+```
+
+Then press `R` on the dashboard. It refreshes Grove's generated files and tmux
+config and restarts the dashboard on the new build. Running sessions aren't
+touched.
 
 ## To-do lists
 
@@ -89,11 +183,37 @@ there), edited with vim keys:
 It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
 on every change. It's just for you: Claude sessions don't see it.
 
+## More than one Claude account
+
+A project's **folder** picks its Claude account. Name the extra accounts in
+`config.toml`, each with the folder its projects live under. Projects
+anywhere else use the default account (`claude_config_dir`):
+
+```toml
+claude_config_dir = "~/.claude-personal"   # default account, shown as "personal"
+# account_name = "home"                    # optional: name it yourself
+account_color = "#7aa2f7"                  # optional: its color on the dashboard
+
+[accounts.work]
+dir = "~/.claude-work"                     # log in once: CLAUDE_CONFIG_DIR=~/.claude-work claude
+color = "#e8a33d"
+folder = "~/Work"                          # projects under here use this account
+```
+
+When an account has a `folder`, the dashboard's left column splits into one
+box per account (the default on top), and `j`/`k` run straight through them.
+The tmux status bar shows the account of the window you're in, and `grove add`
+says which account a folder picked. To move a project to another account,
+move its folder and add it again.
+
+Without any `folder`, there's a single PROJECTS box and everything uses the
+default account.
+
 ## Fincas (other machines)
 
 A **finca** is another machine running its own Grove, such as a home
-server or a Raspberry Pi. Your local dashboard lists them under **Fincas**. Each
-row shows live sessions and ⚑ needs-you, polled over SSH every 30s, and
+server or a Raspberry Pi. Your local dashboard lists them under **FINCAS**.
+Each row shows live sessions and ⚑ needs-you, polled over SSH every 30s, and
 the footer counts remote sessions that need you.
 
 - **Enter** on a finca opens that machine's own Grove dashboard. Every key
@@ -109,24 +229,27 @@ the footer counts remote sessions that need you.
   name. When the main one doesn't answer (you're away from home), polling
   tries the backup, and Enter and `s` connect to whichever one answered last.
 
+Setting up a finca:
+1. On the finca: install tmux and Claude Code, and log in to Claude.
+2. Install Grove there in `~/.local/bin` (or run `scripts/deploy-fincas.sh`
+   after step 4, which builds and copies it for you).
+3. Make sure this machine can SSH to it without a password
+   (`ssh-copy-id me@homebox.local`).
+4. On this machine:
+
 ```sh
-grove finca add homebox me@homebox.local   # needs key-based SSH + grove installed there
+grove finca add homebox me@homebox.local   # checks SSH and finds grove there
 grove finca add homebox me@homebox.local --backup me@homebox.<tailnet>.ts.net
 grove finca ls
 grove finca rm homebox
-grove status            # what this machine reports (--json for fincas)
+grove status            # what this machine reports (--json is what fincas send)
 scripts/deploy-fincas.sh [name...]   # build + install grove on your fincas
 ```
 
-Setting up a new finca:
-1. Install tmux.
-2. Install Claude Code and log in.
-3. Install Grove in `~/.local/bin`.
-4. Set `claude_config_dir` in its `~/.grove/config.toml` (e.g.
-   `~/.claude`).
-
-Its Grove runs through your login shell over SSH, so Homebrew and
-`~/.local/bin` tools are found.
+The finca's Grove runs through its login shell over SSH, so Homebrew and
+`~/.local/bin` tools are found. If Claude Code there uses a folder other
+than `~/.claude`, set `claude_config_dir` in that machine's
+`~/.grove/config.toml`.
 
 ## Files (`~/.grove`, or `$GROVE_HOME`)
 
@@ -148,42 +271,12 @@ tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
+# account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
-
-### More than one Claude account (Play and Work)
-
-A project's **folder** picks its Claude account. On this laptop, projects
-under `~/Work` run on the work account and everything else (`~/Play`, or
-anywhere) runs on the default play account. Add a folder; that's it.
-
-```toml
-claude_config_dir = "~/.claude-play"       # default account, shown as "play"
-# account_name = "home"                    # optional: name it yourself
-# account_color = "#7aa2f7"
-
-[accounts.work]
-dir = "~/.claude-work"
-color = "#e8a33d"
-folder = "~/Work"                          # projects under here use this account
-```
-
-When an account has a `folder`, the dashboard's left column splits into
-stacked boxes: **play** on top, **work** below (then fincas). `j`/`k` run
-straight through both. The tmux status bar shows the account of the window
-you're in, and `grove add` says which account the folder picked. To move a
-project to the other account, move its folder and add it again.
-
-Fincas have no `folder` set, so everything there runs on play and the
-dashboard keeps a single Projects box.
 
 Grove never edits `~/.claude*/settings.json`. Hooks are passed per session
 with `--settings run/hooks.json` and the MCP server with
 `--mcp-config run/mcp.json`.
-
-## MCP tools (inside a Grove session)
-
-`list_projects`, `get_project`, `update_project` (summary, `#RRGGBB` color).
-`project` defaults to the session's own project.
 
 ## Extending it
 
@@ -194,15 +287,18 @@ Each file does one job, so new features usually touch one or two:
 | `src/state.rs` | hook event → session state (pure; start here for new signals) |
 | `src/hook.rs` | `grove hook`: applies events, prints session-start context |
 | `src/store.rs` | all disk reads/writes (atomic) |
+| `src/config.rs` | `config.toml`, accounts and which folder picks which |
 | `src/launch.rs` | builds the `claude` command + window env |
-| `src/tmux.rs` | tmux CLI wrapper (takes a socket, ready for remote hosts) |
+| `src/tmux.rs` | tmux CLI wrapper (takes a socket) |
 | `src/mcp.rs` | MCP tools |
 | `src/status.rs` | the `status --json` document fincas report |
-| `src/finca.rs` | finca files, SSH probe, poller, connect |
-| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop |
-
+| `src/finca.rs` | finca files, SSH probe, poller, connect, shells |
+| `src/todo.rs` | to-do lists and their vim keys (pure) |
+| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop, `help.rs` the `?` list |
 
 ```sh
-cargo test     # ~200 tests, including real tmux servers on throwaway sockets
+cargo test     # ~280 tests, including real tmux servers on throwaway sockets
 cargo clippy --all-targets -- -D warnings
 ```
+
+Design history: [`docs/superpowers/specs/`](docs/superpowers/specs/).
