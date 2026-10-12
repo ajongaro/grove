@@ -102,9 +102,10 @@ fn accounts(cfg: &Config, out: &mut Vec<Check>) {
     for name in names {
         let Ok(a) = cfg.account(name) else { continue };
         let what = format!("account {}", a.name);
-        if a.dir.is_dir() {
-            out.push(check(Level::Ok, what, show(&a.dir)));
-        } else {
+        let folder = name
+            .and_then(|n| cfg.accounts[n].folder.as_deref())
+            .map(crate::config::expand_tilde);
+        if !a.dir.is_dir() {
             out.push(check(
                 Level::Fail,
                 what,
@@ -114,6 +115,17 @@ fn accounts(cfg: &Config, out: &mut Vec<Check>) {
                     show(&a.dir)
                 ),
             ));
+        } else if let Some(f) = folder.filter(|f| !f.is_dir()) {
+            out.push(check(
+                Level::Warn,
+                what,
+                format!(
+                    "its folder {} doesn't exist, so no project uses it",
+                    show(&f)
+                ),
+            ));
+        } else {
+            out.push(check(Level::Ok, what, show(&a.dir)));
         }
     }
 }
@@ -138,10 +150,13 @@ fn projects(store: &Store, cfg: &Config, out: &mut Vec<Check>) {
                             p.slug()
                         ),
                     ));
-                } else if let Err(e) = cfg.account(p.account.as_deref()) {
-                    out.push(check(Level::Fail, what, format!("{e:#}")));
                 } else {
-                    out.push(check(Level::Ok, what, show(&p.path)));
+                    let account = cfg.account_for(&p.path).name;
+                    out.push(check(
+                        Level::Ok,
+                        what,
+                        format!("{} ({account})", show(&p.path)),
+                    ));
                 }
             }
         }
@@ -234,19 +249,15 @@ mod tests {
         )
         .unwrap();
         let store = Store::new(paths.clone());
-        let proj = |name: &str, path: &Path, account: Option<&str>| Project {
+        let proj = |name: &str, path: &Path| Project {
             name: name.into(),
             path: path.into(),
             color: None,
             summary: None,
-            account: account.map(str::to_string),
         };
-        store.add_project(&proj("here", d.path(), None)).unwrap();
+        store.add_project(&proj("here", d.path())).unwrap();
         store
-            .add_project(&proj("gone", &d.path().join("nope"), None))
-            .unwrap();
-        store
-            .add_project(&proj("typo", d.path(), Some("wrok")))
+            .add_project(&proj("gone", &d.path().join("nope")))
             .unwrap();
         store
             .add_finca(&Finca {
@@ -269,11 +280,44 @@ mod tests {
         assert_eq!(level_of(&checks, "account play"), Level::Ok);
         assert_eq!(level_of(&checks, "account work"), Level::Fail);
         assert_eq!(level_of(&checks, "project here"), Level::Ok);
+        let here = checks.iter().find(|c| c.what == "project here").unwrap();
+        assert!(here.detail.ends_with("(play)"), "{here:?}");
         assert_eq!(level_of(&checks, "project gone"), Level::Fail);
-        assert_eq!(level_of(&checks, "project typo"), Level::Fail);
         // Away from home isn't broken.
         assert_eq!(level_of(&checks, "finca away"), Level::Warn);
         assert_eq!(level_of(&checks, "alerts"), Level::Ok);
+    }
+
+    #[test]
+    fn an_accounts_missing_folder_only_warns() {
+        let d = tempfile::tempdir().unwrap();
+        let paths = Paths::new(d.path().join("home"));
+        paths.ensure().unwrap();
+        let (play, work) = (d.path().join("claude-play"), d.path().join("claude-work"));
+        std::fs::create_dir(&play).unwrap();
+        std::fs::create_dir(&work).unwrap();
+        let write = |folder: &Path| {
+            std::fs::write(
+                paths.config_file(),
+                format!(
+                    "claude_config_dir = \"{}\"\n[accounts.work]\ndir = \"{}\"\nfolder = \"{}\"\n",
+                    play.display(),
+                    work.display(),
+                    folder.display()
+                ),
+            )
+            .unwrap()
+        };
+        write(&d.path().join("Work"));
+        assert_eq!(
+            level_of(&run(&paths, &ok_probes()), "account work"),
+            Level::Warn
+        );
+        std::fs::create_dir(d.path().join("Work")).unwrap();
+        assert_eq!(
+            level_of(&run(&paths, &ok_probes()), "account work"),
+            Level::Ok
+        );
     }
 
     #[test]

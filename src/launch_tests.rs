@@ -38,7 +38,6 @@ fn project(e: &Env) -> Project {
         path: e.proj_dir.clone(),
         color: Some("#2e8b57".into()),
         summary: None,
-        account: None,
     }
 }
 
@@ -159,9 +158,10 @@ fn next_session_name_skips_live_names() {
     assert_eq!(next_session_name(&store, "other"), "s1");
 }
 
-/// `cfg` plus a `work` account whose dir exists.
+/// `cfg` plus a `work` account (dir exists) for projects under `<tmp>/Work`.
 fn cfg_with_work(e: &Env) -> (Config, PathBuf) {
-    let work = e.proj_dir.parent().unwrap().join("claude work");
+    let tmp = e.proj_dir.parent().unwrap();
+    let work = tmp.join("claude work");
     std::fs::create_dir_all(&work).unwrap();
     let mut c = cfg(e);
     c.accounts.insert(
@@ -169,24 +169,34 @@ fn cfg_with_work(e: &Env) -> (Config, PathBuf) {
         crate::config::AccountConfig {
             dir: work.to_string_lossy().into(),
             color: Some("#e8a33d".into()),
+            folder: Some(tmp.join("Work").to_string_lossy().into()),
         },
     );
     (c, work)
 }
 
+/// A project in `<tmp>/Work/acme`.
+fn work_project(e: &Env) -> Project {
+    let dir = e.proj_dir.parent().unwrap().join("Work").join("acme");
+    std::fs::create_dir_all(&dir).unwrap();
+    Project {
+        name: "acme".into(),
+        path: dir,
+        ..project(e)
+    }
+}
+
 #[test]
-fn build_uses_the_projects_account() {
+fn build_picks_the_account_from_the_project_folder() {
     let e = env();
     let (c, work) = cfg_with_work(&e);
-    let mut p = project(&e);
-    p.account = Some("work".into());
-    let spec = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude").unwrap();
+    let spec = build_with_bin(&c, &e.paths, &work_project(&e), "u", "s1", "/b/claude").unwrap();
     assert_eq!(
         env_val(&spec, "CLAUDE_CONFIG_DIR"),
         Some(work.to_str().unwrap())
     );
     assert_eq!(spec.account.name, "work");
-    // No account: the default.
+    // Outside the work folder: the default.
     let spec = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", "/b/claude").unwrap();
     assert_eq!(
         env_val(&spec, "CLAUDE_CONFIG_DIR"),
@@ -195,23 +205,11 @@ fn build_uses_the_projects_account() {
 }
 
 #[test]
-fn build_refuses_unknown_or_missing_account() {
+fn build_refuses_a_missing_account_dir() {
     let e = env();
-    let mut c = cfg(&e);
-    let mut p = project(&e);
-    p.account = Some("work".into());
-    let err = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude")
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("unknown account \"work\""), "{err}");
-    c.accounts.insert(
-        "work".into(),
-        crate::config::AccountConfig {
-            dir: "/definitely/not/here".into(),
-            color: None,
-        },
-    );
-    let err = build_with_bin(&c, &e.paths, &p, "u", "s1", "/b/claude")
+    let (mut c, _) = cfg_with_work(&e);
+    c.accounts.get_mut("work").unwrap().dir = "/definitely/not/here".into();
+    let err = build_with_bin(&c, &e.paths, &work_project(&e), "u", "s1", "/b/claude")
         .unwrap_err()
         .to_string();
     assert!(err.contains("/definitely/not/here"), "{err}");

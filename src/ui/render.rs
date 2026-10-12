@@ -18,15 +18,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
-    if app.fincas.is_empty() {
-        render_projects(frame, app, left);
+    let projects = if app.fincas.is_empty() {
+        left
     } else {
         let rows = (app.fincas.len() as u16 + 2).min(left.height / 2).max(3);
         let [projects, fincas] =
             Layout::vertical([Constraint::Min(3), Constraint::Length(rows)]).areas(left);
-        render_projects(frame, app, projects);
         render_fincas(frame, app, fincas, now);
-    }
+        projects
+    };
+    render_project_boxes(frame, app, projects);
     match app.selected_finca() {
         Some(f) => render_finca_detail(frame, app, f, right, now),
         None => render_sessions(frame, app, right, now),
@@ -163,18 +164,68 @@ fn pane_block(title: &str, focused: bool) -> Block<'_> {
     }
 }
 
-fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
-    let block = pane_block("Projects", app.pane == Pane::Projects);
-    if app.projects.is_empty() {
-        let p = Paragraph::new("No projects yet — press a to add one.")
+/// One box per account group (play above work), stacked in equal shares;
+/// a single "Projects" box when no account owns a folder.
+fn render_project_boxes(frame: &mut Frame, app: &App, area: Rect) {
+    let groups = app.groups();
+    let areas = Layout::vertical(groups.iter().map(|_| Constraint::Fill(1))).split(area);
+    let mut start = 0;
+    for (g, area) in groups.iter().zip(areas.iter()) {
+        let len = app.projects[start..]
+            .iter()
+            .take_while(|p| app.account_of(p).name == g.name)
+            .count();
+        let title = if groups.len() == 1 {
+            "Projects"
+        } else {
+            &g.name
+        };
+        let empty = match app
+            .cfg
+            .accounts
+            .get(&g.name)
+            .and_then(|a| a.folder.as_deref())
+        {
+            Some(folder) => format!("No projects in {folder}."),
+            None => "No projects yet — press a to add one.".to_string(),
+        };
+        render_projects(
+            frame,
+            app,
+            *area,
+            title,
+            g.color.as_deref(),
+            start..start + len,
+            &empty,
+        );
+        start += len;
+    }
+}
+
+fn render_projects(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    title: &str,
+    color: Option<&str>,
+    rows: std::ops::Range<usize>,
+    empty: &str,
+) {
+    let has_selection = app.pane == Pane::Projects && rows.contains(&app.proj_idx);
+    let mut block = pane_block(title, has_selection);
+    if let Some(c) = parse_hex(color) {
+        block = block.title_style(Style::new().fg(c));
+    }
+    if rows.is_empty() {
+        let p = Paragraph::new(empty.to_string())
             .wrap(Wrap { trim: true })
+            .dark_gray()
             .block(block);
         frame.render_widget(p, area);
         return;
     }
     let needs = app.needs_you_by_project();
-    let items: Vec<ListItem> = app
-        .projects
+    let items: Vec<ListItem> = app.projects[rows.clone()]
         .iter()
         .map(|p| {
             if p.error.is_some() {
@@ -200,12 +251,13 @@ fn render_projects(frame: &mut Frame, app: &App, area: Rect) {
             if let Some(n) = needs.get(&p.slug) {
                 spans.push(Span::raw(format!("  ⚑{n}")).red().bold());
             }
-            spans.push(account_span(app, p));
             ListItem::new(Line::from(spans))
         })
         .collect();
-    // The selection may be down in the fincas list instead.
-    let selected = (app.proj_idx < app.projects.len()).then_some(app.proj_idx);
+    // The selection may be in another box, or down in the fincas list.
+    let selected = rows
+        .contains(&app.proj_idx)
+        .then(|| app.proj_idx - rows.start);
     let mut state = ListState::default().with_selected(selected);
     let list = List::new(items)
         .block(block)
@@ -332,10 +384,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let title = match app.selected_project() {
-        Some(p) => match app.account_of(p) {
-            Ok((account, _)) => format!("Sessions — {} · {account}", p.name),
-            Err(_) => format!("Sessions — {}", p.name),
-        },
+        Some(p) => format!("Sessions — {} · {}", p.name, app.account_of(p).name),
         None => "Sessions".to_string(),
     };
     let block = pane_block(&title, app.pane == Pane::Sessions);
@@ -409,20 +458,6 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-/// The project's Claude account, in its color; an unknown one in red.
-fn account_span(app: &App, p: &super::app::ProjectRow) -> Span<'static> {
-    match app.account_of(p) {
-        Ok((name, color)) => Span::styled(
-            format!("  {name}"),
-            match parse_hex(color.as_deref()) {
-                Some(c) => Style::new().fg(c),
-                None => Style::new().dark_gray(),
-            },
-        ),
-        Err(name) => Span::raw(format!("  {name}?")).red(),
-    }
 }
 
 fn highlight(focused: bool) -> Style {

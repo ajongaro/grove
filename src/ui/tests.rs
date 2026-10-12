@@ -38,7 +38,6 @@ fn store_with(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, St
                 path: format!("/code/{p}").into(),
                 color: None,
                 summary: None,
-                account: None,
             })
             .unwrap();
     }
@@ -104,7 +103,6 @@ fn reload_keeps_selection_on_same_project() {
         path: "/a".into(),
         color: None,
         summary: None,
-        account: None,
     })
     .unwrap();
     app.reload(&s);
@@ -834,7 +832,6 @@ fn reload_keeps_finca_selection_and_poll_state() {
         path: "/b".into(),
         color: None,
         summary: None,
-        account: None,
     })
     .unwrap();
     app.reload(&s);
@@ -958,25 +955,78 @@ fn create_confirmation_is_rendered() {
     );
 }
 
-#[test]
-fn project_rows_name_their_claude_account() {
-    let (_d, s) = store_with(&["mine", "job", "typo"], &[]);
-    for (name, account) in [("job", "work"), ("typo", "wrok")] {
-        let mut p = s.get_project(name).unwrap();
-        p.account = Some(account.into());
-        s.save_project(&p).unwrap();
+// ---------- play / work ----------
+
+/// An app whose config puts projects under /w on the work account.
+fn work_and_play(projects: &[(&str, &str)]) -> (tempfile::TempDir, Store, App) {
+    let (d, s) = store_with(&[], &[]);
+    for (name, path) in projects {
+        s.add_project(&Project {
+            name: name.to_string(),
+            path: path.into(),
+            color: None,
+            summary: None,
+        })
+        .unwrap();
     }
     let mut app = App::new("/x".into());
     app.cfg = toml::from_str(
-        "claude_config_dir = \"~/.claude-play\"\n[accounts.work]\ndir = \"~/.claude-work\"\n",
+        "claude_config_dir = \"~/.claude-play\"\n\
+         [accounts.work]\ndir = \"~/.claude-work\"\nfolder = \"/w\"\n",
     )
     .unwrap();
     app.reload(&s);
+    (d, s, app)
+}
+
+fn row_of(screen: &str, text: &str) -> usize {
+    screen
+        .lines()
+        .position(|l| l.contains(text))
+        .unwrap_or_else(|| panic!("no {text:?} in\n{screen}"))
+}
+
+#[test]
+fn work_projects_come_after_play_projects() {
+    let (_d, _s, mut app) = work_and_play(&[
+        ("acme", "/w/acme"),
+        ("beta", "/code/beta"),
+        ("zed", "/code/zed"),
+    ]);
+    let order: Vec<_> = app.projects.iter().map(|p| p.slug.as_str()).collect();
+    assert_eq!(order, ["beta", "zed", "acme"]);
+    // j runs straight from the last play project into the work box.
+    handle_key(&mut app, ch('j'));
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.selected_project().unwrap().slug, "acme");
+}
+
+#[test]
+fn play_box_sits_above_the_work_box() {
+    let (_d, _s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    app.proj_idx = 1; // acme
+    let out = screen(&app, 100, 20);
+    let (play, work) = (row_of(&out, "╭ play "), row_of(&out, "╭ work "));
+    assert!(play < work, "{out}");
+    assert!((play..work).contains(&row_of(&out, "● beta")), "{out}");
+    assert!(row_of(&out, "● acme") > work, "{out}");
+    assert!(out.contains("Sessions — acme · work"), "{out}");
+}
+
+#[test]
+fn an_empty_work_box_says_where_work_projects_go() {
+    let (_d, _s, app) = work_and_play(&[("beta", "/code/beta")]);
+    let out = screen(&app, 100, 20);
+    assert!(out.contains("No projects in /w"), "{out}");
+}
+
+#[test]
+fn without_account_folders_there_is_one_projects_box() {
+    // A finca: everything runs on the default account.
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
     let out = screen(&app, 100, 12);
-    for row in ["● mine  play", "● job  work", "● typo  wrok?"] {
-        assert!(out.contains(row), "missing {row}\n{out}");
-    }
-    assert!(out.contains("Sessions — job · work"), "{out}");
+    assert!(out.contains(" Projects "), "{out}");
+    assert!(!out.contains("╭ work "), "{out}");
 }
 
 #[test]

@@ -55,18 +55,9 @@ enum Cmd {
         /// Create the folder (and git init it) if it doesn't exist, without asking.
         #[arg(long)]
         new: bool,
-        /// Claude account for its sessions (a name from config.toml).
-        #[arg(long)]
-        account: Option<String>,
     },
     /// Forget a project. Its folder and wiki are kept.
     Rm { project: String },
-    /// Show or set the Claude account a project's sessions use.
-    Account {
-        project: String,
-        /// An account name from config.toml; omit to show the current one.
-        name: Option<String>,
-    },
     /// Check tmux, claude, accounts, projects and fincas; lists every problem.
     Doctor,
     /// Manage fincas: other machines running their own Grove.
@@ -125,9 +116,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Some(Cmd::Add { path, new, account }) => exit_on_err(add(&paths, path, new, account)),
+        Some(Cmd::Add { path, new }) => exit_on_err(add(&paths, path, new)),
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
-        Some(Cmd::Account { project, name }) => exit_on_err(account_cmd(&paths, &project, name)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
@@ -159,14 +149,10 @@ fn run_hook(paths: Paths) {
     }
 }
 
-fn add(paths: &Paths, path: Option<PathBuf>, new: bool, account: Option<String>) -> Result<()> {
+fn add(paths: &Paths, path: Option<PathBuf>, new: bool) -> Result<()> {
     use std::io::{BufRead, IsTerminal, Write};
     paths.ensure()?;
-    // Check the account before creating anything.
     let cfg = load_config(paths)?;
-    if let Some(a) = &account {
-        cfg.account(Some(a))?;
-    }
     let path = match path {
         Some(p) => p,
         None => std::env::current_dir()?,
@@ -176,7 +162,7 @@ fn add(paths: &Paths, path: Option<PathBuf>, new: bool, account: Option<String>)
     if config::expand_tilde(&text).exists() {
         let name = ui::run::add_project_at(&store, &text)?;
         println!("Added project {name}");
-        return set_account(&store, &cfg, &name, account);
+        return print_account(&store, &cfg, &name);
     }
     if !new {
         if !std::io::stdin().is_terminal() {
@@ -192,21 +178,15 @@ fn add(paths: &Paths, path: Option<PathBuf>, new: bool, account: Option<String>)
     }
     let name = ui::run::create_project_at(&store, &text)?;
     println!("Created project {name} (git init)");
-    set_account(&store, &cfg, &name, account)
+    print_account(&store, &cfg, &name)
 }
 
-/// Stores `account` on the project (the default account is stored as none).
-fn set_account(store: &Store, cfg: &Config, project: &str, account: Option<String>) -> Result<()> {
-    let Some(name) = account else {
-        return Ok(());
-    };
-    let a = cfg.account(Some(&name))?;
-    let mut p = store.get_project(project)?;
-    p.account = (a.name != cfg.default_account().name).then_some(a.name.clone());
-    store.save_project(&p)?;
+/// Says which account the new project's folder puts it on.
+fn print_account(store: &Store, cfg: &Config, project: &str) -> Result<()> {
+    let p = store.get_project(project)?;
+    let a = cfg.account_for(&p.path);
     println!(
-        "{} sessions use the {} account ({})",
-        p.name,
+        "Its sessions use the {} account ({})",
         a.name,
         a.dir.display()
     );
@@ -218,23 +198,6 @@ fn rm(paths: &Paths, project: &str) -> Result<()> {
     let store = Store::new(paths.clone());
     let msg = ui::run::remove_project(&store, &grove_tmux(paths), &cfg.tmux_session, project)?;
     println!("{msg}");
-    Ok(())
-}
-
-fn account_cmd(paths: &Paths, project: &str, name: Option<String>) -> Result<()> {
-    let cfg = load_config(paths)?;
-    let store = Store::new(paths.clone());
-    if name.is_some() {
-        return set_account(&store, &cfg, project, name);
-    }
-    let p = store.get_project(project)?;
-    let a = cfg.account(p.account.as_deref())?;
-    println!(
-        "{} sessions use the {} account ({})",
-        p.name,
-        a.name,
-        a.dir.display()
-    );
     Ok(())
 }
 

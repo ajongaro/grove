@@ -47,8 +47,6 @@ pub struct ProjectRow {
     pub name: String,
     pub path: PathBuf,
     pub color: Option<String>,
-    /// The project file's `account`; None means the default account.
-    pub account: Option<String>,
     /// Set when the project file couldn't be parsed.
     pub error: Option<String>,
 }
@@ -154,12 +152,21 @@ impl App {
         }
     }
 
-    /// The project's account name and color; Err holds the unknown name.
-    pub fn account_of(&self, p: &ProjectRow) -> Result<(String, Option<String>), String> {
-        match self.cfg.account(p.account.as_deref()) {
-            Ok(a) => Ok((a.name, a.color)),
-            Err(_) => Err(p.account.clone().unwrap_or_default()),
+    /// The left pane's project boxes, top to bottom: the default account,
+    /// then each account that owns a folder. One entry means one box.
+    pub fn groups(&self) -> Vec<crate::config::Account> {
+        let mut out = vec![self.cfg.default_account()];
+        for (name, a) in &self.cfg.accounts {
+            if a.folder.is_some() {
+                out.push(self.cfg.account(Some(name)).expect("listed account"));
+            }
         }
+        out
+    }
+
+    /// The account the project's folder puts it on.
+    pub fn account_of(&self, p: &ProjectRow) -> crate::config::Account {
+        self.cfg.account_for(&p.path)
     }
 
     /// Re-reads projects and sessions, keeping the selection on the same
@@ -178,7 +185,6 @@ impl App {
                     name: p.name,
                     path: p.path,
                     color: p.color,
-                    account: p.account,
                     error: None,
                 },
                 Err((path, err)) => {
@@ -192,12 +198,17 @@ impl App {
                         name: stem,
                         path,
                         color: None,
-                        account: None,
                         error: Some(err),
                     }
                 }
             })
             .collect();
+        // Box order, so each box's projects are one contiguous run.
+        let groups = self.groups();
+        self.projects.sort_by_key(|p| {
+            let name = self.cfg.account_for(&p.path).name;
+            groups.iter().position(|g| g.name == name).unwrap_or(0)
+        });
         self.sessions = store.list_sessions(None);
 
         if let Some(i) =

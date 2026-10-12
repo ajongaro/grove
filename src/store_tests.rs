@@ -14,7 +14,6 @@ fn proj(name: &str) -> Project {
         path: "/tmp/x".into(),
         color: None,
         summary: None,
-        account: None,
     }
 }
 
@@ -108,6 +107,19 @@ fn malformed_project_file_is_reported_not_fatal() {
     assert_eq!(all.iter().filter(|r| r.is_ok()).count(), 1);
     let bad = all.iter().find_map(|r| r.as_ref().err()).unwrap();
     assert!(bad.0.ends_with("bad.toml"));
+}
+
+#[test]
+fn project_file_from_before_folder_accounts_still_loads() {
+    // `account` was set per project before the folder decided it; it's ignored.
+    let (_d, s) = store();
+    std::fs::create_dir_all(&s.paths.projects).unwrap();
+    std::fs::write(
+        s.paths.projects.join("acme.toml"),
+        "name = \"acme\"\npath = \"/tmp/x\"\naccount = \"work\"\n",
+    )
+    .unwrap();
+    assert_eq!(s.get_project("acme").unwrap().name, "acme");
 }
 
 #[test]

@@ -178,7 +178,6 @@ pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
         path: dir,
         color: None,
         summary: None,
-        account: None,
     })?;
     Ok(name)
 }

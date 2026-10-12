@@ -13,9 +13,6 @@ pub struct Project {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// A named account from config.toml; None means the default account.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
 }
 
 impl Project {

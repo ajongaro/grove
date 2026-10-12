@@ -1,7 +1,7 @@
 //! Grove settings (`config.toml`) and the on-disk layout under `GROVE_HOME`.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -52,6 +52,10 @@ pub struct AccountConfig {
     pub dir: String,
     #[serde(default)]
     pub color: Option<String>,
+    /// Projects under this folder run on this account, e.g. `~/Work`.
+    /// Projects under no account's folder run on the default account.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 /// A Claude account a session runs on.
@@ -77,7 +81,26 @@ impl Config {
         }
     }
 
-    /// The account a project names, or the default for `None`.
+    /// The account a project at `path` runs on: the one whose `folder`
+    /// contains it, else the default.
+    pub fn account_for(&self, path: &Path) -> Account {
+        let path = resolve(path);
+        self.accounts
+            .iter()
+            .find(|(_, a)| {
+                a.folder
+                    .as_deref()
+                    .is_some_and(|f| folder_contains(&resolve(&expand_tilde(f)), &path))
+            })
+            .map(|(name, a)| Account {
+                name: name.clone(),
+                dir: expand_tilde(&a.dir),
+                color: a.color.clone(),
+            })
+            .unwrap_or_else(|| self.default_account())
+    }
+
+    /// An account by name, or the default for `None`.
     pub fn account(&self, name: Option<&str>) -> Result<Account> {
         let default = self.default_account();
         let Some(name) = name.filter(|n| *n != default.name) else {
@@ -99,6 +122,24 @@ impl Config {
                 )
             }
         }
+    }
+}
+
+/// Symlinks resolved, so a folder and a project path compare however each
+/// was written; as given when it doesn't exist.
+fn resolve(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Whether `path` is `folder` or somewhere inside it.
+/// Compares whole components (`~/Workshop` isn't in `~/Work`), ignoring case
+/// on macOS, where the filesystem does.
+fn folder_contains(folder: &Path, path: &Path) -> bool {
+    if cfg!(target_os = "macos") {
+        let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+        lower(path).starts_with(lower(folder))
+    } else {
+        path.starts_with(folder)
     }
 }
 
@@ -307,6 +348,74 @@ mod tests {
             err.contains("wrok") && err.contains("personal, work"),
             "{err}"
         );
+    }
+
+    fn work_and_play() -> Config {
+        toml::from_str(
+            "claude_config_dir = \"/c/play\"\n\
+             [accounts.work]\ndir = \"/c/work\"\nfolder = \"/u/Work\"\n",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_project_under_an_accounts_folder_uses_that_account() {
+        let c = work_and_play();
+        assert_eq!(c.account_for(Path::new("/u/Work/acme")).name, "work");
+        assert_eq!(c.account_for(Path::new("/u/Work/a/b/c")).name, "work");
+        assert_eq!(c.account_for(Path::new("/u/Work")).name, "work");
+    }
+
+    #[test]
+    fn a_project_anywhere_else_uses_the_default_account() {
+        let c = work_and_play();
+        assert_eq!(c.account_for(Path::new("/u/Play/grove")).name, "play");
+        assert_eq!(c.account_for(Path::new("/tmp/x")).name, "play");
+        // A sibling that merely starts with the same letters isn't inside.
+        assert_eq!(c.account_for(Path::new("/u/Workshop/x")).name, "play");
+    }
+
+    #[test]
+    fn folder_match_ignores_a_trailing_slash() {
+        let c: Config = toml::from_str(
+            "claude_config_dir = \"/c/play\"\n\
+             [accounts.work]\ndir = \"/c/work\"\nfolder = \"/u/Work/\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.account_for(Path::new("/u/Work/acme")).name, "work");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn folder_match_ignores_case_on_macos() {
+        // APFS is case-insensitive: ~/work/acme is the same folder as ~/Work/acme.
+        let c = work_and_play();
+        assert_eq!(c.account_for(Path::new("/u/work/acme")).name, "work");
+    }
+
+    #[test]
+    fn folder_reached_through_a_symlink_still_matches() {
+        // Project paths are stored canonicalized (`grove add`), so a folder
+        // behind a symlink must be resolved too.
+        let d = tempfile::tempdir().unwrap();
+        let real = d.path().canonicalize().unwrap().join("real-work");
+        std::fs::create_dir_all(real.join("acme")).unwrap();
+        let link = d.path().join("Work");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let c: Config = toml::from_str(&format!(
+            "claude_config_dir = \"/c/play\"\n\
+             [accounts.work]\ndir = \"/c/work\"\nfolder = \"{}\"\n",
+            link.display()
+        ))
+        .unwrap();
+        assert_eq!(c.account_for(&real.join("acme")).name, "work");
+    }
+
+    #[test]
+    fn without_folders_everything_uses_the_default_account() {
+        // A finca: no account names a folder.
+        let c: Config = toml::from_str("claude_config_dir = \"/c/play\"\n").unwrap();
+        assert_eq!(c.account_for(Path::new("/u/Work/acme")).name, "play");
     }
 
     #[test]

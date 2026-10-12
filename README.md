@@ -5,7 +5,8 @@ projects.
 
 - **Projects:** each has a folder, a color and a summary.
 - **Sessions:** each Claude Code session runs in its own tmux window, on its
-  project's Claude account (see [More than one Claude account](#more-than-one-claude-account)).
+  project's Claude account, picked by its folder: `~/Work` → work, else
+  play (see [Play and Work](#more-than-one-claude-account-play-and-work)).
 - **Signals:** the dashboard shows which sessions are working, which need you
   (a permission prompt), and which are waiting for your next message.
 - **Wiki:** per-project Markdown notes that Claude can read and write through
@@ -118,31 +119,31 @@ claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
 ```
 
-### More than one Claude account
+### More than one Claude account (Play and Work)
 
-Each project can run on its own Claude account, e.g. personal and work.
-Name the extra accounts in `config.toml`; `claude_config_dir` stays the
-default account:
+A project's **folder** picks its Claude account. On this laptop, projects
+under `~/Work` run on the work account and everything else (`~/Play`, or
+anywhere) runs on the default play account. Add a folder; that's it.
 
 ```toml
-claude_config_dir = "~/.claude-personal"   # shown as "personal"
+claude_config_dir = "~/.claude-play"       # default account, shown as "play"
 # account_name = "home"                    # optional: name it yourself
 # account_color = "#7aa2f7"
 
 [accounts.work]
 dir = "~/.claude-work"
 color = "#e8a33d"
+folder = "~/Work"                          # projects under here use this account
 ```
 
-```sh
-grove add ~/code/acme-api --account work   # new project on the work account
-grove account acme-api work                # move an existing project
-grove account acme-api                     # which account it uses
-```
+When an account has a `folder`, the dashboard's left column splits into
+stacked boxes: **play** on top, **work** below (then fincas). `j`/`k` run
+straight through both. The tmux status bar shows the account of the window
+you're in, and `grove add` says which account the folder picked. To move a
+project to the other account, move its folder and add it again.
 
-The dashboard shows each project's account next to its name, and the tmux
-status bar shows the account of the window you're in. A project naming an
-account that isn't in `config.toml` won't start sessions (shown as `name?`).
+Fincas have no `folder` set, so everything there runs on play and the
+dashboard keeps a single Projects box.
 
 Grove never edits `~/.claude*/settings.json`. Hooks are passed per session
 with `--settings run/hooks.json` and the MCP server with

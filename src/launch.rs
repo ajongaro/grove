@@ -39,7 +39,7 @@ fn build_with_bin(
     name: &str,
     bin: &str,
 ) -> Result<LaunchSpec> {
-    let account = cfg.account(project.account.as_deref())?;
+    let account = cfg.account_for(&project.path);
     let account_path = account_dir(&account)?;
     if !project.path.is_dir() {
         bail!(
