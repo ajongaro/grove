@@ -203,6 +203,7 @@ folder = "~/Work"                          # projects under here use this accoun
 
 When an account has a `folder`, the dashboard's left column splits into one
 box per account (the default on top), and `j`/`k` run straight through them.
+Within each box, projects with the most live sessions come first.
 The tmux status bar shows the account of the window you're in, and `grove add`
 says which account a folder picked. To move a project to another account,
 move its folder and add it again.

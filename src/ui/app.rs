@@ -235,13 +235,23 @@ impl App {
                 }
             })
             .collect();
-        // Box order, so each box's projects are one contiguous run.
-        let groups = self.groups();
-        self.projects.sort_by_key(|p| {
-            let name = self.cfg.account_for(&p.path).name;
-            groups.iter().position(|g| g.name == name).unwrap_or(0)
-        });
         self.sessions = store.list_sessions(None);
+        // Box order (each box's projects one contiguous run), then most live
+        // sessions first; the sort is stable, so ties stay alphabetical.
+        let groups = self.groups();
+        let mut live: HashMap<&str, usize> = HashMap::new();
+        for s in self.sessions.iter().filter(|s| state_is_live(s.state)) {
+            *live.entry(s.project.as_str()).or_default() += 1;
+        }
+        let key = |p: &ProjectRow| {
+            let name = self.cfg.account_for(&p.path).name;
+            let group = groups.iter().position(|g| g.name == name).unwrap_or(0);
+            let n = live.get(p.slug.as_str()).copied().unwrap_or(0);
+            (group, std::cmp::Reverse(n))
+        };
+        let mut projects = std::mem::take(&mut self.projects);
+        projects.sort_by_cached_key(key);
+        self.projects = projects;
 
         if let Some(i) =
             keep_project.and_then(|slug| self.projects.iter().position(|p| p.slug == slug))

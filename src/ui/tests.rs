@@ -1520,3 +1520,53 @@ fn j_and_k_stay_letters_while_typing_a_todo() {
     assert_eq!(app.pane, Pane::Todo);
     assert_eq!(app.todos.items[0].text, "kj");
 }
+
+// ---------- ordering by live sessions ----------
+
+fn slugs(app: &App) -> Vec<&str> {
+    app.projects.iter().map(|p| p.slug.as_str()).collect()
+}
+
+#[test]
+fn projects_with_more_live_sessions_come_first() {
+    let (_d, _s, app) = loaded(
+        &["alpha", "beta", "delta", "gamma"],
+        &[
+            session("1", "beta", "s1", State::Working, Some("@1")),
+            session("2", "beta", "s2", State::YourTurn, Some("@2")),
+            session("3", "gamma", "s1", State::NeedsYou, Some("@3")),
+            // Ended sessions don't count.
+            session("4", "delta", "s1", State::Ended, None),
+            session("5", "delta", "s2", State::Ended, None),
+        ],
+    );
+    // Ties (alpha, delta: none live) stay alphabetical.
+    assert_eq!(slugs(&app), ["beta", "gamma", "alpha", "delta"]);
+}
+
+#[test]
+fn each_account_box_is_ordered_on_its_own() {
+    let (_d, s, mut app) = work_and_play(&[
+        ("acme", "/w/acme"),
+        ("beta", "/code/beta"),
+        ("zed", "/code/zed"),
+    ]);
+    for (id, p) in [("1", "acme"), ("2", "acme"), ("3", "zed")] {
+        s.save_session(&session(id, p, "s", State::Working, Some("@1")))
+            .unwrap();
+    }
+    app.reload(&s);
+    // zed (1 live) above beta in PLAY; acme (2 live) still in WORK below.
+    assert_eq!(slugs(&app), ["zed", "beta", "acme"]);
+}
+
+#[test]
+fn selection_follows_the_project_when_the_order_changes() {
+    let (_d, s, mut app) = loaded(&["alpha", "beta"], &[]);
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+    s.save_session(&session("1", "beta", "s1", State::Working, Some("@1")))
+        .unwrap();
+    app.reload(&s);
+    assert_eq!(slugs(&app), ["beta", "alpha"]);
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+}
