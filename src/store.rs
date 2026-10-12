@@ -38,7 +38,7 @@ impl Store {
                     .map_err(|e| e.to_string())
                     .and_then(|t| toml::from_str::<Project>(&t).map_err(|e| e.to_string()))
                     .and_then(|p| {
-                        // Sessions and the wiki are keyed by the file's slug,
+                        // Sessions are keyed by the file's slug,
                         // so a renamed `name` would orphan them.
                         let stem = f.file_stem().unwrap_or_default().to_string_lossy();
                         if p.slug() == stem {
@@ -93,7 +93,7 @@ impl Store {
     }
 
     /// Sessions (optionally for one project slug), oldest first.
-    /// Deletes the project file. Its wiki and session files are left alone.
+    /// Deletes the project file. Its session files are left alone.
     pub fn remove_project(&self, name_or_slug: &str) -> Result<Project> {
         let p = self.get_project(name_or_slug)?;
         std::fs::remove_file(self.project_file(&p.slug()))?;
@@ -126,8 +126,6 @@ impl Store {
         }
     }
 
-    /// (title, path) for each wiki section, sorted by title. The title is the
-    /// file's first `# ` heading, else its file stem.
     pub fn list_fincas(&self) -> Vec<Result<crate::finca::Finca, BadFile>> {
         files_with_ext(&self.paths.fincas, "toml")
             .into_iter()
@@ -182,77 +180,6 @@ impl Store {
         let f = self.get_finca(name_or_slug)?;
         std::fs::remove_file(self.paths.fincas.join(format!("{}.toml", f.slug())))?;
         Ok(f)
-    }
-
-    pub fn wiki_sections(&self, slug: &str) -> Vec<(String, PathBuf)> {
-        let mut out: Vec<_> = files_with_ext(&self.paths.wiki.join(slug), "md")
-            .into_iter()
-            .map(|f| {
-                let title = std::fs::read_to_string(&f)
-                    .ok()
-                    .and_then(|t| {
-                        t.lines()
-                            .find_map(|l| l.strip_prefix("# ").map(|h| h.trim().to_string()))
-                    })
-                    .unwrap_or_else(|| {
-                        f.file_stem()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned()
-                    });
-                (title, f)
-            })
-            .collect();
-        out.sort_by_key(|(title, _)| title.to_lowercase());
-        out
-    }
-
-    /// One section (matched by title, case-insensitively) or, with `None`,
-    /// every section joined in title order.
-    pub fn read_wiki(&self, slug: &str, section: Option<&str>) -> Result<String> {
-        let sections = self.wiki_sections(slug);
-        let read = |p: &Path| {
-            std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))
-        };
-        match section {
-            None => Ok(sections
-                .iter()
-                .map(|(_, p)| read(p))
-                .collect::<Result<Vec<_>>>()?
-                .join("\n")),
-            Some(want) => {
-                let want_slug = slugify(want);
-                match sections.iter().find(|(t, _)| slugify(t) == want_slug) {
-                    Some((_, p)) => read(p),
-                    None => {
-                        let titles: Vec<_> = sections.iter().map(|(t, _)| t.as_str()).collect();
-                        bail!(
-                            "no wiki section {want:?}; sections: {}",
-                            list_or_none(&titles)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    /// Creates or replaces `wiki/<slug>/<slugified title>.md`. The file always
-    /// starts with `# <title>`; a matching heading in `content` isn't doubled.
-    pub fn write_wiki(&self, slug: &str, title: &str, content: &str) -> Result<PathBuf> {
-        let file_slug = slugify(title);
-        if file_slug.is_empty() {
-            bail!("wiki title {title:?} has no letters or digits");
-        }
-        let heading = format!("# {}", title.trim());
-        let body = content.trim();
-        let body = body
-            .strip_prefix(&heading)
-            .map(str::trim_start)
-            .unwrap_or(body);
-        let text = format!("{heading}\n\n{body}\n");
-        let path = self.paths.wiki.join(slug).join(format!("{file_slug}.md"));
-        write_atomic(&path, text.as_bytes())?;
-        Ok(path)
     }
 }
 

@@ -127,32 +127,29 @@ fn missing_grove_home_exits_zero() {
 }
 
 #[test]
-fn session_start_prints_project_context_with_wiki_titles() {
+fn session_start_prints_project_context() {
     let dir = setup("starting");
-    let wiki = home(&dir).join("wiki/demo");
-    std::fs::create_dir_all(&wiki).unwrap();
-    std::fs::write(wiki.join("commands.md"), "# Commands\n\nx").unwrap();
-    std::fs::write(wiki.join("architecture.md"), "# Architecture\n\ny").unwrap();
     let (code, out) = run_hook(&home(&dir), &fixture("session_start"));
     assert_eq!(code, 0);
     assert!(out.contains("Grove project: Demo (/tmp/demo)"), "{out}");
     assert!(out.contains("Summary: A demo project."), "{out}");
-    assert!(
-        out.contains("Wiki sections: Architecture, Commands"),
-        "{out}"
-    );
-    assert!(
-        !out.contains("x\n"),
-        "wiki bodies must not be printed: {out}"
-    );
+    assert!(!out.contains("Wiki"), "the wiki is gone: {out}");
     assert_eq!(session(&dir)["state"], "starting");
 }
 
 #[test]
-fn session_start_without_wiki_says_none() {
+fn session_start_without_a_summary_says_how_to_set_one() {
     let dir = setup("starting");
+    std::fs::write(
+        home(&dir).join("projects/demo.toml"),
+        "name = \"Demo\"\npath = \"/tmp/demo\"\n",
+    )
+    .unwrap();
     let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
-    assert!(out.contains("Wiki sections: none yet"), "{out}");
+    assert!(
+        out.contains("Summary: none yet (set it with the grove update_project tool)"),
+        "{out}"
+    );
 }
 
 /// Runs `grove hook` as it runs inside a Grove window: with GROVE_SESSION set.

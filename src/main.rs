@@ -56,7 +56,7 @@ enum Cmd {
         #[arg(long)]
         new: bool,
     },
-    /// Forget a project. Its folder and wiki are kept.
+    /// Forget a project. Its folder is kept.
     Rm { project: String },
     /// Check tmux, claude, accounts, projects and fincas; lists every problem.
     Doctor,
@@ -75,7 +75,7 @@ enum Cmd {
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
-    /// Internal: stdio MCP server for projects and the wiki.
+    /// Internal: stdio MCP server for Grove's projects.
     #[command(hide = true)]
     Mcp,
 }

@@ -50,12 +50,9 @@ fn get_project_defaults_to_session_project() {
     let (_d, m) = mcp(Some("beta"));
     add(&m, "alpha");
     add(&m, "beta");
-    m.store
-        .write_wiki("beta", "Commands", "cargo test")
-        .unwrap();
     let out = m.do_get_project(None).unwrap();
     assert!(out.contains("beta") && !out.contains("alpha"), "{out}");
-    assert!(out.contains("Commands"), "{out}");
+    assert!(!out.contains("Wiki"), "{out}");
 }
 
 #[test]
@@ -70,7 +67,7 @@ fn no_project_and_no_default_is_an_error() {
 fn unknown_project_lists_valid_names() {
     let (_d, m) = mcp(None);
     add(&m, "alpha");
-    let err = m.do_read_wiki(Some("nope".into()), None).unwrap_err();
+    let err = m.do_get_project(Some("nope".into())).unwrap_err();
     assert!(err.contains("alpha"), "{err}");
 }
 
@@ -103,40 +100,4 @@ fn update_project_with_nothing_to_change_errors() {
     let (_d, m) = mcp(Some("alpha"));
     add(&m, "alpha");
     assert!(m.do_update_project(None, None, None).is_err());
-}
-
-#[test]
-fn write_then_read_wiki() {
-    let (_d, m) = mcp(Some("alpha"));
-    add(&m, "alpha");
-    let out = m
-        .do_write_wiki_section(None, "Gotchas".into(), "Watch out.".into())
-        .unwrap();
-    assert!(out.contains("gotchas.md"), "{out}");
-    assert_eq!(
-        m.do_read_wiki(None, Some("gotchas".into())).unwrap(),
-        "# Gotchas\n\nWatch out.\n"
-    );
-    assert!(m.do_read_wiki(None, None).unwrap().contains("Watch out."));
-}
-
-#[test]
-fn read_empty_wiki_says_so() {
-    let (_d, m) = mcp(Some("alpha"));
-    add(&m, "alpha");
-    assert!(
-        m.do_read_wiki(None, None)
-            .unwrap()
-            .contains("no wiki sections")
-    );
-}
-
-#[test]
-fn write_wiki_to_unknown_project_errors_without_writing() {
-    let (_d, m) = mcp(None);
-    assert!(
-        m.do_write_wiki_section(Some("ghost".into()), "T".into(), "c".into())
-            .is_err()
-    );
-    assert!(!m.store.paths.wiki.join("ghost").exists());
 }

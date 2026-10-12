@@ -49,16 +49,7 @@ fn mcp_lists_five_tools_and_answers_a_call() {
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     names.sort();
-    assert_eq!(
-        names,
-        [
-            "get_project",
-            "list_projects",
-            "read_wiki",
-            "update_project",
-            "write_wiki_section"
-        ]
-    );
+    assert_eq!(names, ["get_project", "list_projects", "update_project"]);
 
     send(
         serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project","arguments":{}}}),

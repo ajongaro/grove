@@ -50,7 +50,6 @@ fn empty_home_lists_nothing() {
     let (_d, s) = store();
     assert!(s.list_projects().is_empty());
     assert!(s.list_sessions(None).is_empty());
-    assert!(s.wiki_sections("nope").is_empty());
     assert!(s.get_session("x").is_none());
 }
 
@@ -165,61 +164,6 @@ fn sessions_listed_oldest_first() {
         .map(|x| x.id)
         .collect();
     assert_eq!(ids, vec!["b", "a"]);
-}
-
-#[test]
-fn wiki_write_list_read() {
-    let (_d, s) = store();
-    let p = s
-        .write_wiki("proj", "Common Tasks", "Do the thing.")
-        .unwrap();
-    assert!(p.ends_with("proj/common-tasks.md"));
-    assert_eq!(
-        std::fs::read_to_string(&p).unwrap(),
-        "# Common Tasks\n\nDo the thing.\n"
-    );
-    s.write_wiki("proj", "Architecture", "Boxes.").unwrap();
-    let titles: Vec<_> = s
-        .wiki_sections("proj")
-        .into_iter()
-        .map(|(t, _)| t)
-        .collect();
-    assert_eq!(titles, vec!["Architecture", "Common Tasks"]);
-    assert_eq!(
-        s.read_wiki("proj", Some("common tasks")).unwrap(),
-        "# Common Tasks\n\nDo the thing.\n"
-    );
-    let all = s.read_wiki("proj", None).unwrap();
-    assert!(all.find("# Architecture").unwrap() < all.find("# Common Tasks").unwrap());
-}
-
-#[test]
-fn wiki_write_replaces_and_keeps_existing_heading() {
-    let (_d, s) = store();
-    s.write_wiki("proj", "Gotchas", "old").unwrap();
-    s.write_wiki("proj", "Gotchas", "# Gotchas\n\nnew").unwrap();
-    assert_eq!(
-        s.read_wiki("proj", Some("Gotchas")).unwrap(),
-        "# Gotchas\n\nnew\n"
-    );
-    assert_eq!(s.wiki_sections("proj").len(), 1);
-}
-
-#[test]
-fn wiki_title_falls_back_to_filename_without_heading() {
-    let (_d, s) = store();
-    let dir = s.paths.wiki.join("proj");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("notes.md"), "no heading here").unwrap();
-    assert_eq!(s.wiki_sections("proj")[0].0, "notes");
-}
-
-#[test]
-fn read_missing_wiki_section_errors_with_titles() {
-    let (_d, s) = store();
-    s.write_wiki("proj", "Architecture", "x").unwrap();
-    let err = s.read_wiki("proj", Some("Nope")).unwrap_err().to_string();
-    assert!(err.contains("Architecture"), "{err}");
 }
 
 #[test]

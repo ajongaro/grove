@@ -81,12 +81,6 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             open_in_editor(ctx, &file.to_string_lossy())?;
             Outcome::Nothing
         }
-        Action::OpenWiki { slug } => {
-            let dir = store.paths.wiki.join(&slug);
-            std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-            open_in_editor(ctx, &dir.to_string_lossy())?;
-            Outcome::Nothing
-        }
         Action::ConnectFinca { slug, via } => {
             let f = store.get_finca(&slug)?;
             // A stale via (backup since removed from the file) falls back to ssh.
@@ -183,8 +177,8 @@ pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
 }
 
 /// Forgets a project and its ended sessions. Refuses while one of its
-/// sessions is still running in `session`'s windows; the folder and wiki are
-/// never touched, so adding it back brings its wiki back.
+/// sessions is still running in `session`'s windows; the folder is never
+/// touched.
 pub fn remove_project(store: &Store, tmux: &Tmux, session: &str, project: &str) -> Result<String> {
     let p = store.get_project(project)?;
     let slug = p.slug();
@@ -206,7 +200,7 @@ pub fn remove_project(store: &Store, tmux: &Tmux, session: &str, project: &str) 
         store.delete_session(&s.id)?;
     }
     store.remove_project(&slug)?;
-    Ok(format!("Removed {} (its folder and wiki are kept)", p.name))
+    Ok(format!("Removed {} (its folder is kept)", p.name))
 }
 
 /// Ends sessions whose window vanished and flags windows of sessions that

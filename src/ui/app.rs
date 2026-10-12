@@ -95,13 +95,10 @@ pub enum Action {
     EditProject {
         slug: String,
     },
-    OpenWiki {
-        slug: String,
-    },
     ClearEnded {
         slug: String,
     },
-    /// Forget the project (its folder and wiki are kept).
+    /// Forget the project (its folder is kept).
     RemoveProject {
         slug: String,
     },

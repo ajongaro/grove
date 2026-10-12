@@ -331,7 +331,7 @@ fn project_keys_need_a_project() {
 }
 
 #[test]
-fn edit_wiki_clear_and_quit() {
+fn edit_clear_and_quit() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     assert_eq!(
         handle_key(&mut app, ch('e')),
@@ -339,12 +339,8 @@ fn edit_wiki_clear_and_quit() {
             slug: "alpha".into()
         }
     );
-    assert_eq!(
-        handle_key(&mut app, ch('w')),
-        Action::OpenWiki {
-            slug: "alpha".into()
-        }
-    );
+    // w opened the wiki, which is gone.
+    assert_eq!(handle_key(&mut app, ch('w')), Action::None);
     assert_eq!(
         handle_key(&mut app, ch('c')),
         Action::ClearEnded {

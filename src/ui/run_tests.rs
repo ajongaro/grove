@@ -340,7 +340,7 @@ fn perform_create_project_reports_in_footer() {
 }
 
 #[test]
-fn remove_project_waits_for_running_sessions_and_keeps_the_wiki() {
+fn remove_project_waits_for_running_sessions() {
     let t = setup("rm");
     let tm = &t.ctx.tmux;
     tm.new_session_detached("grove", "dash", &t.root, &sleeper())
@@ -355,7 +355,6 @@ fn remove_project_waits_for_running_sessions_and_keeps_the_wiki() {
         .unwrap();
     s.save_session(&sess("old", &slug, State::Ended, None))
         .unwrap();
-    s.write_wiki(&slug, "Notes", "kept").unwrap();
 
     let err = remove_project(s, tm, "grove", &slug).unwrap_err();
     assert!(format!("{err}").contains("1 running session"), "{err}");
@@ -365,7 +364,7 @@ fn remove_project_waits_for_running_sessions_and_keeps_the_wiki() {
     remove_project(s, tm, "grove", &slug).unwrap();
     assert!(s.get_project(&slug).is_err());
     assert!(s.list_sessions(Some(&slug)).is_empty());
-    assert_eq!(s.wiki_sections(&slug).len(), 1);
+    assert!(t.root.is_dir(), "the folder is kept");
 }
 
 #[test]

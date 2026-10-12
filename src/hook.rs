@@ -45,26 +45,16 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
 }
 
 /// A few lines Claude Code adds to the new session's context: the project
-/// and the titles (never bodies) of its wiki sections.
+/// and its summary.
 fn session_context(store: &Store, slug: &str) -> String {
     let (name, path, summary) = match store.get_project(slug) {
         Ok(p) => (p.name, p.path.display().to_string(), p.summary),
         Err(_) => (slug.to_string(), "unknown path".to_string(), None),
     };
-    let titles: Vec<String> = store
-        .wiki_sections(slug)
-        .into_iter()
-        .map(|(t, _)| t)
-        .collect();
-    let wiki = if titles.is_empty() {
-        "none yet (add with the grove write_wiki_section tool)".to_string()
-    } else {
-        format!("{} (read with the grove read_wiki tool)", titles.join(", "))
-    };
     format!(
-        "Grove project: {name} ({path})\nSummary: {}\nWiki sections: {wiki}\n",
+        "Grove project: {name} ({path})\nSummary: {}\n",
         summary
             .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "none yet".into())
+            .unwrap_or_else(|| "none yet (set it with the grove update_project tool)".into())
     )
 }

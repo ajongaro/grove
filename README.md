@@ -9,8 +9,8 @@ projects.
   play (see [Play and Work](#more-than-one-claude-account-play-and-work)).
 - **Signals:** the dashboard shows which sessions are working, which need you
   (a permission prompt), and which are waiting for your next message.
-- **Wiki:** per-project Markdown notes that Claude can read and write through
-  Grove's MCP server. New sessions start knowing which sections exist.
+- **Summary:** each new session starts knowing its project's one-line
+  summary, which Claude can update through Grove's MCP server.
 
 Design: [`docs/superpowers/specs/2026-10-06-grove-v1-design.md`](docs/superpowers/specs/2026-10-06-grove-v1-design.md)
 
@@ -27,7 +27,7 @@ Needs tmux ≥ 3.2 and `claude` on your PATH.
 ```sh
 grove add ~/code/some-project   # or `grove add` inside the folder
 grove                           # open the dashboard (attaches tmux)
-grove rm some-project           # forget it (folder and wiki are kept)
+grove rm some-project           # forget it (the folder is kept)
 grove doctor                    # check tmux, claude, accounts, projects, fincas
 ```
 
@@ -45,10 +45,10 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `Enter` | session | jump to its window |
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (defaults to the current folder) |
-| `e` / `w` | dashboard | edit project file / wiki folder in `$EDITOR` (popup) |
+| `e` | dashboard | edit the project file in `$EDITOR` (popup) |
 | `x` | session | kill it (asks first) |
 | `c` | dashboard | clear ended sessions for the project |
-| `d` | project | remove it from Grove (asks first; folder and wiki are kept) |
+| `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `q` | dashboard | detach; sessions keep running |
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
@@ -102,8 +102,7 @@ Its Grove runs through your login shell over SSH, so Homebrew and
 ```
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
-projects/<slug>.toml      name, path, color, summary, account
-wiki/<slug>/<section>.md  wiki sections (title = first "# " heading)
+projects/<slug>.toml      name, path, color, summary
 sessions/<uuid>.json      one per session: state, window, message
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
@@ -151,9 +150,8 @@ with `--settings run/hooks.json` and the MCP server with
 
 ## MCP tools (inside a Grove session)
 
-`list_projects`, `get_project`, `update_project` (summary, `#RRGGBB` color),
-`read_wiki`, `write_wiki_section`. `project` defaults to the session's own
-project.
+`list_projects`, `get_project`, `update_project` (summary, `#RRGGBB` color).
+`project` defaults to the session's own project.
 
 ## Extending it
 

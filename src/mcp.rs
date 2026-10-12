@@ -1,4 +1,4 @@
-//! `grove mcp`: stdio MCP server exposing projects and the wiki.
+//! `grove mcp`: stdio MCP server exposing Grove's projects.
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -64,23 +64,12 @@ impl GroveMcp {
 
     pub fn do_get_project(&self, project: Option<String>) -> Result<String, String> {
         let p = self.project(project)?;
-        let titles: Vec<String> = self
-            .store
-            .wiki_sections(&p.slug())
-            .into_iter()
-            .map(|(t, _)| t)
-            .collect();
         Ok(format!(
-            "Name: {}\nPath: {}\nColor: {}\nSummary: {}\nWiki sections: {}",
+            "Name: {}\nPath: {}\nColor: {}\nSummary: {}",
             p.name,
             p.path.display(),
             p.color.as_deref().unwrap_or("(none)"),
             p.summary.as_deref().unwrap_or("(none)"),
-            if titles.is_empty() {
-                "(none)".into()
-            } else {
-                titles.join(", ")
-            }
         ))
     }
 
@@ -111,35 +100,6 @@ impl GroveMcp {
         self.store.save_project(&p).map_err(|e| e.to_string())?;
         self.do_get_project(Some(p.name))
     }
-
-    pub fn do_read_wiki(
-        &self,
-        project: Option<String>,
-        section: Option<String>,
-    ) -> Result<String, String> {
-        let p = self.project(project)?;
-        let slug = p.slug();
-        if section.is_none() && self.store.wiki_sections(&slug).is_empty() {
-            return Ok(format!("{} has no wiki sections yet.", p.name));
-        }
-        self.store
-            .read_wiki(&slug, section.as_deref())
-            .map_err(|e| e.to_string())
-    }
-
-    pub fn do_write_wiki_section(
-        &self,
-        project: Option<String>,
-        title: String,
-        content: String,
-    ) -> Result<String, String> {
-        let p = self.project(project)?;
-        let path = self
-            .store
-            .write_wiki(&p.slug(), &title, &content)
-            .map_err(|e| e.to_string())?;
-        Ok(format!("Wrote {}", path.display()))
-    }
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -158,24 +118,6 @@ pub struct UpdateProjectArgs {
     pub color: Option<String>,
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct ReadWikiArgs {
-    /// Project name or slug. Defaults to the current Grove session's project.
-    pub project: Option<String>,
-    /// Section title (case-insensitive). Omit to read every section.
-    pub section: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WriteWikiArgs {
-    /// Project name or slug. Defaults to the current Grove session's project.
-    pub project: Option<String>,
-    /// Section title, e.g. "Architecture". Replaces an existing section with the same title.
-    pub title: String,
-    /// Markdown body of the section.
-    pub content: String,
-}
-
 fn result(r: Result<String, String>) -> CallToolResult {
     match r {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -190,7 +132,7 @@ impl GroveMcp {
         result(self.do_list_projects())
     }
 
-    #[tool(description = "Show a Grove project's details and the titles of its wiki sections.")]
+    #[tool(description = "Show a Grove project's details.")]
     fn get_project(&self, Parameters(a): Parameters<ProjectArg>) -> CallToolResult {
         result(self.do_get_project(a.project))
     }
@@ -198,18 +140,6 @@ impl GroveMcp {
     #[tool(description = "Update a Grove project's summary and/or color (#RRGGBB).")]
     fn update_project(&self, Parameters(a): Parameters<UpdateProjectArgs>) -> CallToolResult {
         result(self.do_update_project(a.project, a.summary, a.color))
-    }
-
-    #[tool(
-        description = "Read one wiki section of a Grove project, or the whole wiki if no section is given."
-    )]
-    fn read_wiki(&self, Parameters(a): Parameters<ReadWikiArgs>) -> CallToolResult {
-        result(self.do_read_wiki(a.project, a.section))
-    }
-
-    #[tool(description = "Create or replace a wiki section (Markdown) for a Grove project.")]
-    fn write_wiki_section(&self, Parameters(a): Parameters<WriteWikiArgs>) -> CallToolResult {
-        result(self.do_write_wiki_section(a.project, a.title, a.content))
     }
 }
 

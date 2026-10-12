@@ -159,7 +159,6 @@ fn derive_account_name(dir: &str) -> String {
 pub struct Paths {
     pub home: PathBuf,
     pub projects: PathBuf,
-    pub wiki: PathBuf,
     pub sessions: PathBuf,
     pub fincas: PathBuf,
     pub run: PathBuf,
@@ -170,7 +169,6 @@ impl Paths {
     pub fn new(home: PathBuf) -> Self {
         Self {
             projects: home.join("projects"),
-            wiki: home.join("wiki"),
             sessions: home.join("sessions"),
             fincas: home.join("fincas"),
             run: home.join("run"),
@@ -188,13 +186,7 @@ impl Paths {
     }
 
     pub fn ensure(&self) -> Result<()> {
-        for d in [
-            &self.projects,
-            &self.wiki,
-            &self.sessions,
-            &self.run,
-            &self.fincas,
-        ] {
+        for d in [&self.projects, &self.sessions, &self.run, &self.fincas] {
             std::fs::create_dir_all(d).with_context(|| format!("creating {}", d.display()))?;
         }
         Ok(())
@@ -446,7 +438,6 @@ mod tests {
     fn paths_layout_under_home() {
         let p = Paths::new(PathBuf::from("/g"));
         assert_eq!(p.projects, PathBuf::from("/g/projects"));
-        assert_eq!(p.wiki, PathBuf::from("/g/wiki"));
         assert_eq!(p.sessions, PathBuf::from("/g/sessions"));
         assert_eq!(p.run, PathBuf::from("/g/run"));
         assert_eq!(p.log, PathBuf::from("/g/grove.log"));
@@ -458,7 +449,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = Paths::new(dir.path().join("nested home"));
         p.ensure().unwrap();
-        for d in [&p.projects, &p.wiki, &p.sessions, &p.run] {
+        for d in [&p.projects, &p.sessions, &p.run] {
             assert!(d.is_dir(), "{d:?}");
         }
     }
