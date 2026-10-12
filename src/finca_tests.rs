@@ -403,20 +403,14 @@ fn connect_argv_quotes_dest_and_bin_for_both_shells() {
         .map(str::to_string)
         .collect();
     // The remote shell gets one string that runs the quoted bin via a login shell.
-    assert_eq!(
-        got,
-        vec![
-            "-t".to_string(),
-            // A dead link (laptop slept, network changed) ends ssh in ~45s
-            // instead of leaving a frozen finca session.
-            "-o".into(),
-            "ServerAliveInterval=15".into(),
-            "-o".into(),
-            "ServerAliveCountMax=3".into(),
-            "me@it's here".into(),
-            remote_login_cmd("/opt/my grove/gro've")
-        ]
-    );
+    // Sharing options (with keep-alives), then the destination and one
+    // string that runs the quoted bin via a login shell.
+    let mut want = vec!["-t".to_string()];
+    want.extend(share_opts());
+    assert!(want.contains(&"ServerAliveInterval=15".to_string()));
+    want.push("me@it's here".into());
+    want.push(remote_login_cmd("/opt/my grove/gro've"));
+    assert_eq!(got, want);
 }
 
 #[test]
@@ -725,4 +719,52 @@ fn when_the_finca_connection_ends_the_client_returns_to_grove() {
         "client should land back on the dashboard, not be detached (on {:?})",
         client_session()
     );
+}
+
+// ---------- connection sharing ----------
+
+#[test]
+fn share_opts_reuse_one_connection_per_host_with_keepalives() {
+    let opts = share_opts_in(std::path::Path::new("/h/.grove/run"));
+    let joined = opts.join(" ");
+    assert_eq!(
+        joined,
+        "-o ControlMaster=auto -o ControlPath=/h/.grove/run/ssh-%C -o ControlPersist=10m \
+         -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
+    );
+}
+
+#[test]
+fn share_opts_are_skipped_when_the_socket_path_would_be_too_long() {
+    // macOS caps socket paths at 104 bytes; ssh adds a 40-char hash and a
+    // temporary 17-char suffix.
+    let deep = format!("/{}", "d".repeat(60));
+    assert!(share_opts_in(std::path::Path::new(&deep)).is_empty());
+}
+
+#[test]
+fn every_ssh_grove_runs_shares_connections() {
+    let d = tempfile::tempdir().unwrap();
+    let args_out = d.path().join("args.txt");
+    let ssh = script(
+        d.path(),
+        "record ssh",
+        &format!("echo \"$*\" >> '{}'", args_out.display()),
+    );
+    let f = finca_with_bin(std::path::Path::new("/g"));
+    with_env(&ssh, d.path(), || {
+        let _ = probe("me@box", None);
+        let _ = poll_one(&f, ANSWERS);
+        for argv in [connect_argv(&f, "me@box"), shell_argv(&f, "me@box")] {
+            std::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .status()
+                .unwrap();
+        }
+    });
+    let calls = std::fs::read_to_string(&args_out).unwrap();
+    assert_eq!(calls.lines().count(), 4, "{calls}");
+    for call in calls.lines() {
+        assert!(call.contains("ControlMaster=auto"), "{call}");
+    }
 }

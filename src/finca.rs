@@ -43,6 +43,36 @@ pub fn ssh_program() -> String {
 /// Options for every non-interactive ssh call.
 pub const SSH_BATCH_OPTS: [&str; 4] = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"];
 
+/// Connection sharing for every ssh Grove runs: the first connection to a
+/// host stays open as a master for 10 minutes and later ones (polls, finca
+/// shells, new windows) ride inside it, skipping the handshake.
+pub fn share_opts() -> Vec<String> {
+    share_opts_in(&crate::config::Paths::from_env().run)
+}
+
+/// `share_opts` with sockets in `run`. Empty when the socket path would be
+/// too long for macOS (104 bytes, and ssh adds a 40-char %C hash plus a
+/// temporary 17-char suffix): then each ssh just connects on its own.
+pub fn share_opts_in(run: &std::path::Path) -> Vec<String> {
+    let path = run.join("ssh-%C").to_string_lossy().into_owned();
+    if path.len() - 2 + 40 + 17 >= 104 {
+        return Vec::new();
+    }
+    [
+        "ControlMaster=auto".to_string(),
+        format!("ControlPath={path}"),
+        "ControlPersist=10m".into(),
+        // A master keeps the options of the ssh that started it, so it
+        // always gets keep-alives: a dead link ends it instead of leaving
+        // later connections hanging on it.
+        "ServerAliveInterval=15".into(),
+        "ServerAliveCountMax=3".into(),
+    ]
+    .into_iter()
+    .flat_map(|o| ["-o".to_string(), o])
+    .collect()
+}
+
 /// Single-quotes `s` for a POSIX shell.
 pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
@@ -70,6 +100,7 @@ pub fn probe(dest: &str, bin: Option<&str>) -> Result<String> {
     );
     let out = std::process::Command::new(ssh_program())
         .args(SSH_BATCH_OPTS)
+        .args(share_opts())
         .arg(dest)
         .arg(script)
         .stdin(std::process::Stdio::null())
@@ -146,6 +177,7 @@ fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
     let remote_cmd = format!("{} status --json", sh_quote(&f.grove_bin));
     let mut child = match Command::new(ssh_program())
         .args(SSH_BATCH_OPTS)
+        .args(share_opts())
         .arg(dest)
         .arg(remote_cmd)
         .stdin(Stdio::null())
@@ -300,9 +332,24 @@ pub fn shell_argv(f: &Finca, dest: &str) -> Vec<String> {
 /// Interactive ssh to `dest`, running `remote` there if given; on failure it
 /// pauses so the error can be read.
 fn ssh_script(f: &Finca, dest: &str, remote: Option<&str>) -> String {
+    // Keep-alives end ssh within ~45s of a dead link (laptop slept, network
+    // changed) instead of leaving a frozen session; share_opts has them.
+    let mut opts = share_opts();
+    if opts.is_empty() {
+        opts = [
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+        ]
+        .map(String::from)
+        .to_vec();
+    }
+    let opts: Vec<String> = opts.iter().map(|o| sh_quote(o)).collect();
     let mut ssh = format!(
-        "{} -t -o ServerAliveInterval=15 -o ServerAliveCountMax=3 {}",
+        "{} -t {} {}",
         sh_quote(&ssh_program()),
+        opts.join(" "),
         sh_quote(dest),
     );
     if let Some(r) = remote {
