@@ -94,6 +94,24 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::open_shell(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::RenameSession { session_id, name } => {
+            Outcome::Message(rename_session(ctx, &session_id, &name)?)
+        }
+        Action::Update => {
+            let exe = std::env::current_exe().context("locating the grove binary")?;
+            let exe = exe.canonicalize().unwrap_or(exe);
+            let cwd = ctx
+                .tmux
+                .show_environment(&ctx.cfg.tmux_session, "GROVE_CWD")
+                .unwrap_or_else(|| store.paths.home.to_string_lossy().into_owned());
+            // If the binary changed, this restarts the dashboard (ending
+            // this process); otherwise it returns and we say so.
+            let out = update_command(&exe, &cwd).output()?;
+            if !out.status.success() {
+                bail!("grove: {}", String::from_utf8_lossy(&out.stderr).trim());
+            }
+            Outcome::Message("Grove is up to date (run files and tmux config refreshed)".into())
+        }
         Action::SaveTodos { slug, text } => {
             store.write_todos(&slug, &text)?;
             Outcome::Nothing
@@ -122,6 +140,15 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             Outcome::Message(format!("Cleared {} ended session(s)", ended.len()))
         }
     })
+}
+
+/// `grove` as if typed in `cwd`, in its own process group so it survives
+/// the dashboard restart it may cause.
+pub fn update_command(exe: &std::path::Path, cwd: &str) -> std::process::Command {
+    use std::os::unix::process::CommandExt;
+    let mut c = std::process::Command::new(exe);
+    c.current_dir(cwd).process_group(0);
+    c
 }
 
 fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
@@ -240,18 +267,50 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
         if flagged.get(w) == Some(&want) {
             continue;
         }
-        // The marker goes in the window name (launch names windows
-        // "<project>:<session>") so it shows under any status-bar theme.
-        let base = format!("{}:{}", s.project, s.name);
-        let name = if want {
-            format!("{NEEDS_YOU_MARK}{base}")
-        } else {
-            base
-        };
-        ctx.tmux.rename_window(w, &name)?;
+        ctx.tmux.rename_window(w, &window_title(&s))?;
         flagged.insert(w.clone(), want);
     }
     Ok(())
+}
+
+/// A session's tmux window name: "<project>:<session>" as launch names it,
+/// with the needs-you marker in front (in the name, so it shows under any
+/// status-bar theme).
+pub fn window_title(s: &crate::model::Session) -> String {
+    let base = format!("{}:{}", s.project, s.name);
+    if s.state == State::NeedsYou {
+        format!("{NEEDS_YOU_MARK}{base}")
+    } else {
+        base
+    }
+}
+
+/// Renames a session and its window. Refuses a name another live session
+/// of the project has (auto-naming relies on live names being unique).
+pub fn rename_session(ctx: &Ctx, session_id: &str, name: &str) -> Result<String> {
+    let name = name.trim();
+    let Some(mut s) = ctx.store.get_session(session_id) else {
+        bail!("no session {session_id}");
+    };
+    let taken = ctx
+        .store
+        .list_sessions(Some(&s.project))
+        .into_iter()
+        .any(|o| o.id != s.id && o.state != State::Ended && o.name == name);
+    if taken {
+        bail!(
+            "another live session in {} is already called {name}",
+            s.project
+        );
+    }
+    let old = std::mem::replace(&mut s.name, name.to_string());
+    s.updated_at = chrono::Utc::now();
+    ctx.store.save_session(&s)?;
+    if let Some(w) = &s.tmux_window {
+        // Already gone is fine: there's no window to rename.
+        let _ = ctx.tmux.rename_window(w, &window_title(&s));
+    }
+    Ok(format!("Renamed {old} to {name}"))
 }
 
 /// Every session the dashboard knows of, local and on fincas, for alerts.

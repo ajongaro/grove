@@ -16,15 +16,18 @@ pub enum Pane {
     Todo,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptKind {
     NewSession,
     AddProject,
+    RenameSession { session_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     Normal,
+    /// The `?` key list; any key closes it.
+    Help,
     Prompt {
         kind: PromptKind,
         input: String,
@@ -114,6 +117,13 @@ pub enum Action {
         /// The destination that last answered; None means the primary.
         via: Option<String>,
     },
+    RenameSession {
+        session_id: String,
+        name: String,
+    },
+    /// Run the installed grove: refreshes run files and tmux config, and
+    /// restarts this dashboard if the binary changed.
+    Update,
     /// Write the project's to-do list.
     SaveTodos {
         slug: String,

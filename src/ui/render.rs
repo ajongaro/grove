@@ -47,6 +47,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 PromptKind::AddProject => {
                     " Add project — path (Tab completes, Enter adds, Esc cancels) "
                 }
+                PromptKind::RenameSession { .. } => " Rename session (Enter saves, Esc cancels) ",
             };
             let area = popup(frame.area(), 70, 3);
             frame.render_widget(Clear, area);
@@ -61,6 +62,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             );
             render_completions(frame, app, area);
         }
+        Mode::Help => render_help(frame),
         Mode::Confirm { label, .. } => {
             let area = popup(frame.area(), 44, 3);
             frame.render_widget(Clear, area);
@@ -475,6 +477,47 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+/// The key list in two columns, sections kept whole, so it fits a laptop.
+fn render_help(frame: &mut Frame) {
+    let sections: Vec<Vec<Line>> = super::help::SECTIONS
+        .iter()
+        .map(|(section, keys)| {
+            let mut lines = vec![Line::raw(*section).bold().fg(ACCENT)];
+            for (k, what) in *keys {
+                lines.push(Line::from(vec![
+                    Span::raw(format!("  {k:<10} ")).bold(),
+                    Span::raw(*what),
+                ]));
+            }
+            lines.push(Line::raw(""));
+            lines
+        })
+        .collect();
+    // Fill the left column until it holds about half the lines.
+    let total: usize = sections.iter().map(Vec::len).sum();
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for s in sections {
+        if left.len() < total / 2 {
+            left.extend(s);
+        } else {
+            right.extend(s);
+        }
+    }
+    let height = left.len().max(right.len()) as u16 + 1;
+    let area = popup(frame.area(), 90, height);
+    frame.render_widget(Clear, area);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(" Keys (any key closes) ")
+        .fg(ACCENT);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let [l, r] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(inner);
+    frame.render_widget(Paragraph::new(left), l);
+    frame.render_widget(Paragraph::new(right), r);
+}
+
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let mut spans = Vec::new();
     let n = app.needs_you_count();
@@ -504,10 +547,10 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::raw(" enter/esc save · ctrl-u clear").dark_gray());
         }
         None if app.pane == Pane::Todo => spans.push(
-            Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back").dark_gray(),
+            Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
         None => spans.push(
-            Span::raw("enter open/jump · n new · a add · e edit · x kill · c clear · d remove · tab pane · q detach").dark_gray(),
+            Span::raw("enter open/jump · n new · r rename · a add · t to-do · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

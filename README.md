@@ -22,6 +22,10 @@ cargo install --path .
 
 Needs tmux ≥ 3.2 and `claude` on your PATH.
 
+To update: `cargo install --path .` again, then press `R` on the dashboard.
+It refreshes Grove's run files and tmux config and restarts the dashboard
+on the new build. Running sessions aren't touched.
+
 ## Use
 
 ```sh
@@ -46,10 +50,13 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (defaults to the current folder) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
+| `r` | session | rename it (tmux window too) |
 | `x` | session | kill it (asks first) |
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
+| `R` | dashboard | update Grove after `cargo install` |
+| `?` | dashboard | list every key |
 | `q` | dashboard | detach; sessions keep running |
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)

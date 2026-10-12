@@ -40,6 +40,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
+        Mode::Help => {
+            app.mode = Mode::Normal;
+            Action::None
+        }
         Mode::Normal => normal_key(app, key),
     }
 }
@@ -84,6 +88,21 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                 PromptKind::AddProject => {
                     app.mode = Mode::ConfirmCreate { path: text };
                     Action::None
+                }
+                PromptKind::RenameSession { session_id } => {
+                    let current = app
+                        .sessions
+                        .iter()
+                        .find(|s| s.id == session_id)
+                        .map(|s| s.name.as_str());
+                    if text.is_empty() || current == Some(text.as_str()) {
+                        Action::None
+                    } else {
+                        Action::RenameSession {
+                            session_id,
+                            name: text,
+                        }
+                    }
                 }
             }
         }
@@ -142,6 +161,11 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     }
     match key.code {
         KeyCode::Char('q') => Action::Quit,
+        KeyCode::Char('?') => {
+            app.mode = Mode::Help;
+            Action::None
+        }
+        KeyCode::Char('R') => Action::Update,
         KeyCode::Char('j') | KeyCode::Down => {
             move_selection(app, 1);
             Action::None
@@ -184,6 +208,20 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             },
             _ => Action::None,
         },
+        KeyCode::Char('r') => {
+            if let Some(s) = app
+                .selected_session()
+                .filter(|_| app.pane == Pane::Sessions)
+            {
+                app.mode = Mode::Prompt {
+                    kind: PromptKind::RenameSession {
+                        session_id: s.id.clone(),
+                    },
+                    input: s.name.clone(),
+                };
+            }
+            Action::None
+        }
         KeyCode::Char('x') => match app.selected_session() {
             Some(s) if app.pane == Pane::Sessions && state_is_live(s.state) => {
                 app.mode = Mode::Confirm {
@@ -256,6 +294,10 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
                 return Action::None;
             }
             KeyCode::Char('q') => return Action::Quit,
+            KeyCode::Char('?') => {
+                app.mode = Mode::Help;
+                return Action::None;
+            }
             _ => {}
         }
     }

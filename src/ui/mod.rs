@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod complete;
+pub mod help;
 pub mod input;
 pub mod render;
 pub mod run;

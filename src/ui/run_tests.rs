@@ -428,3 +428,89 @@ fn save_todos_writes_the_projects_checklist() {
     assert_eq!(out, Outcome::Nothing);
     assert_eq!(t.ctx.store.read_todos("p"), "- [ ] a\n");
 }
+
+fn window_name(tm: &Tmux, id: &str) -> String {
+    let out = tm
+        .cmd()
+        .args(["display-message", "-p", "-t", id, "#{window_name}"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+#[test]
+fn rename_session_renames_its_window_keeping_the_needs_you_mark() {
+    let t = setup("rename");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:s1", &t.root, &[], &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    s.save_session(&sess("1", "p", State::NeedsYou, Some(&w)))
+        .unwrap();
+    let out = perform(
+        &t.ctx,
+        Action::RenameSession {
+            session_id: "1".into(),
+            name: "  api work ".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(out, Outcome::Message("Renamed 1 to api work".into()));
+    assert_eq!(s.get_session("1").unwrap().name, "api work");
+    assert_eq!(window_name(tm, &w), "⚑ p:api work");
+}
+
+#[test]
+fn rename_refuses_a_name_another_live_session_in_the_project_has() {
+    let t = setup("rename-taken");
+    let s = &t.ctx.store;
+    s.save_session(&sess("1", "p", State::Working, None))
+        .unwrap();
+    s.save_session(&sess("2", "p", State::YourTurn, None))
+        .unwrap();
+    s.save_session(&sess("old", "p", State::Ended, None))
+        .unwrap();
+    s.save_session(&sess("elsewhere", "q", State::Working, None))
+        .unwrap();
+    let rename = |name: &str| {
+        perform(
+            &t.ctx,
+            Action::RenameSession {
+                session_id: "1".into(),
+                name: name.into(),
+            },
+        )
+    };
+    let err = rename("2").unwrap_err().to_string();
+    assert!(err.contains("already") && err.contains("2"), "{err}");
+    assert_eq!(s.get_session("1").unwrap().name, "1");
+    // Ended sessions and other projects don't count.
+    rename("old").unwrap();
+    rename("elsewhere").unwrap();
+    assert_eq!(s.get_session("1").unwrap().name, "elsewhere");
+}
+
+#[test]
+fn window_title_is_project_and_name_with_the_mark_when_needed() {
+    assert_eq!(window_title(&sess("a", "p", State::Working, None)), "p:a");
+    assert_eq!(
+        window_title(&sess("a", "p", State::NeedsYou, None)),
+        "⚑ p:a"
+    );
+}
+
+#[test]
+fn update_runs_the_installed_grove_from_the_add_prompt_folder() {
+    // Running `grove` records its cwd as the add-project default, so it must
+    // run from the dashboard's current default, not from ~/.grove.
+    let c = update_command(std::path::Path::new("/bin/grove"), "/home/me/code");
+    assert_eq!(c.get_program(), "/bin/grove");
+    assert_eq!(c.get_args().count(), 0);
+    assert_eq!(
+        c.get_current_dir(),
+        Some(std::path::Path::new("/home/me/code"))
+    );
+}

@@ -1232,3 +1232,106 @@ fn no_todo_pane_for_a_finca() {
         assert_ne!(app.pane, Pane::Todo);
     }
 }
+
+// ---------- rename ----------
+
+#[test]
+fn r_on_a_session_prompts_with_its_name_and_enter_renames() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    app.pane = Pane::Sessions;
+    handle_key(&mut app, ch('r'));
+    assert_eq!(prompt_text(&app), "s1");
+    assert!(screen(&app, 100, 20).contains("Rename session"));
+    handle_key(&mut app, key(KeyCode::Backspace));
+    handle_key(&mut app, key(KeyCode::Backspace));
+    type_keys(&mut app, "api");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::RenameSession {
+            session_id: "1".into(),
+            name: "api".into()
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn renaming_to_the_same_or_no_name_does_nothing() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Ended, None)],
+    );
+    app.pane = Pane::Sessions;
+    handle_key(&mut app, ch('r'));
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    handle_key(&mut app, ch('r'));
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    );
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+}
+
+#[test]
+fn r_in_the_projects_pane_does_nothing() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    assert_eq!(handle_key(&mut app, ch('r')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+// ---------- help and update ----------
+
+#[test]
+fn question_mark_opens_the_key_help_and_any_key_closes_it() {
+    let (_d, _s, mut app) = loaded(&["alpha", "beta"], &[]);
+    handle_key(&mut app, ch('?'));
+    assert_eq!(app.mode, Mode::Help);
+    let out = screen(&app, 120, 50);
+    for k in ["C-g", "rename", "dd", "shell", "update Grove"] {
+        assert!(out.contains(k), "help lacks {k:?}\n{out}");
+    }
+    // The closing key does nothing else.
+    assert_eq!(handle_key(&mut app, ch('j')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.proj_idx, 0);
+}
+
+#[test]
+fn question_mark_is_help_in_the_todo_list_but_text_while_typing() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    handle_key(&mut app, ch('?'));
+    assert_eq!(app.mode, Mode::Help);
+    handle_key(&mut app, ch('x'));
+    type_keys(&mut app, "o?");
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.todos.items[0].text, "?");
+}
+
+#[test]
+fn footer_mentions_help() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    assert!(screen(&app, 160, 12).contains("? help"));
+}
+
+#[test]
+fn big_r_updates_grove() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    assert_eq!(handle_key(&mut app, ch('R')), Action::Update);
+}
+
+#[test]
+fn help_fits_a_laptop_sized_window() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    let out = screen(&app, 110, 32);
+    for k in ["C-g", "open a shell there", "open in your editor", "rename"] {
+        assert!(out.contains(k), "help lacks {k:?} at 110x32\n{out}");
+    }
+}
