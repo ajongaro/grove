@@ -1006,7 +1006,7 @@ fn play_box_sits_above_the_work_box() {
     assert!(play < work, "{out}");
     assert!((play..work).contains(&row_of(&out, "● beta")), "{out}");
     assert!(row_of(&out, "● acme") > work, "{out}");
-    assert!(out.contains("Sessions — acme · work"), "{out}");
+    assert!(out.contains("Sessions — Work — acme"), "{out}");
 }
 
 #[test]

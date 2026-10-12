@@ -381,7 +381,11 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let title = match app.selected_project() {
-        Some(p) => format!("Sessions — {} · {}", p.name, app.account_of(p).name),
+        Some(p) => format!(
+            "Sessions — {} — {}",
+            capitalize(&app.account_of(p).name),
+            p.name
+        ),
         None => "Sessions".to_string(),
     };
     let block = pane_block(&title, app.pane == Pane::Sessions);
@@ -455,6 +459,14 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// "work" → "Work".
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
 }
 
 fn highlight(focused: bool) -> Style {
