@@ -16,7 +16,7 @@ pub struct Observed {
     pub state: State,
     /// The tmux window it runs in on this machine (local sessions only).
     pub window: Option<String>,
-    /// e.g. "grove:2" or "therver · grove:2".
+    /// e.g. "grove:2" or "homebox · grove:2".
     pub label: String,
     pub message: Option<String>,
 }
@@ -188,7 +188,7 @@ mod tests {
         let alerts = a.check(
             vec![
                 obs("1", "local", State::Working, Some("@1")),
-                obs("therver/p/1", "therver", State::NeedsYou, None),
+                obs("homebox/p/1", "homebox", State::NeedsYou, None),
             ],
             none,
         );

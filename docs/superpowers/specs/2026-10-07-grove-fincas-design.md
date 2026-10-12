@@ -12,8 +12,8 @@ which ones need attention, and can jump into a finca's dashboard and back
 with one key. Nothing is synced or launched remotely: each finca owns its
 projects and sessions and keeps working when the laptop is asleep or away.
 
-First fincas: **therver** (macOS arm64, `therver@therver.local`) and
-**pi-five-ssd** (Debian 13 aarch64, `admin@pi-five-ssd.local`).
+First fincas: **homebox** (macOS arm64, `me@homebox.local`) and
+**pi** (Debian 13 aarch64, `me@pi.local`).
 
 ### Success criteria
 
@@ -40,9 +40,9 @@ non-SSH transports, fincas of fincas.
 everything else):
 
 ```toml
-name = "therver"
-ssh = "therver@therver.local"        # anything `ssh` accepts, incl. ~/.ssh/config aliases
-grove_bin = "/Users/therver/.local/bin/grove"   # absolute; non-interactive ssh has no profile PATH
+name = "homebox"
+ssh = "me@homebox.local"        # anything `ssh` accepts, incl. ~/.ssh/config aliases
+grove_bin = "/Users/homebox/.local/bin/grove"   # absolute; non-interactive ssh has no profile PATH
 color = "#5c6bc0"                    # optional
 ```
 
@@ -65,7 +65,7 @@ match file stem).
 ```json
 {
   "version": 1,
-  "host": "therver",
+  "host": "homebox",
   "generated_at": "RFC3339",
   "needs_you": 2,
   "live": 3,
@@ -121,8 +121,8 @@ only window closes and tmux returns the client to another session, normally
 
 - The left pane has two lists. Projects come first; then a **Fincas** header
   and one row per finca:
-  - `● therver  3 live  ⚑2` (finca color dot; ⚑ red when > 0)
-  - `○ pi-five-ssd  unreachable · 4m` (grey; age since last success, or "never")
+  - `● homebox  3 live  ⚑2` (finca color dot; ⚑ red when > 0)
+  - `○ pi  unreachable · 4m` (grey; age since last success, or "never")
   - `◐ name  needs update` (yellow)
   `j`/`k` move through both lists as one.
 - With a finca selected, the right pane title is `Finca — <name> (<host>)`. It
@@ -132,11 +132,11 @@ only window closes and tmux returns the client to another session, normally
 - Keys with a finca selected: Enter = connect. `x`, `n`, `e`, `w`, `c` do
   nothing, and the footer says to connect to the finca to do that. `a` still
   adds a local project.
-- The footer's needs-you badge sums local and remote: `⚑ 3 needs you (2 on therver)`.
+- The footer's needs-you badge sums local and remote: `⚑ 3 needs you (2 on homebox)`.
 
 ## Machine setup (operational, done once by Claude)
 
-| | therver | pi-five-ssd |
+| | homebox | pi |
 |---|---|---|
 | tmux | `brew install tmux` | `sudo apt install -y tmux` |
 | Grove | laptop's macOS arm64 release binary → `~/.local/bin/grove` | rustup (minimal) + rsync source → `cargo build --release` on the Pi → `~/.local/bin/grove` |
@@ -147,7 +147,7 @@ Both fincas use `~/.claude` because that is the personal account on those
 machines. The laptop keeps `~/.claude-play`.
 
 `scripts/deploy-fincas.sh`:
-- Builds the macOS release (with the CLT/SDK env workaround) and copies it to therver.
+- Builds the macOS release (with the CLT/SDK env workaround) and copies it to homebox.
 - rsyncs the source to the Pi (excluding `target/`) and builds there.
 - Then runs each finca's `grove --version`.
 
@@ -181,5 +181,5 @@ it's opened.
   needs update), the finca detail view, the combined footer count, and
   navigation across both lists.
 - Live: add both fincas, see real status, connect, and return with `C-q`. Start
-  a session on therver, trigger needs-you there, and see ⚑ appear locally
+  a session on homebox, trigger needs-you there, and see ⚑ appear locally
   within 30s.

@@ -4,7 +4,7 @@
 
 **Goal:** Remote machines ("fincas"), each running its own Grove, are visible from the local dashboard (polled status) and reachable with Enter and `C-q` back.
 
-**Architecture:** New `status.rs` (the JSON document every Grove can print), `finca.rs` (finca files, ssh probe, poller, connect). The store gains a `fincas/` dir. The UI gets a second list in the left pane, a read-only finca detail view and a poller channel. Setup of therver and pi-five-ssd is operational (Task 6).
+**Architecture:** New `status.rs` (the JSON document every Grove can print), `finca.rs` (finca files, ssh probe, poller, connect). The store gains a `fincas/` dir. The UI gets a second list in the left pane, a read-only finca detail view and a poller channel. Setup of homebox and pi is operational (Task 6).
 
 **Tech Stack:** as v1 (Rust 2024, ratatui 0.30, rmcp 3.5, tmux ≥ 3.2), plus `std::process` + threads for polling (no async).
 
@@ -80,7 +80,7 @@
 - `Action::ConnectFinca { slug }`
 - footer sum
 
-**Tests:** render reachable / unreachable / needs-update rows; detail view groups by project; footer `(2 on therver)`; j/k crosses the lists; empty projects + fincas; session keys disabled with a footer hint; Enter → ConnectFinca.
+**Tests:** render reachable / unreachable / needs-update rows; detail view groups by project; footer `(2 on homebox)`; j/k crosses the lists; empty projects + fincas; session keys disabled with a footer hint; Enter → ConnectFinca.
 
 ### Task 6: Machine setup, deploy script, live E2E
 **Files:** create `scripts/deploy-fincas.sh`; update `README.md`.
@@ -89,4 +89,4 @@
 - Read the Claude Code install docs, install on the Pi, and have the user log in.
 - Install rustup on the Pi, deploy, and write each finca's `~/.grove/config.toml`.
 - `grove finca add` both machines.
-- Live checks: status shows, connect / `C-q` works, needs-you on therver shows ⚑ locally.
+- Live checks: status shows, connect / `C-q` works, needs-you on homebox shows ⚑ locally.

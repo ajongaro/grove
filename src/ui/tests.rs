@@ -613,17 +613,17 @@ fn poll(app: &mut App, slug: &str, reach: Reach, at: chrono::DateTime<Utc>) {
 
 #[test]
 fn enter_connects_via_the_destination_that_last_answered() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     app.apply_poll(PollResult {
-        slug: "therver".into(),
-        reach: Reach::Reachable(remote_status("therver", 0, 0)),
-        via: Some("me@therver.ts.net".into()),
+        slug: "homebox".into(),
+        reach: Reach::Reachable(remote_status("homebox", 0, 0)),
+        via: Some("me@homebox.ts.net".into()),
         at: t0(),
     });
     // A later failed poll keeps the last good destination.
     poll(
         &mut app,
-        "therver",
+        "homebox",
         Reach::Unreachable {
             error: "timed out".into(),
         },
@@ -632,24 +632,24 @@ fn enter_connects_via_the_destination_that_last_answered() {
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::ConnectFinca {
-            slug: "therver".into(),
-            via: Some("me@therver.ts.net".into())
+            slug: "homebox".into(),
+            via: Some("me@homebox.ts.net".into())
         }
     );
 }
 
 #[test]
 fn fincas_listed_under_projects_with_counts() {
-    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["therver", "pi-five-ssd", "old"]);
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox", "pi", "old"]);
     poll(
         &mut app,
-        "therver",
-        Reach::Reachable(remote_status("therver", 2, 1)),
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 2, 1)),
         t0(),
     );
     poll(
         &mut app,
-        "pi-five-ssd",
+        "pi",
         Reach::Unreachable {
             error: "timed out".into(),
         },
@@ -659,10 +659,10 @@ fn fincas_listed_under_projects_with_counts() {
     let s = screen(&app, 110, 24);
     for needle in [
         "FINCAS",
-        "therver",
+        "homebox",
         "3 live",
         "⚑2",
-        "pi-five-ssd",
+        "pi",
         "unreachable",
         "needs update",
     ] {
@@ -672,7 +672,7 @@ fn fincas_listed_under_projects_with_counts() {
 
 #[test]
 fn unpolled_finca_shows_checking() {
-    let (_d, _s, app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, app) = with_fincas(&[], &[], &["homebox"]);
     assert!(screen(&app, 100, 20).contains("checking"));
 }
 
@@ -681,34 +681,30 @@ fn footer_counts_remote_needs_you() {
     let (_d, _s, mut app) = with_fincas(
         &["alpha"],
         &[session("1", "alpha", "s1", State::NeedsYou, Some("@1"))],
-        &["therver"],
+        &["homebox"],
     );
     poll(
         &mut app,
-        "therver",
-        Reach::Reachable(remote_status("therver", 2, 0)),
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 2, 0)),
         t0(),
     );
     assert_eq!(app.needs_you_count(), 3);
     let s = screen(&app, 110, 20);
-    assert!(s.contains("3 needs you (2 on therver)"), "{s}");
+    assert!(s.contains("3 needs you (2 on homebox)"), "{s}");
 }
 
 #[test]
 fn selection_moves_from_projects_into_fincas() {
-    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["therver", "pi"]);
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox", "pi"]);
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
     handle_key(&mut app, ch('j'));
     assert!(app.selected_project().is_none());
+    assert_eq!(app.selected_finca().unwrap().slug, "homebox");
+    handle_key(&mut app, ch('j'));
     assert_eq!(app.selected_finca().unwrap().slug, "pi");
     handle_key(&mut app, ch('j'));
-    assert_eq!(app.selected_finca().unwrap().slug, "therver");
-    handle_key(&mut app, ch('j'));
-    assert_eq!(
-        app.selected_finca().unwrap().slug,
-        "therver",
-        "stays at the end"
-    );
+    assert_eq!(app.selected_finca().unwrap().slug, "pi", "stays at the end");
     handle_key(&mut app, ch('k'));
     handle_key(&mut app, ch('k'));
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
@@ -716,12 +712,12 @@ fn selection_moves_from_projects_into_fincas() {
 
 #[test]
 fn fincas_only_still_navigable_and_connectable() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
-    assert_eq!(app.selected_finca().unwrap().slug, "therver");
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    assert_eq!(app.selected_finca().unwrap().slug, "homebox");
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::ConnectFinca {
-            slug: "therver".into(),
+            slug: "homebox".into(),
             via: None
         }
     );
@@ -731,16 +727,16 @@ fn fincas_only_still_navigable_and_connectable() {
 
 #[test]
 fn finca_detail_shows_remote_sessions_grouped_by_project() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     poll(
         &mut app,
-        "therver",
-        Reach::Reachable(remote_status("therver", 1, 1)),
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 1, 1)),
         t0(),
     );
     let s = screen(&app, 110, 24);
     for needle in [
-        "FINCA — therver",
+        "FINCA — homebox",
         "btt",
         "n0",
         "needs you",
@@ -754,16 +750,16 @@ fn finca_detail_shows_remote_sessions_grouped_by_project() {
 
 #[test]
 fn unreachable_finca_keeps_last_known_sessions_marked_stale() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     poll(
         &mut app,
-        "therver",
-        Reach::Reachable(remote_status("therver", 1, 0)),
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 1, 0)),
         t0() - Duration::minutes(10),
     );
     poll(
         &mut app,
-        "therver",
+        "homebox",
         Reach::Unreachable {
             error: "Connection refused".into(),
         },
@@ -780,7 +776,7 @@ fn unreachable_finca_keeps_last_known_sessions_marked_stale() {
 
 #[test]
 fn session_keys_on_a_finca_point_to_connecting() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     for c in ['n', 'e', 'c', 'x'] {
         assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
         assert_eq!(app.mode, Mode::Normal, "{c}");
@@ -802,11 +798,11 @@ fn session_keys_on_a_finca_point_to_connecting() {
 
 #[test]
 fn s_on_a_finca_opens_a_shell_there() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     assert_eq!(
         handle_key(&mut app, ch('s')),
         Action::FincaShell {
-            slug: "therver".into(),
+            slug: "homebox".into(),
             via: None
         }
     );
@@ -821,12 +817,12 @@ fn s_on_a_project_does_nothing() {
 
 #[test]
 fn enter_in_sessions_pane_on_a_finca_connects() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     app.pane = Pane::Sessions;
     assert_eq!(
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::ConnectFinca {
-            slug: "therver".into(),
+            slug: "homebox".into(),
             via: None
         }
     );
@@ -834,12 +830,12 @@ fn enter_in_sessions_pane_on_a_finca_connects() {
 
 #[test]
 fn reload_keeps_finca_selection_and_poll_state() {
-    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["therver"]);
+    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
     handle_key(&mut app, ch('j'));
     poll(
         &mut app,
-        "therver",
-        Reach::Reachable(remote_status("therver", 1, 0)),
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 1, 0)),
         t0(),
     );
     s.add_project(&Project {
@@ -850,22 +846,22 @@ fn reload_keeps_finca_selection_and_poll_state() {
     })
     .unwrap();
     app.reload(&s);
-    assert_eq!(app.selected_finca().unwrap().slug, "therver");
+    assert_eq!(app.selected_finca().unwrap().slug, "homebox");
     assert_eq!(app.needs_you_count(), 1);
 }
 
 #[test]
 fn poll_for_unknown_finca_is_ignored() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     poll(&mut app, "ghost", Reach::NeedsUpdate, t0());
     assert_eq!(app.fincas.len(), 1);
 }
 
 #[test]
 fn removing_selected_finca_clamps_selection() {
-    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["therver"]);
+    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
     handle_key(&mut app, ch('j'));
-    s.remove_finca("therver").unwrap();
+    s.remove_finca("homebox").unwrap();
     app.reload(&s);
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
     screen(&app, 80, 10);
@@ -1224,7 +1220,7 @@ fn todo_pane_shows_insert_mode_and_an_empty_hint() {
 
 #[test]
 fn no_todo_pane_for_a_finca() {
-    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     handle_key(&mut app, ch('t'));
     assert_ne!(app.pane, Pane::Todo);
     for _ in 0..3 {
@@ -1405,7 +1401,7 @@ fn each_pane_title_has_its_own_color_whatever_has_focus() {
 
 #[test]
 fn fincas_title_is_pink() {
-    let (_d, _s, app) = with_fincas(&["alpha"], &[], &["therver"]);
+    let (_d, _s, app) = with_fincas(&["alpha"], &[], &["homebox"]);
     assert_eq!(
         fg_of(&app, 100, 20, "FINCAS"),
         ratatui::style::Color::Rgb(0xf7, 0x76, 0x8e)

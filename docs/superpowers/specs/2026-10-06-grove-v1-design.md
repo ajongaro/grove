@@ -6,8 +6,8 @@
 ## Purpose
 
 Grove is a personal, stripped-down take on Yeehaw: a tmux-based dashboard for
-running and supervising several Claude Code sessions across projects. Anthony
-wants a smaller core he controls and can grow himself (v2 adds remote machines).
+running and supervising several Claude Code sessions across projects. The
+goal is a smaller core its owner controls and can grow (v2 adds remote machines).
 Claude builds v1 end to end; it must be structured so features can be added one
 module at a time.
 
@@ -74,7 +74,7 @@ Project file:
 
 ```toml
 name = "streakwithfriends"
-path = "/Users/anthonyongaro/Play/streakwithfriends"
+path = "/Users/me/code/some-app"
 color = "#2E8B57"     # optional; used for window + dashboard accents
 summary = ""          # optional; editable by MCP
 ```

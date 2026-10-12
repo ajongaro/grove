@@ -129,11 +129,11 @@ fn poll_reachable_parses_status() {
     let d = tempfile::tempdir().unwrap();
     let dir = d.path().join("bin dir");
     std::fs::create_dir_all(&dir).unwrap();
-    let bin = fake_grove(&dir, &status_json("therver"));
+    let bin = fake_grove(&dir, &status_json("homebox"));
     let ssh = fake_ssh(d.path(), None);
     let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
     match r {
-        Reach::Reachable(st) => assert_eq!(st.host, "therver"),
+        Reach::Reachable(st) => assert_eq!(st.host, "homebox"),
         other => panic!("{other:?}"),
     }
 }
@@ -263,7 +263,7 @@ fn away_finca(bin: &std::path::Path, backup: Option<&str>) -> Finca {
 #[test]
 fn poll_falls_back_to_backup() {
     let d = tempfile::tempdir().unwrap();
-    let bin = fake_grove(d.path(), &status_json("therver"));
+    let bin = fake_grove(d.path(), &status_json("homebox"));
     let ssh = ssh_without_home(d.path());
     let (reach, via) = with_env(&ssh, d.path(), || {
         poll_via(&away_finca(&bin, Some("me@box.ts.net")), ANSWERS)
@@ -275,7 +275,7 @@ fn poll_falls_back_to_backup() {
 #[test]
 fn poll_prefers_primary_when_it_answers() {
     let d = tempfile::tempdir().unwrap();
-    let bin = fake_grove(d.path(), &status_json("therver"));
+    let bin = fake_grove(d.path(), &status_json("homebox"));
     let ssh = fake_ssh(d.path(), None);
     let mut f = away_finca(&bin, Some("me@box.ts.net"));
     f.ssh = "me@box.local".into();
@@ -482,7 +482,7 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
     .unwrap();
     let ssh = script(d.path(), "idle ssh", "sleep 30");
     let f = Finca {
-        name: "therver".into(),
+        name: "homebox".into(),
         ssh: "x".into(),
         grove_bin: "/g".into(),
         color: Some("#5c6bc0".into()),
@@ -500,7 +500,7 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
     let opt = |o: &str| {
         String::from_utf8(
             tmux.cmd()
-                .args(["show-options", "-v", "-t", "=finca-therver:", o])
+                .args(["show-options", "-v", "-t", "=finca-homebox:", o])
                 .output()
                 .unwrap()
                 .stdout,
@@ -527,8 +527,8 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
         "only C-q in the finca table: {keys}"
     );
 
-    disconnect(&tmux, "therver");
-    assert!(!tmux.has_session("finca-therver"));
+    disconnect(&tmux, "homebox");
+    assert!(!tmux.has_session("finca-homebox"));
 }
 
 #[test]
@@ -564,7 +564,7 @@ fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
     .unwrap();
     let ssh = script(d.path(), "idle ssh", "sleep 30");
     let f = Finca {
-        name: "therver".into(),
+        name: "homebox".into(),
         ssh: "x".into(),
         grove_bin: "/g".into(),
         color: None,
@@ -577,7 +577,7 @@ fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
     );
     let out =
         |args: &[&str]| String::from_utf8(tmux.cmd().args(args).output().unwrap().stdout).unwrap();
-    let opt = |o: &str| out(&["show-options", "-v", "-t", "=finca-therver-sh:", o]);
+    let opt = |o: &str| out(&["show-options", "-v", "-t", "=finca-homebox-sh:", o]);
     assert_eq!(opt("key-table").trim(), "grove-shell");
     assert_ne!(opt("prefix").trim(), "None", "the prefix works in a shell");
     // New windows and splits ssh to the finca too, not a local shell.
@@ -593,10 +593,10 @@ fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
     );
 
     with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap();
-    disconnect(&tmux, "therver");
-    assert!(!tmux.has_session("finca-therver"));
+    disconnect(&tmux, "homebox");
+    assert!(!tmux.has_session("finca-homebox"));
     assert!(
-        !tmux.has_session("finca-therver-sh"),
+        !tmux.has_session("finca-homebox-sh"),
         "rm closes the shell too"
     );
 }

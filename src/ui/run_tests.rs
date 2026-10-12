@@ -374,7 +374,7 @@ fn observe_names_local_and_finca_sessions() {
     app.sessions = vec![sess("1", "alpha", State::NeedsYou, Some("@3"))];
     let st = crate::status::Status {
         version: crate::status::STATUS_VERSION,
-        host: "therver".into(),
+        host: "homebox".into(),
         generated_at: chrono::Utc::now(),
         needs_you: 1,
         live: 1,
@@ -391,8 +391,8 @@ fn observe_names_local_and_finca_sessions() {
     };
     let _ = &t;
     app.fincas = vec![super::super::app::FincaRow {
-        slug: "therver".into(),
-        name: "therver".into(),
+        slug: "homebox".into(),
+        name: "homebox".into(),
         color: None,
         error: None,
         reach: None,
@@ -408,10 +408,10 @@ fn observe_names_local_and_finca_sessions() {
         .collect();
     assert_eq!(
         labels,
-        vec![("alpha:1", "local"), ("therver · Beta:2", "therver")]
+        vec![("alpha:1", "local"), ("homebox · Beta:2", "homebox")]
     );
     assert_eq!(seen[0].window.as_deref(), Some("@3"));
-    assert_eq!(seen[1].key, "therver/beta/2");
+    assert_eq!(seen[1].key, "homebox/beta/2");
 }
 
 #[test]

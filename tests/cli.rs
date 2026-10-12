@@ -170,14 +170,14 @@ fn finca_add_ls_rm() {
             .unwrap()
     };
 
-    let out = run(&["finca", "add", "therver", "therver@therver.local"]);
+    let out = run(&["finca", "add", "homebox", "me@homebox.local"]);
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let toml = std::fs::read_to_string(home.join("fincas/therver.toml")).unwrap();
-    assert!(toml.contains("ssh = \"therver@therver.local\""), "{toml}");
+    let toml = std::fs::read_to_string(home.join("fincas/homebox.toml")).unwrap();
+    assert!(toml.contains("ssh = \"me@homebox.local\""), "{toml}");
     assert!(
         toml.contains(&format!(
             "grove_bin = \"{}\"",
@@ -187,15 +187,15 @@ fn finca_add_ls_rm() {
     );
 
     let out = run(&["finca", "ls"]);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("therver"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("homebox"));
 
-    let out = run(&["finca", "rm", "therver"]);
+    let out = run(&["finca", "rm", "homebox"]);
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(!home.join("fincas/therver.toml").exists());
+    assert!(!home.join("fincas/homebox.toml").exists());
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn finca_add_failure_writes_nothing() {
     .unwrap();
     std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let out = grove(&home)
-        .args(["finca", "add", "pi", "admin@pi"])
+        .args(["finca", "add", "pi", "me@pi"])
         .env("GROVE_SSH", &ssh)
         .output()
         .unwrap();

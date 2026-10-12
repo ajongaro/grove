@@ -171,9 +171,9 @@ mod tests {
     #[test]
     fn build_counts_and_omits_ended() {
         let (_d, s) = store();
-        let st = build(&s, "therver", &live());
+        let st = build(&s, "homebox", &live());
         assert_eq!(st.version, STATUS_VERSION);
-        assert_eq!(st.host, "therver");
+        assert_eq!(st.host, "homebox");
         assert_eq!(st.needs_you, 1);
         assert_eq!(st.live, 2);
         let alpha = st.projects.iter().find(|p| p.slug == "alpha").unwrap();
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn round_trips_through_json() {
         let (_d, s) = store();
-        let st = build(&s, "therver", &live());
+        let st = build(&s, "homebox", &live());
         assert_eq!(parse(&serde_json::to_string(&st).unwrap()).unwrap(), st);
     }
 

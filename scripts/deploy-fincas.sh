@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and install grove on your fincas, then print each one's version.
 #   scripts/deploy-fincas.sh              # every finca in ~/.grove/fincas
-#   scripts/deploy-fincas.sh therver pi   # just these (finca file names)
+#   scripts/deploy-fincas.sh homebox pi   # just these (finca file names)
 # A finca with this machine's OS and CPU gets the local release build; any
 # other builds from source there (needs cargo on it). Each one tries its
 # `ssh` destination, then its `backup`. grove goes to the finca file's

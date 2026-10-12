@@ -207,19 +207,16 @@ fn finca(name: &str) -> crate::finca::Finca {
 fn fincas_crud() {
     let (_d, s) = store();
     assert!(s.list_fincas().is_empty());
-    s.add_finca(&finca("therver")).unwrap();
-    s.add_finca(&finca("Pi Five SSD")).unwrap();
-    assert!(s.paths.fincas.join("pi-five-ssd.toml").is_file());
-    assert_eq!(
-        s.get_finca("pi-five-ssd").unwrap().ssh,
-        "me@Pi Five SSD.local"
-    );
+    s.add_finca(&finca("homebox")).unwrap();
+    s.add_finca(&finca("Garage Pi")).unwrap();
+    assert!(s.paths.fincas.join("garage-pi.toml").is_file());
+    assert_eq!(s.get_finca("garage-pi").unwrap().ssh, "me@Garage Pi.local");
     assert_eq!(s.list_fincas().len(), 2);
-    assert!(s.add_finca(&finca("therver")).is_err(), "duplicate");
-    let removed = s.remove_finca("therver").unwrap();
-    assert_eq!(removed.name, "therver");
-    assert!(s.get_finca("therver").is_err());
-    assert!(s.remove_finca("therver").is_err());
+    assert!(s.add_finca(&finca("homebox")).is_err(), "duplicate");
+    let removed = s.remove_finca("homebox").unwrap();
+    assert_eq!(removed.name, "homebox");
+    assert!(s.get_finca("homebox").is_err());
+    assert!(s.remove_finca("homebox").is_err());
 }
 
 #[test]
