@@ -4,6 +4,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::app::{Action, App, Mode, Pane, PromptKind, state_is_live};
 use super::complete::complete_path;
+use crate::todo::Effect;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
     if key.kind == KeyEventKind::Release {
@@ -125,6 +126,9 @@ fn tab_complete(app: &mut App, kind: PromptKind, input: String) {
 
 fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     app.footer = None;
+    if app.pane == Pane::Todo {
+        return todo_key(app, key);
+    }
     // Raw mode delivers Ctrl-C as Char('c'); a reflexive Ctrl-C must not
     // clear sessions, so modified keys never map to actions.
     if key
@@ -146,12 +150,16 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             move_selection(app, -1);
             Action::None
         }
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.pane = if app.pane == Pane::Projects {
-                Pane::Sessions
-            } else {
-                Pane::Projects
-            };
+        KeyCode::Tab => {
+            cycle_pane(app, 1);
+            Action::None
+        }
+        KeyCode::BackTab => {
+            cycle_pane(app, -1);
+            Action::None
+        }
+        KeyCode::Char('t') if app.todo_slug.is_some() => {
+            app.pane = Pane::Todo;
             Action::None
         }
         KeyCode::Char('l') | KeyCode::Right => {
@@ -226,6 +234,51 @@ fn usable_project(app: &mut App) -> Option<String> {
     Some(p.slug.clone())
 }
 
+/// The to-do pane: every key goes to the list (todo.rs), except Tab, h, q
+/// outside insert mode.
+fn todo_key(app: &mut App, key: KeyEvent) -> Action {
+    let Some(slug) = app.todo_slug.clone() else {
+        app.pane = Pane::Projects;
+        return Action::None;
+    };
+    if !app.todos.inserting() && key.modifiers.is_empty() {
+        match key.code {
+            KeyCode::Tab => {
+                cycle_pane(app, 1);
+                return Action::None;
+            }
+            KeyCode::BackTab => {
+                cycle_pane(app, -1);
+                return Action::None;
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                app.pane = Pane::Projects;
+                return Action::None;
+            }
+            KeyCode::Char('q') => return Action::Quit,
+            _ => {}
+        }
+    }
+    match app.todos.key(key) {
+        Effect::Nothing => Action::None,
+        Effect::Changed => Action::SaveTodos {
+            slug,
+            text: app.todos.serialize(),
+        },
+        Effect::OpenEditor => Action::EditTodos { slug },
+    }
+}
+
+/// Projects → Sessions → To-do (when a project is selected) and around.
+fn cycle_pane(app: &mut App, step: isize) {
+    let mut panes = vec![Pane::Projects, Pane::Sessions];
+    if app.todo_slug.is_some() {
+        panes.push(Pane::Todo);
+    }
+    let at = panes.iter().position(|p| *p == app.pane).unwrap_or(0) as isize;
+    app.pane = panes[(at + step).rem_euclid(panes.len() as isize) as usize];
+}
+
 fn move_selection(app: &mut App, delta: isize) {
     let (idx, len) = match app.pane {
         Pane::Projects => {
@@ -236,6 +289,8 @@ fn move_selection(app: &mut App, delta: isize) {
             let len = app.visible_sessions().len();
             (&mut app.sess_idx, len)
         }
+        // todo_key handles its own movement.
+        Pane::Todo => return,
     };
     if len == 0 {
         *idx = 0;

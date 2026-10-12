@@ -1069,3 +1069,166 @@ fn d_in_the_sessions_pane_does_nothing() {
     assert_eq!(handle_key(&mut app, ch('d')), Action::None);
     assert_eq!(app.mode, Mode::Normal);
 }
+
+// ---------- to-do ----------
+
+/// Types `s` as individual key presses.
+fn type_keys(app: &mut App, s: &str) -> Vec<Action> {
+    s.chars().map(|c| handle_key(app, ch(c))).collect()
+}
+
+#[test]
+fn tab_cycles_projects_sessions_and_todo() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    for want in [Pane::Sessions, Pane::Todo, Pane::Projects] {
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.pane, want);
+    }
+    handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(app.pane, Pane::Todo);
+}
+
+#[test]
+fn t_jumps_to_the_todo_list_and_h_goes_back() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    assert_eq!(app.pane, Pane::Todo);
+    handle_key(&mut app, ch('h'));
+    assert_eq!(app.pane, Pane::Projects);
+}
+
+#[test]
+fn todo_keys_save_the_selected_projects_list() {
+    let (_d, s, mut app) = loaded(&["alpha", "beta"], &[]);
+    handle_key(&mut app, ch('j')); // beta
+    app.reload(&s); // as the event loop does after every key
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "ohi");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::SaveTodos {
+            slug: "beta".into(),
+            text: "- [ ] hi\n".into()
+        }
+    );
+}
+
+#[test]
+fn dashboard_letters_are_todo_keys_in_the_todo_pane() {
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    s.write_todos("alpha", "- [ ] a\n- [ ] b\n").unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    // x toggles instead of offering to kill the session.
+    assert!(matches!(
+        handle_key(&mut app, ch('x')),
+        Action::SaveTodos { .. }
+    ));
+    assert_eq!(app.mode, Mode::Normal);
+    // dd deletes an item instead of offering to remove the project.
+    type_keys(&mut app, "dd");
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.todos.items.len(), 1);
+    // n and a don't open prompts.
+    type_keys(&mut app, "n");
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn q_is_text_while_inserting_and_quits_otherwise() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "o");
+    assert_eq!(handle_key(&mut app, ch('q')), Action::None);
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pane, Pane::Todo, "Tab is ignored while inserting");
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(handle_key(&mut app, ch('q')), Action::Quit);
+}
+
+#[test]
+fn big_e_opens_the_todo_file() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    assert_eq!(
+        handle_key(&mut app, ch('E')),
+        Action::EditTodos {
+            slug: "alpha".into()
+        }
+    );
+}
+
+#[test]
+fn reload_shows_the_selected_projects_list_but_not_mid_edit() {
+    let (_d, s, mut app) = loaded(&["alpha", "beta"], &[]);
+    s.write_todos("alpha", "- [ ] alpha thing\n").unwrap();
+    s.write_todos("beta", "- [ ] beta thing\n").unwrap();
+    app.reload(&s);
+    assert_eq!(app.todos.items[0].text, "alpha thing");
+    handle_key(&mut app, ch('j'));
+    app.reload(&s);
+    assert_eq!(app.todos.items[0].text, "beta thing");
+    // A reload while typing keeps the typing.
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "Amore");
+    app.reload(&s);
+    assert_eq!(app.todos.items[0].text, "beta thingmore");
+}
+
+#[test]
+fn dd_in_one_project_then_p_in_another_moves_the_item() {
+    let (_d, s, mut app) = loaded(&["alpha", "beta"], &[]);
+    s.write_todos("alpha", "- [ ] carry me\n").unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "dd");
+    handle_key(&mut app, ch('h'));
+    handle_key(&mut app, ch('j')); // beta
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    assert_eq!(
+        handle_key(&mut app, ch('p')),
+        Action::SaveTodos {
+            slug: "beta".into(),
+            text: "- [ ] carry me\n".into()
+        }
+    );
+}
+
+#[test]
+fn todo_list_sits_below_the_sessions() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", "- [ ] buy milk\n- [x] ship grove\n")
+        .unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 20);
+    let (sessions, todo) = (row_of(&out, "Sessions — "), row_of(&out, "╭ To-do "));
+    assert!(sessions < todo, "{out}");
+    assert!(row_of(&out, "[ ] buy milk") > todo, "{out}");
+    assert!(out.contains("[x] ship grove"), "{out}");
+}
+
+#[test]
+fn todo_pane_shows_insert_mode_and_an_empty_hint() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    assert!(screen(&app, 100, 20).contains("No to-dos — press o to add one"));
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "omilk");
+    let out = screen(&app, 100, 20);
+    assert!(out.contains("-- INSERT --"), "{out}");
+    assert!(out.contains("[ ] milk█"), "{out}");
+}
+
+#[test]
+fn no_todo_pane_for_a_finca() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    handle_key(&mut app, ch('t'));
+    assert_ne!(app.pane, Pane::Todo);
+    for _ in 0..3 {
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_ne!(app.pane, Pane::Todo);
+    }
+}

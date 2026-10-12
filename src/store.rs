@@ -126,6 +126,18 @@ impl Store {
         }
     }
 
+    /// The project's to-do list (a Markdown checklist, see todo.rs).
+    pub fn todos_file(&self, slug: &str) -> PathBuf {
+        self.paths.todos.join(format!("{slug}.md"))
+    }
+    /// The to-do file's text; empty when there isn't one yet.
+    pub fn read_todos(&self, slug: &str) -> String {
+        std::fs::read_to_string(self.todos_file(slug)).unwrap_or_default()
+    }
+    pub fn write_todos(&self, slug: &str, text: &str) -> Result<()> {
+        write_atomic(&self.todos_file(slug), text.as_bytes())
+    }
+
     pub fn list_fincas(&self) -> Vec<Result<crate::finca::Finca, BadFile>> {
         files_with_ext(&self.paths.fincas, "toml")
             .into_iter()

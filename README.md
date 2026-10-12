@@ -49,6 +49,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `x` | session | kill it (asks first) |
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
+| `t` | dashboard | jump to the project's to-do list |
 | `q` | dashboard | detach; sessions keep running |
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
@@ -60,6 +61,26 @@ you, here or on a finca, unless that session's window is already on screen
 in a focused terminal. It uses `osascript` on macOS and `notify-send` on
 Linux. Set `alerts = false` in `config.toml` to turn alerts off, for example
 on a finca nobody sits at.
+
+## To-do lists
+
+Each project has a to-do list under its sessions (`t` or `Tab` to get
+there), edited with vim keys:
+
+| Key | Does |
+|---|---|
+| `j` `k` `gg` `G` | move |
+| `o` / `O` | new item below / above (insert mode) |
+| `i` `a` `A` / `cc` | edit the item / replace its text |
+| `Enter` `Esc` | leave insert mode (saves; an empty item is dropped) |
+| `x` `space` | toggle done |
+| `dd` / `p` `P` | delete / paste it below or above (works across projects) |
+| `u` | undo the last change |
+| `E` | open the list in your editor |
+| `h` | back to the projects |
+
+It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
+on every change. It's just for you: Claude sessions don't see it.
 
 ## Fincas (other machines)
 
@@ -106,6 +127,7 @@ Its Grove runs through your login shell over SSH, so Homebrew and
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
 projects/<slug>.toml      name, path, color, summary
+todos/<slug>.md           the project's to-do list (Markdown checklist)
 sessions/<uuid>.json      one per session: state, window, message
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf

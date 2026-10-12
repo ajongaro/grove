@@ -12,6 +12,8 @@ use crate::store::Store;
 pub enum Pane {
     Projects,
     Sessions,
+    /// The selected project's to-do list, below its sessions.
+    Todo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +114,15 @@ pub enum Action {
         /// The destination that last answered; None means the primary.
         via: Option<String>,
     },
+    /// Write the project's to-do list.
+    SaveTodos {
+        slug: String,
+        text: String,
+    },
+    /// Open the project's to-do file in the editor.
+    EditTodos {
+        slug: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +145,10 @@ pub struct App {
     pub completion_idx: Option<usize>,
     /// For naming each project's Claude account.
     pub cfg: crate::config::Config,
+    /// The to-do list of `todo_slug`.
+    pub todos: crate::todo::Todos,
+    /// The project whose list `todos` holds: the selected one, if usable.
+    pub todo_slug: Option<String>,
 }
 
 impl App {
@@ -151,6 +166,8 @@ impl App {
             completions: Vec::new(),
             completion_idx: None,
             cfg: crate::config::Config::default(),
+            todos: crate::todo::Todos::default(),
+            todo_slug: None,
         }
     }
 
@@ -233,6 +250,20 @@ impl App {
             self.sess_idx = i;
         }
         self.sess_idx = self.sess_idx.min(visible.len().saturating_sub(1));
+
+        let slug = self
+            .selected_project()
+            .filter(|p| p.error.is_none())
+            .map(|p| p.slug.clone());
+        if slug != self.todo_slug {
+            self.todos.reset();
+            self.todo_slug = slug;
+        }
+        match &self.todo_slug {
+            Some(slug) => self.todos.load(&store.read_todos(slug)),
+            None if self.pane == Pane::Todo => self.pane = Pane::Projects,
+            None => {}
+        }
     }
 
     /// The finca selected in the left pane (below the projects), if any.

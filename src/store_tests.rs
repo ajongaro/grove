@@ -167,6 +167,15 @@ fn sessions_listed_oldest_first() {
 }
 
 #[test]
+fn todos_read_back_what_was_written_and_start_empty() {
+    let (_d, s) = store();
+    assert_eq!(s.read_todos("proj"), "");
+    s.write_todos("proj", "- [ ] a\n").unwrap();
+    assert_eq!(s.read_todos("proj"), "- [ ] a\n");
+    assert_eq!(s.todos_file("proj"), s.paths.todos.join("proj.md"));
+}
+
+#[test]
 fn renamed_project_file_is_reported_not_split() {
     let (_d, s) = store();
     s.add_project(&proj("my-app")).unwrap();

@@ -94,6 +94,16 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::open_shell(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::SaveTodos { slug, text } => {
+            store.write_todos(&slug, &text)?;
+            Outcome::Nothing
+        }
+        Action::EditTodos { slug } => {
+            // The editor can't save into a folder that isn't there yet.
+            std::fs::create_dir_all(&store.paths.todos)?;
+            open_in_editor(ctx, &store.todos_file(&slug).to_string_lossy())?;
+            Outcome::Nothing
+        }
         Action::RemoveProject { slug } => Outcome::Message(remove_project(
             store,
             &ctx.tmux,

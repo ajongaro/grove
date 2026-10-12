@@ -30,6 +30,12 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     render_project_boxes(frame, app, projects);
     match app.selected_finca() {
         Some(f) => render_finca_detail(frame, app, f, right, now),
+        None if app.todo_slug.is_some() => {
+            let [sessions, todo] =
+                Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right);
+            render_sessions(frame, app, sessions, now);
+            render_todos(frame, app, todo);
+        }
         None => render_sessions(frame, app, right, now),
     }
     render_footer(frame, app, footer);
@@ -430,6 +436,45 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.pane == Pane::Todo;
+    let block = pane_block("To-do", focused);
+    let t = &app.todos;
+    if t.items.is_empty() {
+        let p = Paragraph::new("No to-dos — press o to add one (t or Tab to get here).")
+            .wrap(Wrap { trim: true })
+            .dark_gray()
+            .block(block);
+        frame.render_widget(p, area);
+        return;
+    }
+    let items: Vec<ListItem> = t
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let mut text = item.text.clone();
+            if focused && t.inserting() && i == t.idx {
+                text.push('█');
+            }
+            let line = if item.done {
+                Line::from(vec![
+                    Span::raw("[x] ").dark_gray(),
+                    Span::raw(text).dark_gray().crossed_out(),
+                ])
+            } else {
+                Line::from(vec![Span::raw("[ ] ").fg(ACCENT), Span::raw(text)])
+            };
+            ListItem::new(line)
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(focused.then_some(t.idx));
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight(focused));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
 fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     let mut spans = Vec::new();
     let n = app.needs_you_count();
@@ -454,6 +499,13 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
     }
     match &app.footer {
         Some(msg) => spans.push(Span::raw(msg.clone()).yellow()),
+        None if app.pane == Pane::Todo && app.todos.inserting() => {
+            spans.push(Span::raw(" -- INSERT -- ").black().on_yellow().bold());
+            spans.push(Span::raw(" enter/esc save · ctrl-u clear").dark_gray());
+        }
+        None if app.pane == Pane::Todo => spans.push(
+            Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back").dark_gray(),
+        ),
         None => spans.push(
             Span::raw("enter open/jump · n new · a add · e edit · x kill · c clear · d remove · tab pane · q detach").dark_gray(),
         ),

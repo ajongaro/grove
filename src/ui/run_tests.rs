@@ -413,3 +413,18 @@ fn observe_names_local_and_finca_sessions() {
     assert_eq!(seen[0].window.as_deref(), Some("@3"));
     assert_eq!(seen[1].key, "therver/beta/2");
 }
+
+#[test]
+fn save_todos_writes_the_projects_checklist() {
+    let t = setup("todos");
+    let out = perform(
+        &t.ctx,
+        Action::SaveTodos {
+            slug: "p".into(),
+            text: "- [ ] a\n".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(out, Outcome::Nothing);
+    assert_eq!(t.ctx.store.read_todos("p"), "- [ ] a\n");
+}

@@ -12,6 +12,7 @@ mod state;
 mod status;
 mod store;
 mod tmux;
+mod todo;
 mod ui;
 
 use std::io::Read;
