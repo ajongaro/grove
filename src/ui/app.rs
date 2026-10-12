@@ -159,6 +159,8 @@ pub struct App {
     pub todos: crate::todo::Todos,
     /// The project whose list `todos` holds: the selected one, if usable.
     pub todo_slug: Option<String>,
+    /// Unchecked to-dos per project slug, for the project rows.
+    pub open_todos: HashMap<String, usize>,
 }
 
 impl App {
@@ -178,6 +180,7 @@ impl App {
             cfg: crate::config::Config::default(),
             todos: crate::todo::Todos::default(),
             todo_slug: None,
+            open_todos: HashMap::new(),
         }
     }
 
@@ -261,6 +264,17 @@ impl App {
         }
         self.sess_idx = self.sess_idx.min(visible.len().saturating_sub(1));
 
+        self.open_todos = self
+            .projects
+            .iter()
+            .filter(|p| p.error.is_none())
+            .map(|p| {
+                (
+                    p.slug.clone(),
+                    crate::todo::open_count(&store.read_todos(&p.slug)),
+                )
+            })
+            .collect();
         let slug = self
             .selected_project()
             .filter(|p| p.error.is_none())

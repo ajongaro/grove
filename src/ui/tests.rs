@@ -1430,3 +1430,28 @@ fn j_and_k_are_letters_when_no_list_is_open() {
     type_keys(&mut app, "jk");
     assert_eq!(prompt_text(&app), format!("{base}jk"));
 }
+
+// ---------- open to-do counts ----------
+
+#[test]
+fn project_rows_show_their_open_todo_count() {
+    let (_d, s, mut app) = loaded(&["alpha", "beta"], &[]);
+    s.write_todos("alpha", "- [ ] a\n- [x] done\n- [ ] b\n")
+        .unwrap();
+    s.write_todos("beta", "- [x] all done\n").unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 20);
+    assert!(out.contains("● alpha  ☐2"), "{out}");
+    assert!(!out.contains("☐0") && out.contains("● beta "), "{out}");
+}
+
+#[test]
+fn todo_count_sits_after_live_sessions_and_needs_you() {
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::NeedsYou, Some("@1"))],
+    );
+    s.write_todos("alpha", "- [ ] a\n").unwrap();
+    app.reload(&s);
+    assert!(screen(&app, 100, 20).contains("● alpha  1  ⚑1  ☐1"));
+}

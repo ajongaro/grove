@@ -269,6 +269,9 @@ fn render_projects(
             if let Some(n) = needs.get(&p.slug) {
                 spans.push(Span::raw(format!("  ⚑{n}")).red().bold());
             }
+            if let Some(n) = app.open_todos.get(&p.slug).filter(|n| **n > 0) {
+                spans.push(Span::raw(format!("  ☐{n}")).dark_gray());
+            }
             ListItem::new(Line::from(spans))
         })
         .collect();

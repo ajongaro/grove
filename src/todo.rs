@@ -239,6 +239,11 @@ impl Todos {
     }
 }
 
+/// Unchecked items in a to-do file's text.
+pub fn open_count(text: &str) -> usize {
+    parse(text).iter().filter(|i| !i.done).count()
+}
+
 fn blank() -> Item {
     Item {
         text: String::new(),

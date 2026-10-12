@@ -181,7 +181,8 @@ there), edited with vim keys:
 | `h` | back to the projects |
 
 It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
-on every change. It's just for you: Claude sessions don't see it.
+on every change. It's just for you: Claude sessions don't see it. Projects
+with open items show the count next to their name (`☐3`).
 
 ## More than one Claude account
 
@@ -245,6 +246,11 @@ grove finca rm homebox
 grove status            # what this machine reports (--json is what fincas send)
 scripts/deploy-fincas.sh [name...]   # build + install grove on your fincas
 ```
+
+Grove shares one SSH connection per finca (`ControlMaster`, sockets in
+`~/.grove/run/`, kept 10 minutes after last use), so polls, new shell
+windows and reconnects skip the login handshake. Your `~/.ssh/config` isn't
+touched.
 
 The finca's Grove runs through its login shell over SSH, so Homebrew and
 `~/.local/bin` tools are found. If Claude Code there uses a folder other

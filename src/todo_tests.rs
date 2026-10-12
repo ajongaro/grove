@@ -270,3 +270,9 @@ fn reset_empties_the_list_but_keeps_the_register() {
     keys(&mut t, "p");
     assert_eq!(texts(&t), ["other", "carry me"]);
 }
+
+#[test]
+fn open_count_counts_unchecked_items() {
+    assert_eq!(open_count("- [ ] a\n- [x] b\nplain\n\n"), 2);
+    assert_eq!(open_count(""), 0);
+}
