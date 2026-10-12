@@ -10,7 +10,13 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Para
 use super::app::{App, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
+/// Focus: the focused pane's border and the selected row.
 const ACCENT: Color = Color::Rgb(102, 187, 106);
+/// Each pane's title word keeps its color whatever has focus (green and
+/// red stay free for focus and needs-you). Account boxes use the account's.
+const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
+const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
+const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let [main, footer] =
@@ -158,10 +164,19 @@ fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
     );
 }
 
-fn pane_block(title: &str, focused: bool) -> Block<'_> {
+/// A pane titled with `spans`. Styling the spans themselves keeps their
+/// colors when the focused border style is applied.
+fn pane_block<'a>(spans: Vec<Span<'a>>, focused: bool) -> Block<'a> {
+    let mut title = vec![Span::raw(" ")];
+    // Uncolored words would take the border's (focus) color.
+    title.extend(spans.into_iter().map(|s| match s.style.fg {
+        Some(_) => s,
+        None => s.fg(Color::Gray),
+    }));
+    title.push(Span::raw(" "));
     let b = Block::bordered()
         .border_type(BorderType::Rounded)
-        .title(format!(" {title} "));
+        .title(Line::from(title));
     if focused {
         b.border_style(Style::new().fg(ACCENT))
     } else {
@@ -217,10 +232,11 @@ fn render_projects(
     empty: &str,
 ) {
     let has_selection = app.pane == Pane::Projects && rows.contains(&app.proj_idx);
-    let mut block = pane_block(title, has_selection);
-    if let Some(c) = parse_hex(color) {
-        block = block.title_style(Style::new().fg(c));
-    }
+    let word = match parse_hex(color) {
+        Some(c) => Span::raw(title.to_string()).fg(c),
+        None => Span::raw(title.to_string()),
+    };
+    let block = pane_block(vec![word], has_selection);
     if rows.is_empty() {
         let p = Paragraph::new(empty.to_string())
             .wrap(Wrap { trim: true })
@@ -273,7 +289,7 @@ fn render_projects(
 fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     use crate::finca::Reach;
     let block = pane_block(
-        "Fincas",
+        vec![Span::raw("Fincas").fg(FINCAS_COLOR)],
         app.pane == Pane::Projects && app.selected_finca().is_some(),
     );
     let items: Vec<ListItem> = app
@@ -338,8 +354,11 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         .as_ref()
         .map(|s| format!(" ({})", s.host))
         .unwrap_or_default();
-    let title = format!("Finca — {}{host}", f.name);
-    let block = pane_block(&title, app.pane == Pane::Sessions);
+    let title = vec![
+        Span::raw("Finca").fg(FINCAS_COLOR),
+        Span::raw(format!(" — {}{host}", f.name)),
+    ];
+    let block = pane_block(title, app.pane == Pane::Sessions);
     let mut lines: Vec<Line> = Vec::new();
     match &f.reach {
         None => lines.push(Line::raw("Checking…").dark_gray()),
@@ -388,15 +407,18 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 }
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
-    let title = match app.selected_project() {
-        Some(p) => format!(
-            "Sessions — {} — {}",
-            capitalize(&app.account_of(p).name),
-            p.name
-        ),
-        None => "Sessions".to_string(),
-    };
-    let block = pane_block(&title, app.pane == Pane::Sessions);
+    let mut title = vec![Span::raw("Sessions").fg(SESSIONS_COLOR)];
+    if let Some(p) = app.selected_project() {
+        let a = app.account_of(p);
+        let account = Span::raw(capitalize(&a.name));
+        title.push(Span::raw(" — "));
+        title.push(match parse_hex(a.color.as_deref()) {
+            Some(c) => account.fg(c),
+            None => account,
+        });
+        title.push(Span::raw(format!(" — {}", p.name)));
+    }
+    let block = pane_block(title, app.pane == Pane::Sessions);
     let sessions = app.visible_sessions();
     if sessions.is_empty() {
         let hint = if app.selected_project().is_some() {
@@ -440,7 +462,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.pane == Pane::Todo;
-    let block = pane_block("To-do", focused);
+    let block = pane_block(vec![Span::raw("To-do").fg(TODO_COLOR)], focused);
     let t = &app.todos;
     if t.items.is_empty() {
         let p = Paragraph::new("No to-dos — press o to add one (t or Tab to get here).")

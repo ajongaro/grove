@@ -1335,3 +1335,79 @@ fn help_fits_a_laptop_sized_window() {
         assert!(out.contains(k), "help lacks {k:?} at 110x32\n{out}");
     }
 }
+
+// ---------- title colors ----------
+
+/// Foreground color of the first cell of `text` on screen.
+fn fg_of(app: &App, w: u16, h: u16, text: &str) -> ratatui::style::Color {
+    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+    term.draw(|f| render(f, app, t0() + Duration::minutes(2)))
+        .unwrap();
+    let buf = term.backend().buffer().clone();
+    let chars: Vec<char> = text.chars().collect();
+    for y in 0..h {
+        let row: Vec<String> = (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect();
+        for x in 0..row.len().saturating_sub(chars.len()) {
+            if chars
+                .iter()
+                .enumerate()
+                .all(|(i, c)| row[x + i] == c.to_string())
+            {
+                return buf[(x as u16, y)].fg;
+            }
+        }
+    }
+    panic!("{text:?} not on screen");
+}
+
+#[test]
+fn each_pane_title_has_its_own_color_whatever_has_focus() {
+    use ratatui::style::Color::Rgb;
+    let (_d, _s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    app.cfg.account_color = Some("#7aa2f7".into());
+    app.cfg.accounts.get_mut("work").unwrap().color = Some("#e8a33d".into());
+    app.proj_idx = 1; // acme, on work
+    for pane in [Pane::Projects, Pane::Sessions, Pane::Todo] {
+        app.pane = pane;
+        assert_eq!(
+            fg_of(&app, 100, 24, "play "),
+            Rgb(0x7a, 0xa2, 0xf7),
+            "{pane:?}"
+        );
+        assert_eq!(
+            fg_of(&app, 100, 24, "work "),
+            Rgb(0xe8, 0xa3, 0x3d),
+            "{pane:?}"
+        );
+        assert_eq!(
+            fg_of(&app, 100, 24, "Sessions"),
+            Rgb(0xbb, 0x9a, 0xf7),
+            "{pane:?}"
+        );
+        assert_eq!(
+            fg_of(&app, 100, 24, "Work —"),
+            Rgb(0xe8, 0xa3, 0x3d),
+            "{pane:?}"
+        );
+        assert_eq!(
+            fg_of(&app, 100, 24, "To-do"),
+            Rgb(0x7d, 0xcf, 0xff),
+            "{pane:?}"
+        );
+        // Uncolored title text stays neutral: only the border shows focus.
+        assert_eq!(
+            fg_of(&app, 100, 24, "— acme"),
+            ratatui::style::Color::Gray,
+            "{pane:?}"
+        );
+    }
+}
+
+#[test]
+fn fincas_title_is_pink() {
+    let (_d, _s, app) = with_fincas(&["alpha"], &[], &["therver"]);
+    assert_eq!(
+        fg_of(&app, 100, 20, "Fincas"),
+        ratatui::style::Color::Rgb(0xf7, 0x76, 0x8e)
+    );
+}
