@@ -1570,3 +1570,32 @@ fn selection_follows_the_project_when_the_order_changes() {
     assert_eq!(slugs(&app), ["beta", "alpha"]);
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
 }
+
+#[test]
+fn long_session_names_keep_a_gap_before_the_state() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "Minecraft Server", State::Working, Some("@1")),
+            session("2", "alpha", "short", State::YourTurn, Some("@2")),
+        ],
+    );
+    let s = screen(&app, 100, 20);
+    assert!(s.contains("Minecraft Server  working"), "{s}");
+    let col = |needle: &str| {
+        s.lines()
+            .find_map(|l| l.find(needle).map(|i| l[..i].chars().count()))
+            .unwrap_or_else(|| panic!("missing {needle:?}\n{s}"))
+    };
+    assert_eq!(col("working"), col("your turn"), "states line up\n{s}");
+}
+
+#[test]
+fn long_finca_session_names_keep_a_gap_before_the_state() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    let mut st = remote_status("homebox", 0, 1);
+    st.projects[0].sessions[0].name = "Minecraft Server".into();
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    let s = screen(&app, 110, 24);
+    assert!(s.contains("Minecraft Server  working"), "{s}");
+}

@@ -174,7 +174,9 @@ fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
     use std::io::Read;
     use std::process::{Command, Stdio};
 
-    let remote_cmd = format!("{} status --json", sh_quote(&f.grove_bin));
+    // Under the login shell, like connect: grove needs the profile's PATH to
+    // find tmux (Homebrew on macOS), or every session looks dead.
+    let remote_cmd = login_shell_cmd(&format!("{} status --json", sh_quote(&f.grove_bin)));
     let mut child = match Command::new(ssh_program())
         .args(SSH_BATCH_OPTS)
         .args(share_opts())
@@ -229,7 +231,8 @@ fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
     match status.code() {
-        Some(0) => match crate::status::parse(&stdout) {
+        // The JSON is one line; anything a login profile prints comes before it.
+        Some(0) => match crate::status::parse(stdout.trim().lines().last().unwrap_or("")) {
             Ok(st) => Reach::Reachable(st),
             Err(crate::status::ParseError::WrongVersion(_)) => Reach::NeedsUpdate,
             Err(crate::status::ParseError::Invalid(e)) => Reach::Unreachable {
@@ -309,7 +312,12 @@ pub fn session_name(slug: &str) -> String {
 
 /// The command string ssh hands the remote shell: `bin` run via a login shell.
 pub fn remote_login_cmd(bin: &str) -> String {
-    format!("exec \"$SHELL\" -lc {}", sh_quote(&sh_quote(bin)))
+    login_shell_cmd(&sh_quote(bin))
+}
+
+/// `cmd` (already quoted for a shell) run by the remote user's login shell.
+fn login_shell_cmd(cmd: &str) -> String {
+    format!("exec \"$SHELL\" -lc {}", sh_quote(cmd))
 }
 
 /// `sh -c` command that runs interactive ssh to `dest` (one of the finca's

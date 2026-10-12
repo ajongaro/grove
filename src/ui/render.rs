@@ -376,6 +376,12 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
     }
     if let Some(st) = &f.last_status {
         let mut any = false;
+        let name_w = name_width(
+            st.projects
+                .iter()
+                .flat_map(|p| &p.sessions)
+                .map(|s| s.name.as_str()),
+        );
         for p in st.projects.iter().filter(|p| !p.sessions.is_empty()) {
             any = true;
             lines.push(Line::raw(p.name.clone()).bold());
@@ -383,7 +389,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                 let color = state_color(s.state);
                 lines.push(Line::from(vec![
                     Span::styled("  ● ", Style::new().fg(color)),
-                    Span::raw(format!("{:<14}", s.name)).bold(),
+                    Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                     Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                     Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
                 ]));
@@ -432,13 +438,14 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         );
         return;
     }
+    let name_w = name_width(sessions.iter().map(|s| s.name.as_str()));
     let items: Vec<ListItem> = sessions
         .iter()
         .map(|s| {
             let color = state_color(s.state);
             let spans = vec![
                 Span::styled("● ", Style::new().fg(color)),
-                Span::raw(format!("{:<14}", s.name)).bold(),
+                Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                 Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                 Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).dark_gray(),
             ];
@@ -458,6 +465,12 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         .block(block)
         .highlight_style(highlight(app.pane == Pane::Sessions));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// Session-name column: the longest name plus a gap, so states line up and
+/// never run into a name.
+fn name_width<'a>(names: impl Iterator<Item = &'a str>) -> usize {
+    names.map(|n| n.chars().count()).max().unwrap_or(0).max(12) + 2
 }
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {

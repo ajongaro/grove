@@ -139,6 +139,41 @@ fn poll_reachable_parses_status() {
 }
 
 #[test]
+fn poll_runs_grove_under_the_login_shell() {
+    // Like Homebrew's tmux on macOS: only the login profile puts it on PATH,
+    // and without it grove can't see which sessions are live.
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join(".profile"),
+        "echo 'welcome to the box'\nexport FROM_PROFILE=1\n",
+    )
+    .unwrap();
+    let json = status_json("homebox");
+    let bin = script(
+        d.path(),
+        "grove",
+        &format!("[ \"$FROM_PROFILE\" = 1 ] || exit 1\ncat <<'JSON'\n{json}\nJSON"),
+    );
+    let ssh = fake_ssh(d.path(), None);
+    let shell = std::env::var_os("SHELL");
+    let r = with_env(&ssh, &home, || {
+        unsafe { std::env::set_var("SHELL", "/bin/sh") };
+        let r = poll_one(&finca_with_bin(&bin), ANSWERS);
+        match &shell {
+            Some(s) => unsafe { std::env::set_var("SHELL", s) },
+            None => unsafe { std::env::remove_var("SHELL") },
+        }
+        r
+    });
+    match r {
+        Reach::Reachable(st) => assert_eq!(st.host, "homebox"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn poll_ssh_failure_is_unreachable() {
     let d = tempfile::tempdir().unwrap();
     let ssh = fake_ssh(d.path(), Some(255));
