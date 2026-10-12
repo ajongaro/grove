@@ -384,7 +384,7 @@ fn renders_projects_sessions_states_and_counts() {
     );
     let s = screen(&app, 100, 20);
     for needle in [
-        "Projects",
+        "PROJECTS",
         "alpha",
         "beta",
         "s1",
@@ -658,7 +658,7 @@ fn fincas_listed_under_projects_with_counts() {
     poll(&mut app, "old", Reach::NeedsUpdate, t0());
     let s = screen(&app, 110, 24);
     for needle in [
-        "Fincas",
+        "FINCAS",
         "therver",
         "3 live",
         "⚑2",
@@ -740,7 +740,7 @@ fn finca_detail_shows_remote_sessions_grouped_by_project() {
     );
     let s = screen(&app, 110, 24);
     for needle in [
-        "Finca — therver",
+        "FINCA — therver",
         "btt",
         "n0",
         "needs you",
@@ -1021,11 +1021,11 @@ fn play_box_sits_above_the_work_box() {
     let (_d, _s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
     app.proj_idx = 1; // acme
     let out = screen(&app, 100, 20);
-    let (play, work) = (row_of(&out, "╭ play "), row_of(&out, "╭ work "));
+    let (play, work) = (row_of(&out, "╭ PLAY "), row_of(&out, "╭ WORK "));
     assert!(play < work, "{out}");
     assert!((play..work).contains(&row_of(&out, "● beta")), "{out}");
     assert!(row_of(&out, "● acme") > work, "{out}");
-    assert!(out.contains("Sessions — Work — acme"), "{out}");
+    assert!(out.contains("SESSIONS — WORK — acme"), "{out}");
 }
 
 #[test]
@@ -1040,8 +1040,8 @@ fn without_account_folders_there_is_one_projects_box() {
     // A finca: everything runs on the default account.
     let (_d, _s, app) = loaded(&["alpha"], &[]);
     let out = screen(&app, 100, 12);
-    assert!(out.contains(" Projects "), "{out}");
-    assert!(!out.contains("╭ work "), "{out}");
+    assert!(out.contains(" PROJECTS "), "{out}");
+    assert!(!out.contains("╭ WORK "), "{out}");
 }
 
 #[test]
@@ -1205,7 +1205,7 @@ fn todo_list_sits_below_the_sessions() {
         .unwrap();
     app.reload(&s);
     let out = screen(&app, 100, 20);
-    let (sessions, todo) = (row_of(&out, "Sessions — "), row_of(&out, "╭ To-do "));
+    let (sessions, todo) = (row_of(&out, "SESSIONS — "), row_of(&out, "╭ TO-DO "));
     assert!(sessions < todo, "{out}");
     assert!(row_of(&out, "[ ] buy milk") > todo, "{out}");
     assert!(out.contains("[x] ship grove"), "{out}");
@@ -1370,27 +1370,27 @@ fn each_pane_title_has_its_own_color_whatever_has_focus() {
     for pane in [Pane::Projects, Pane::Sessions, Pane::Todo] {
         app.pane = pane;
         assert_eq!(
-            fg_of(&app, 100, 24, "play "),
+            fg_of(&app, 100, 24, "PLAY "),
             Rgb(0x7a, 0xa2, 0xf7),
             "{pane:?}"
         );
         assert_eq!(
-            fg_of(&app, 100, 24, "work "),
+            fg_of(&app, 100, 24, "WORK "),
             Rgb(0xe8, 0xa3, 0x3d),
             "{pane:?}"
         );
         assert_eq!(
-            fg_of(&app, 100, 24, "Sessions"),
+            fg_of(&app, 100, 24, "SESSIONS"),
             Rgb(0xbb, 0x9a, 0xf7),
             "{pane:?}"
         );
         assert_eq!(
-            fg_of(&app, 100, 24, "Work —"),
+            fg_of(&app, 100, 24, "WORK —"),
             Rgb(0xe8, 0xa3, 0x3d),
             "{pane:?}"
         );
         assert_eq!(
-            fg_of(&app, 100, 24, "To-do"),
+            fg_of(&app, 100, 24, "TO-DO"),
             Rgb(0x7d, 0xcf, 0xff),
             "{pane:?}"
         );
@@ -1407,7 +1407,7 @@ fn each_pane_title_has_its_own_color_whatever_has_focus() {
 fn fincas_title_is_pink() {
     let (_d, _s, app) = with_fincas(&["alpha"], &[], &["therver"]);
     assert_eq!(
-        fg_of(&app, 100, 20, "Fincas"),
+        fg_of(&app, 100, 20, "FINCAS"),
         ratatui::style::Color::Rgb(0xf7, 0x76, 0x8e)
     );
 }

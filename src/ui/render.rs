@@ -185,7 +185,7 @@ fn pane_block<'a>(spans: Vec<Span<'a>>, focused: bool) -> Block<'a> {
 }
 
 /// One box per account group (play above work), stacked in equal shares;
-/// a single "Projects" box when no account owns a folder.
+/// a single PROJECTS box when no account owns a folder.
 fn render_project_boxes(frame: &mut Frame, app: &App, area: Rect) {
     let groups = app.groups();
     let areas = Layout::vertical(groups.iter().map(|_| Constraint::Fill(1))).split(area);
@@ -196,9 +196,9 @@ fn render_project_boxes(frame: &mut Frame, app: &App, area: Rect) {
             .take_while(|p| app.account_of(p).name == g.name)
             .count();
         let title = if groups.len() == 1 {
-            "Projects"
+            "PROJECTS".to_string()
         } else {
-            &g.name
+            g.name.to_uppercase()
         };
         let empty = match app
             .cfg
@@ -213,7 +213,7 @@ fn render_project_boxes(frame: &mut Frame, app: &App, area: Rect) {
             frame,
             app,
             *area,
-            title,
+            &title,
             g.color.as_deref(),
             start..start + len,
             &empty,
@@ -289,7 +289,7 @@ fn render_projects(
 fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     use crate::finca::Reach;
     let block = pane_block(
-        vec![Span::raw("Fincas").fg(FINCAS_COLOR)],
+        vec![Span::raw("FINCAS").fg(FINCAS_COLOR)],
         app.pane == Pane::Projects && app.selected_finca().is_some(),
     );
     let items: Vec<ListItem> = app
@@ -355,7 +355,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         .map(|s| format!(" ({})", s.host))
         .unwrap_or_default();
     let title = vec![
-        Span::raw("Finca").fg(FINCAS_COLOR),
+        Span::raw("FINCA").fg(FINCAS_COLOR),
         Span::raw(format!(" — {}{host}", f.name)),
     ];
     let block = pane_block(title, app.pane == Pane::Sessions);
@@ -407,10 +407,10 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 }
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
-    let mut title = vec![Span::raw("Sessions").fg(SESSIONS_COLOR)];
+    let mut title = vec![Span::raw("SESSIONS").fg(SESSIONS_COLOR)];
     if let Some(p) = app.selected_project() {
         let a = app.account_of(p);
-        let account = Span::raw(capitalize(&a.name));
+        let account = Span::raw(a.name.to_uppercase());
         title.push(Span::raw(" — "));
         title.push(match parse_hex(a.color.as_deref()) {
             Some(c) => account.fg(c),
@@ -462,7 +462,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.pane == Pane::Todo;
-    let block = pane_block(vec![Span::raw("To-do").fg(TODO_COLOR)], focused);
+    let block = pane_block(vec![Span::raw("TO-DO").fg(TODO_COLOR)], focused);
     let t = &app.todos;
     if t.items.is_empty() {
         let p = Paragraph::new("No to-dos — press o to add one (t or Tab to get here).")
@@ -576,14 +576,6 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-/// "work" → "Work".
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    c.next()
-        .map(|f| f.to_uppercase().chain(c).collect())
-        .unwrap_or_default()
 }
 
 fn highlight(focused: bool) -> Style {
