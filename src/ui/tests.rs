@@ -1455,3 +1455,68 @@ fn todo_count_sits_after_live_sessions_and_needs_you() {
     app.reload(&s);
     assert!(screen(&app, 100, 20).contains("● alpha  1  ⚑1  ☐1"));
 }
+
+// ---------- moving between sessions and to-do ----------
+
+#[test]
+fn j_off_the_last_session_moves_into_the_todo_list() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "alpha", "s2", State::Working, Some("@2")),
+        ],
+    );
+    app.pane = Pane::Sessions;
+    handle_key(&mut app, ch('j'));
+    assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 1));
+    handle_key(&mut app, key(KeyCode::Down));
+    assert_eq!(app.pane, Pane::Todo);
+}
+
+#[test]
+fn j_with_no_sessions_goes_straight_to_the_todo_list() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.pane = Pane::Sessions;
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pane, Pane::Todo);
+}
+
+#[test]
+fn k_off_the_top_of_the_todo_list_goes_back_to_the_same_session() {
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "alpha", "s2", State::Working, Some("@2")),
+        ],
+    );
+    s.write_todos("alpha", "- [ ] a\n- [ ] b\n").unwrap();
+    app.reload(&s);
+    app.pane = Pane::Sessions;
+    type_keys(&mut app, "jj"); // s2, then into To-do
+    assert_eq!(app.pane, Pane::Todo);
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.todos.idx, 1, "j moves within the list");
+    handle_key(&mut app, ch('k'));
+    assert_eq!(app.pane, Pane::Todo);
+    handle_key(&mut app, key(KeyCode::Up));
+    assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 1));
+}
+
+#[test]
+fn k_in_an_empty_todo_list_goes_back_to_sessions() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    handle_key(&mut app, ch('k'));
+    assert_eq!(app.pane, Pane::Sessions);
+}
+
+#[test]
+fn j_and_k_stay_letters_while_typing_a_todo() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('t'));
+    type_keys(&mut app, "okj");
+    assert_eq!(app.pane, Pane::Todo);
+    assert_eq!(app.todos.items[0].text, "kj");
+}

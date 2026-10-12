@@ -170,7 +170,13 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Char('R') => Action::Update,
         KeyCode::Char('j') | KeyCode::Down => {
-            move_selection(app, 1);
+            // Off the bottom of the sessions: down into the to-do list.
+            let last = app.visible_sessions().len().saturating_sub(1);
+            if app.pane == Pane::Sessions && app.todo_slug.is_some() && app.sess_idx >= last {
+                app.pane = Pane::Todo;
+            } else {
+                move_selection(app, 1);
+            }
             Action::None
         }
         KeyCode::Char('k') | KeyCode::Up => {
@@ -294,6 +300,11 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
             }
             KeyCode::Char('h') | KeyCode::Left => {
                 app.pane = Pane::Projects;
+                return Action::None;
+            }
+            // Off the top of the list: back up to the sessions.
+            KeyCode::Char('k') | KeyCode::Up if app.todos.at_top() => {
+                app.pane = Pane::Sessions;
                 return Action::None;
             }
             KeyCode::Char('q') => return Action::Quit,

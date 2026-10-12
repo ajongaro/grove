@@ -276,3 +276,16 @@ fn open_count_counts_unchecked_items() {
     assert_eq!(open_count("- [ ] a\n- [x] b\nplain\n\n"), 2);
     assert_eq!(open_count(""), 0);
 }
+
+#[test]
+fn at_top_only_on_the_first_item_with_nothing_half_typed() {
+    let mut t = loaded("- [ ] a\n- [ ] b\n");
+    assert!(t.at_top());
+    keys(&mut t, "d");
+    assert!(!t.at_top(), "a pending d must not let k leave the list");
+    keys(&mut t, "jk");
+    assert!(t.at_top());
+    keys(&mut t, "j");
+    assert!(!t.at_top());
+    assert!(loaded("").at_top());
+}

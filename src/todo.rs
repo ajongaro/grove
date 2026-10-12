@@ -74,6 +74,12 @@ impl Todos {
             .collect()
     }
 
+    /// On the first item (or an empty list) with no half-typed command, so
+    /// `k` can leave the list.
+    pub fn at_top(&self) -> bool {
+        self.idx == 0 && self.pending.is_none() && !self.inserting()
+    }
+
     pub fn inserting(&self) -> bool {
         self.insert.is_some()
     }
