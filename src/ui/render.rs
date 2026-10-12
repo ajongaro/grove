@@ -370,7 +370,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         }
     }
     lines.push(Line::raw(""));
-    lines.push(Line::raw("Enter: connect · C-q: come back").dark_gray());
+    lines.push(Line::raw("Enter: connect · s: shell · C-q: come back").dark_gray());
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })

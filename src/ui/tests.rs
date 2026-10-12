@@ -323,7 +323,7 @@ fn x_then_n_cancels() {
 #[test]
 fn project_keys_need_a_project() {
     let (_d, _s, mut app) = loaded(&[], &[]);
-    for c in ['n', 'e', 'w', 'c', 'x'] {
+    for c in ['n', 'e', 'c', 'x'] {
         assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
         assert_eq!(app.mode, Mode::Normal, "{c}");
     }
@@ -781,7 +781,7 @@ fn unreachable_finca_keeps_last_known_sessions_marked_stale() {
 #[test]
 fn session_keys_on_a_finca_point_to_connecting() {
     let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
-    for c in ['n', 'e', 'w', 'c', 'x'] {
+    for c in ['n', 'e', 'c', 'x'] {
         assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
         assert_eq!(app.mode, Mode::Normal, "{c}");
         assert!(
@@ -798,6 +798,25 @@ fn session_keys_on_a_finca_point_to_connecting() {
             ..
         }
     ));
+}
+
+#[test]
+fn s_on_a_finca_opens_a_shell_there() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["therver"]);
+    assert_eq!(
+        handle_key(&mut app, ch('s')),
+        Action::FincaShell {
+            slug: "therver".into(),
+            via: None
+        }
+    );
+    assert!(screen(&app, 100, 20).contains("s: shell"));
+}
+
+#[test]
+fn s_on_a_project_does_nothing() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    assert_eq!(handle_key(&mut app, ch('s')), Action::None);
 }
 
 #[test]

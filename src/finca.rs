@@ -288,17 +288,30 @@ pub fn connect_argv(f: &Finca, dest: &str) -> Vec<String> {
     // applies (e.g. Homebrew's tmux and claude on macOS). Quoting layers:
     // this local sh → ssh's remote shell → the login shell's -c.
     let remote = remote_login_cmd(&f.grove_bin);
-    let ssh = format!(
-        "{} -t -o ServerAliveInterval=15 -o ServerAliveCountMax=3 {} {}",
+    vec!["sh".into(), "-c".into(), ssh_script(f, dest, Some(&remote))]
+}
+
+/// Like `connect_argv`, but with no remote command: ssh starts the remote
+/// user's login shell.
+pub fn shell_argv(f: &Finca, dest: &str) -> Vec<String> {
+    vec!["sh".into(), "-c".into(), ssh_script(f, dest, None)]
+}
+
+/// Interactive ssh to `dest`, running `remote` there if given; on failure it
+/// pauses so the error can be read.
+fn ssh_script(f: &Finca, dest: &str, remote: Option<&str>) -> String {
+    let mut ssh = format!(
+        "{} -t -o ServerAliveInterval=15 -o ServerAliveCountMax=3 {}",
         sh_quote(&ssh_program()),
         sh_quote(dest),
-        sh_quote(&remote)
     );
-    let script = format!(
+    if let Some(r) = remote {
+        ssh = format!("{ssh} {}", sh_quote(r));
+    }
+    format!(
         "{ssh} || {{ code=$?; echo; echo \"ssh to {} exited ($code) — press Enter to close\"; read _; }}",
         f.name.replace(['"', '$', '`', '\\'], "")
-    );
-    vec!["sh".into(), "-c".into(), script]
+    )
 }
 
 pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> Result<bool> {
@@ -321,6 +334,43 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
     Ok(true)
 }
 
+/// The tmux session name for a finca's shell.
+pub fn shell_session_name(slug: &str) -> String {
+    format!("finca-{slug}-sh")
+}
+
+/// A login shell on the finca in its own session. Unlike the grove
+/// connection it keeps the normal prefix (splits, windows), and new windows
+/// ssh to the finca too; only C-q is taken (the grove-shell table).
+pub fn ensure_shell_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> Result<bool> {
+    let name = shell_session_name(&f.slug());
+    if tmux.has_session(&name) {
+        return Ok(false);
+    }
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| "/".into());
+    let argv = shell_argv(f, dest);
+    tmux.new_session_detached(&name, &f.name, &home, &argv)?;
+    tmux.set_option(&name, "key-table", "grove-shell")?;
+    tmux.set_option(
+        &name,
+        "default-command",
+        &format!("sh -c {}", sh_quote(&argv[2])),
+    )?;
+    tmux.set_option(&name, "detach-on-destroy", "off")?;
+    if let Some(c) = &f.color {
+        let _ = tmux.set_option(&name, "status-style", &format!("bg={c},fg=#ffffff"));
+    }
+    Ok(true)
+}
+
+/// Switches the current client to a shell on the finca, like `connect`.
+pub fn open_shell(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result<()> {
+    ensure_shell_session(tmux, f, via.unwrap_or(&f.ssh))?;
+    tmux.switch_client(&format!("={}", shell_session_name(&f.slug())))
+}
+
 /// Connects the current client to the finca (creating the session if
 /// needed) at `via`, the destination that last answered a poll, else `ssh`.
 pub fn connect(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result<()> {
@@ -328,9 +378,10 @@ pub fn connect(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result
     tmux.switch_client(&format!("={}", session_name(&f.slug())))
 }
 
-/// Closes the finca's connection session, if open.
+/// Closes the finca's connection and shell sessions, if open.
 pub fn disconnect(tmux: &crate::tmux::Tmux, slug: &str) {
     let _ = tmux.kill_session(&session_name(slug));
+    let _ = tmux.kill_session(&shell_session_name(slug));
 }
 
 #[cfg(test)]

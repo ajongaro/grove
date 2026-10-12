@@ -70,13 +70,16 @@ the footer counts remote sessions that need you.
 
 - **Enter** on a finca opens that machine's own Grove dashboard. Every key
   goes to it.
-- **`C-q`** comes back to your local dashboard. The connection stays open, so
-  Enter returns instantly.
+- **`s`** on a finca opens a plain login shell there. Your tmux prefix
+  works in it, and new windows and splits (`prefix c`, `prefix v`) open
+  shells on the finca too.
+- **`C-q`** comes back to your local dashboard from either. The connection
+  stays open, so Enter or `s` returns instantly.
 - Selecting a finca shows its sessions read-only. To start, kill or edit
   sessions, connect.
 - A finca can have a **backup** SSH destination, such as its Tailscale
   name. When the main one doesn't answer (you're away from home), polling
-  tries the backup, and Enter connects to whichever one answered last.
+  tries the backup, and Enter and `s` connect to whichever one answered last.
 
 ```sh
 grove finca add homebox me@homebox.local   # needs key-based SSH + grove installed there

@@ -95,6 +95,11 @@ pub enum Action {
     EditProject {
         slug: String,
     },
+    /// A login shell on the finca, at `via` like `ConnectFinca`.
+    FincaShell {
+        slug: String,
+        via: Option<String>,
+    },
     ClearEnded {
         slug: String,
     },

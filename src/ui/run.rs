@@ -88,6 +88,12 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::connect(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::FincaShell { slug, via } => {
+            let f = store.get_finca(&slug)?;
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            crate::finca::open_shell(&ctx.tmux, &f, via.as_deref())?;
+            Outcome::Nothing
+        }
         Action::RemoveProject { slug } => Outcome::Message(remove_project(
             store,
             &ctx.tmux,

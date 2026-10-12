@@ -78,8 +78,10 @@ bind -n C-g select-window -t :=dashboard
 "##;
     // Finca sessions use the grove-finca table instead of root (finca.rs), so
     // only C-q is intercepted and every other key reaches the remote grove.
+    // Finca shells use grove-shell: C-q too, but the prefix still works.
     format!(
         "{base}bind -T grove-finca C-q switch-client -t ={session}\n\
+         bind -T grove-shell C-q switch-client -t ={session}\n\
          bind r source-file \"{}\" \\; display \"Reloaded Grove tmux config\"\n\
          {copy}\
          \n# Your own setup, loaded last.\n\
@@ -205,6 +207,10 @@ mod tests {
         assert!(!c.contains("C-y"), "{c}");
         assert!(
             c.contains("bind -T grove-finca C-q switch-client -t =g2"),
+            "{c}"
+        );
+        assert!(
+            c.contains("bind -T grove-shell C-q switch-client -t =g2"),
             "{c}"
         );
         let local = format!(

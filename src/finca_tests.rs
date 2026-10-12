@@ -341,6 +341,35 @@ fn connect_argv_uses_the_given_destination() {
     assert!(!got.lines().any(|l| l == "me@home"), "{got}");
 }
 
+#[test]
+fn shell_argv_opens_a_plain_login_shell_at_the_destination() {
+    let d = tempfile::tempdir().unwrap();
+    let args_out = d.path().join("args.txt");
+    let ssh = script(
+        d.path(),
+        "echo ssh",
+        &format!(
+            "for a in \"$@\"; do echo \"$a\"; done > '{}'",
+            args_out.display()
+        ),
+    );
+    let f = away_finca(std::path::Path::new("/g"), Some("me@box.ts.net"));
+    let argv = with_env(&ssh, d.path(), || shell_argv(&f, "me@box.ts.net"));
+    assert!(
+        std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let got = std::fs::read_to_string(&args_out).unwrap();
+    let args: Vec<_> = got.lines().collect();
+    assert!(args.contains(&"-t"), "{got}");
+    // No remote command: ssh starts the user's login shell.
+    assert_eq!(args.last(), Some(&"me@box.ts.net"), "{got}");
+    assert!(!got.contains("/g"), "{got}");
+}
+
 // ---------- connect ----------
 
 #[test]
@@ -500,6 +529,76 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
 
     disconnect(&tmux, "therver");
     assert!(!tmux.has_session("finca-therver"));
+}
+
+#[test]
+fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
+    let d = tempfile::tempdir().unwrap();
+    let conf = d.path().join("tmux.conf");
+    std::fs::write(
+        &conf,
+        crate::runfiles::tmux_conf(
+            "grove",
+            &crate::config::Paths::new(d.path().join("conf-home")),
+            None,
+        ),
+    )
+    .unwrap();
+    let tmux = crate::tmux::Tmux {
+        config: Some(conf),
+        ..crate::tmux::Tmux::new(format!("grove-test-{}-shell", std::process::id()))
+    };
+    struct Kill<'a>(&'a crate::tmux::Tmux);
+    impl Drop for Kill<'_> {
+        fn drop(&mut self) {
+            self.0.kill_server();
+        }
+    }
+    let _k = Kill(&tmux);
+    tmux.new_session_detached(
+        "grove",
+        "dashboard",
+        d.path(),
+        &["sleep".into(), "30".into()],
+    )
+    .unwrap();
+    let ssh = script(d.path(), "idle ssh", "sleep 30");
+    let f = Finca {
+        name: "therver".into(),
+        ssh: "x".into(),
+        grove_bin: "/g".into(),
+        color: None,
+        backup: None,
+    };
+    assert!(with_env(&ssh, d.path(), || ensure_shell_session(&tmux, &f, &f.ssh)).unwrap());
+    assert!(
+        !with_env(&ssh, d.path(), || ensure_shell_session(&tmux, &f, &f.ssh)).unwrap(),
+        "reused, not duplicated"
+    );
+    let out =
+        |args: &[&str]| String::from_utf8(tmux.cmd().args(args).output().unwrap().stdout).unwrap();
+    let opt = |o: &str| out(&["show-options", "-v", "-t", "=finca-therver-sh:", o]);
+    assert_eq!(opt("key-table").trim(), "grove-shell");
+    assert_ne!(opt("prefix").trim(), "None", "the prefix works in a shell");
+    // New windows and splits ssh to the finca too, not a local shell.
+    assert!(
+        opt("default-command").contains("idle ssh"),
+        "{}",
+        opt("default-command")
+    );
+    let keys = out(&["list-keys", "-T", "grove-shell"]);
+    assert!(
+        keys.contains("C-q") && keys.contains("switch-client -t =grove"),
+        "{keys}"
+    );
+
+    with_env(&ssh, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap();
+    disconnect(&tmux, "therver");
+    assert!(!tmux.has_session("finca-therver"));
+    assert!(
+        !tmux.has_session("finca-therver-sh"),
+        "rm closes the shell too"
+    );
 }
 
 #[test]

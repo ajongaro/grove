@@ -265,7 +265,14 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
             }
             None => Action::ConnectFinca { slug, via },
         }),
-        KeyCode::Char('n' | 'e' | 'w' | 'c' | 'x') => {
+        KeyCode::Char('s') => Some(match error {
+            Some(e) => {
+                app.footer = Some(format!("{name} can't be used: {e}"));
+                Action::None
+            }
+            None => Action::FincaShell { slug, via },
+        }),
+        KeyCode::Char('n' | 'e' | 'c' | 'x') => {
             app.footer = Some(format!(
                 "Sessions on {name} are managed there: connect with Enter (C-q to come back)"
             ));
