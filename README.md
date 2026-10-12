@@ -38,7 +38,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 
 | Key | Where | Does |
 |---|---|---|
-| `C-y` | anywhere | back to the dashboard |
+| `C-g` | anywhere | back to the dashboard |
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |

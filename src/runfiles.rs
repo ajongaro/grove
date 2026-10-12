@@ -74,7 +74,7 @@ set -g status-left "#[bold] GROVE "
 set -g status-left-length 12
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
-bind -n C-y select-window -t :=dashboard
+bind -n C-g select-window -t :=dashboard
 "##;
     // Finca sessions use the grove-finca table instead of root (finca.rs), so
     // only C-q is intercepted and every other key reaches the remote grove.
@@ -198,9 +198,11 @@ mod tests {
         let (_d, p) = paths();
         let c = tmux_conf("g2", &p, None);
         assert!(
-            c.contains("bind -n C-y select-window -t :=dashboard"),
+            c.contains("bind -n C-g select-window -t :=dashboard"),
             "{c}"
         );
+        // C-y belongs to Claude (yank); Grove only takes C-g.
+        assert!(!c.contains("C-y"), "{c}");
         assert!(
             c.contains("bind -T grove-finca C-q switch-client -t =g2"),
             "{c}"
@@ -315,7 +317,7 @@ mod tests {
         assert_eq!(local.trim(), "yes");
         assert!(
             keys.lines().any(|l| l.contains("-T root")
-                && l.split_whitespace().any(|w| w == "C-y")
+                && l.split_whitespace().any(|w| w == "C-g")
                 && l.ends_with("select-window -t :=dashboard")),
             "{keys}"
         );
