@@ -385,6 +385,10 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
             }
         }
         FincaCmd::Setup { dest, pause } => {
+            // Without a terminal, end of input would read as Enter: "yes".
+            if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                bail!("finca setup asks before each change, so it needs a terminal");
+            }
             let mut io = setup::TerminalIo;
             let dest = match dest {
                 Some(d) => d,

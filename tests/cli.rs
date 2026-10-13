@@ -408,3 +408,23 @@ fn rm_forgets_a_project_but_not_its_folder() {
     assert!(proj.is_dir());
     assert!(!run(&["rm", "old"]).status.success(), "already gone");
 }
+
+#[test]
+fn finca_setup_without_a_terminal_refuses_instead_of_saying_yes() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let out = grove(&home)
+        .args(["finca", "setup", "me@homebox.invalid"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("terminal"), "{err}");
+    assert!(
+        !home
+            .join("fincas")
+            .read_dir()
+            .is_ok_and(|mut d| d.next().is_some())
+    );
+}
