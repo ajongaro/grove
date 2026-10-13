@@ -316,8 +316,60 @@ pub fn remote_login_cmd(bin: &str) -> String {
 }
 
 /// `cmd` (already quoted for a shell) run by the remote user's login shell.
-fn login_shell_cmd(cmd: &str) -> String {
+pub fn login_shell_cmd(cmd: &str) -> String {
     format!("exec \"$SHELL\" -lc {}", sh_quote(cmd))
+}
+
+/// Runs `cmd` at `dest` without a terminal (BatchMode, shared connection).
+#[allow(dead_code)] // Used by the setup wizard (next tasks).
+pub fn run_remote(dest: &str, cmd: &str) -> Result<std::process::Output> {
+    remote_stdin(dest, cmd, std::process::Stdio::null())
+}
+
+/// Like `run_remote`, with `input` as the command's stdin.
+#[allow(dead_code)] // Used by the setup wizard (next tasks).
+pub fn remote_stdin(
+    dest: &str,
+    cmd: &str,
+    input: std::process::Stdio,
+) -> Result<std::process::Output> {
+    std::process::Command::new(ssh_program())
+        .args(SSH_BATCH_OPTS)
+        .args(share_opts())
+        .arg(dest)
+        .arg(cmd)
+        .stdin(input)
+        .output()
+        .with_context(|| format!("running {}", ssh_program()))
+}
+
+/// argv for an interactive `ssh -t` to `dest`: `cmd` under the login shell,
+/// or a login shell when None. `extra` options go before the destination.
+#[allow(dead_code)] // Used by the setup wizard (next tasks).
+pub fn interactive_ssh(dest: &str, cmd: Option<&str>, extra: &[&str]) -> Vec<String> {
+    let mut argv = vec![ssh_program(), "-t".to_string()];
+    argv.extend(share_opts());
+    argv.extend(extra.iter().map(|s| s.to_string()));
+    argv.push(dest.to_string());
+    argv.extend(cmd.map(login_shell_cmd));
+    argv
+}
+
+/// POSIX sh printing `key=value` facts for `setup::parse_facts`.
+#[allow(dead_code)] // Used by the setup wizard (next tasks).
+pub fn facts_script() -> String {
+    format!(
+        concat!(
+            "echo \"os=$(uname -s)\"; echo \"arch=$(uname -m)\"; ",
+            "echo \"host=$(hostname -s 2>/dev/null || hostname)\"; echo \"home=$HOME\"; ",
+            "for t in tmux claude cargo brew apt-get dnf; do ",
+            "command -v \"$t\" >/dev/null 2>&1 && echo \"has=$t\"; done; ",
+            "[ -x \"$HOME/.cargo/bin/cargo\" ] && echo has=cargo; ",
+            "for b in {}; do if [ -x \"$b\" ] && v=$(\"$b\" --version 2>/dev/null); then ",
+            "echo \"grove=$b\"; echo \"grove_version=$v\"; break; fi; done; true"
+        ),
+        CANDIDATES.join(" ")
+    )
 }
 
 /// `sh -c` command that runs interactive ssh to `dest` (one of the finca's
@@ -510,7 +562,7 @@ pub mod testing {
         let p = dir.join("fake ssh");
         let body = match exit_code {
             Some(code) => format!("#!/bin/sh\necho 'ssh: connect to host x: Connection refused' >&2\nexit {code}\n"),
-            None => "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) shift 2;; -t|-T) shift;; *) break;; esac; done\nshift\nHOME=\"$FAKE_HOME\" exec sh -c \"$*\"\n".into(),
+            None => "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) shift 2;; -t|-T) shift;; *) break;; esac; done\nshift\nHOME=\"$FAKE_HOME\" PATH=\"${FAKE_PATH:-$PATH}\" exec sh -c \"$*\"\n".into(),
         };
         std::fs::write(&p, body).unwrap();
         std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -531,4 +583,4 @@ pub mod testing {
 
 #[cfg(test)]
 #[path = "finca_tests.rs"]
-mod tests;
+pub(crate) mod tests;

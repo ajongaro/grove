@@ -3,7 +3,7 @@ use super::*;
 
 /// Probe/poll tests change process env (GROVE_SSH, FAKE_HOME); run them one
 /// at a time.
-pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Poll timeout for fakes that exit on their own (answer or fail). macOS
 /// checks each freshly written executable on its first run (~1s, much more
@@ -22,7 +22,11 @@ fn eventually(within: std::time::Duration, mut cond: impl FnMut() -> bool) -> bo
     cond()
 }
 
-fn with_env<T>(ssh: &std::path::Path, fake_home: &std::path::Path, f: impl FnOnce() -> T) -> T {
+pub(crate) fn with_env<T>(
+    ssh: &std::path::Path,
+    fake_home: &std::path::Path,
+    f: impl FnOnce() -> T,
+) -> T {
     let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         std::env::set_var("GROVE_SSH", ssh);
@@ -855,4 +859,63 @@ fn focus_asks_the_finca_to_select_the_window() {
     })
     .unwrap_err();
     assert!(format!("{err:#}").contains("no such command"), "{err:#}");
+}
+
+#[test]
+fn facts_script_reports_the_machine() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+    fake_grove(&home.join(".local/bin"), "{}");
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    script(&bin, "tmux", "exit 0");
+    let ssh = fake_ssh(d.path(), None);
+    let out = with_env(&ssh, &home, || {
+        unsafe { std::env::set_var("FAKE_PATH", format!("{}:/usr/bin:/bin", bin.display())) };
+        let r = run_remote("me@box", &facts_script());
+        unsafe { std::env::remove_var("FAKE_PATH") };
+        r
+    })
+    .unwrap();
+    let f = crate::setup::parse_facts(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    assert_eq!(f.home, home.to_string_lossy());
+    assert!(f.has("tmux") && !f.has("claude"));
+    assert_eq!(
+        f.grove,
+        Some((
+            home.join(".local/bin/grove").to_string_lossy().into(),
+            "grove 0.1.0".into()
+        ))
+    );
+}
+
+#[test]
+fn remote_stdin_feeds_the_command() {
+    let d = tempfile::tempdir().unwrap();
+    let ssh = fake_ssh(d.path(), None);
+    let src = d.path().join("in.txt");
+    std::fs::write(&src, "hello").unwrap();
+    let out = with_env(&ssh, d.path(), || {
+        remote_stdin("me@box", "cat", std::fs::File::open(&src).unwrap().into())
+    })
+    .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "hello");
+}
+
+#[test]
+fn interactive_ssh_has_a_tty_and_the_command() {
+    let argv = interactive_ssh("me@box", Some("claude auth login"), &[]);
+    assert!(argv.contains(&"-t".to_string()), "{argv:?}");
+    assert_eq!(argv.last().unwrap(), &login_shell_cmd("claude auth login"));
+    let accept = interactive_ssh(
+        "me@box",
+        Some("true"),
+        &["-o", "StrictHostKeyChecking=accept-new"],
+    );
+    assert!(
+        accept
+            .windows(2)
+            .any(|w| w == ["-o", "StrictHostKeyChecking=accept-new"])
+    );
 }
