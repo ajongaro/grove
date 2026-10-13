@@ -8,6 +8,7 @@ mod log;
 mod mcp;
 mod model;
 mod runfiles;
+mod setup;
 mod state;
 mod status;
 mod store;
