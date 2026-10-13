@@ -919,3 +919,143 @@ fn interactive_ssh_has_a_tty_and_the_command() {
             .any(|w| w == ["-o", "StrictHostKeyChecking=accept-new"])
     );
 }
+
+fn plain(c: &str) -> String {
+    c.to_string()
+}
+
+fn facts_for(home: &std::path::Path, same_platform: bool) -> crate::setup::Facts {
+    crate::setup::Facts {
+        os: if same_platform {
+            std::env::consts::OS.into()
+        } else {
+            "plan9".into()
+        },
+        arch: std::env::consts::ARCH.into(),
+        host: "homebox".into(),
+        home: home.to_string_lossy().into(),
+        tools: ["cargo".to_string()].into(),
+        grove: None,
+    }
+}
+
+#[test]
+fn same_platform_install_copies_this_binary_via_a_swap() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    std::fs::create_dir_all(&home).unwrap();
+    let exe = fake_grove(d.path(), "{}");
+    let bin = home.join(".local/bin/grove");
+    let ssh = fake_ssh(d.path(), None);
+    let v = with_env(&ssh, &home, || {
+        install_grove(
+            "me@box",
+            &facts_for(&home, true),
+            &bin.to_string_lossy(),
+            &exe,
+            None,
+            plain,
+        )
+    })
+    .unwrap();
+    assert_eq!(v, "grove 0.1.0");
+    assert_eq!(std::fs::read(&bin).unwrap(), std::fs::read(&exe).unwrap());
+    assert!(
+        !home.join(".local/bin/grove.new").exists(),
+        "swapped into place"
+    );
+}
+
+#[test]
+fn other_platform_ships_source_without_target_or_git() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    let src = d.path().join("src");
+    for p in ["target/release", ".git", "src"] {
+        std::fs::create_dir_all(src.join(p)).unwrap();
+    }
+    std::fs::write(src.join("Cargo.toml"), "[package]").unwrap();
+    std::fs::write(src.join("src/main.rs"), "fn main(){}").unwrap();
+    std::fs::write(src.join("target/release/big"), "x").unwrap();
+    std::fs::create_dir_all(home.join("src/grove")).unwrap();
+    std::fs::write(home.join("src/grove/stale.rs"), "old").unwrap();
+    // A fake cargo "build" that installs a grove into target/release.
+    let bin_dir = home.join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let grove = fake_grove(d.path(), "{}");
+    script(
+        &bin_dir,
+        "cargo",
+        &format!(
+            "mkdir -p target/release && cp {} target/release/grove",
+            sh_quote(&grove.to_string_lossy())
+        ),
+    );
+    let bin = home.join(".local/bin/grove");
+    let ssh = fake_ssh(d.path(), None);
+    let v = with_env(&ssh, &home, || {
+        unsafe { std::env::set_var("FAKE_PATH", format!("{}:/usr/bin:/bin", bin_dir.display())) };
+        let r = install_grove(
+            "me@box",
+            &facts_for(&home, false),
+            &bin.to_string_lossy(),
+            &grove,
+            Some(&src),
+            plain,
+        );
+        unsafe { std::env::remove_var("FAKE_PATH") };
+        r
+    })
+    .unwrap();
+    assert_eq!(v, "grove 0.1.0");
+    let shipped = home.join("src/grove");
+    assert!(shipped.join("src/main.rs").exists());
+    assert!(!shipped.join(".git").exists());
+    assert!(!shipped.join("stale.rs").exists(), "old files go");
+    assert!(
+        !shipped.join("target/release/big").exists(),
+        "local target isn't shipped"
+    );
+}
+
+#[test]
+fn source_build_without_source_folder_fails_clearly() {
+    let d = tempfile::tempdir().unwrap();
+    let gone = d.path().join("deleted checkout");
+    let err = install_grove(
+        "me@box",
+        &facts_for(d.path(), false),
+        "/x/grove",
+        d.path(),
+        Some(&gone),
+        plain,
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("install Grove there by hand"),
+        "{err:#}"
+    );
+    let err = install_grove(
+        "me@box",
+        &facts_for(d.path(), false),
+        "/x/grove",
+        d.path(),
+        None,
+        plain,
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:#}").contains("install Grove there by hand"),
+        "{err:#}"
+    );
+}
+
+#[test]
+fn source_build_needs_cargo_there() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
+    let mut f = facts_for(d.path(), false);
+    f.tools.clear();
+    let err = install_grove("me@box", &f, "/x/grove", d.path(), Some(d.path()), plain).unwrap_err();
+    assert!(format!("{err:#}").contains("cargo"), "{err:#}");
+}

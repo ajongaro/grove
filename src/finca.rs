@@ -321,13 +321,11 @@ pub fn login_shell_cmd(cmd: &str) -> String {
 }
 
 /// Runs `cmd` at `dest` without a terminal (BatchMode, shared connection).
-#[allow(dead_code)] // Used by the setup wizard (next tasks).
 pub fn run_remote(dest: &str, cmd: &str) -> Result<std::process::Output> {
     remote_stdin(dest, cmd, std::process::Stdio::null())
 }
 
 /// Like `run_remote`, with `input` as the command's stdin.
-#[allow(dead_code)] // Used by the setup wizard (next tasks).
 pub fn remote_stdin(
     dest: &str,
     cmd: &str,
@@ -356,7 +354,6 @@ pub fn interactive_ssh(dest: &str, cmd: Option<&str>, extra: &[&str]) -> Vec<Str
 }
 
 /// POSIX sh printing `key=value` facts for `setup::parse_facts`.
-#[allow(dead_code)] // Used by the setup wizard (next tasks).
 pub fn facts_script() -> String {
     format!(
         concat!(
@@ -370,6 +367,104 @@ pub fn facts_script() -> String {
         ),
         CANDIDATES.join(" ")
     )
+}
+
+/// This binary's source folder, recorded at build time, if still there.
+pub fn source_dir() -> Option<std::path::PathBuf> {
+    let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.join("Cargo.toml").exists().then_some(p)
+}
+
+/// Puts grove at `bin` on the finca and returns its `--version` line.
+/// Same OS and CPU: copies `exe`. Otherwise builds `source` there (needs
+/// cargo there). `wrap` runs the build under the login shell.
+pub fn install_grove(
+    dest: &str,
+    facts: &crate::setup::Facts,
+    bin: &str,
+    exe: &std::path::Path,
+    source: Option<&std::path::Path>,
+    wrap: fn(&str) -> String,
+) -> Result<String> {
+    let b = sh_quote(bin);
+    let new = sh_quote(&format!("{bin}.new"));
+    // Rename over the old binary so a running grove keeps its (old) inode.
+    let swap = format!("mv -f {new} {b} && {b} --version");
+    let mkdir = format!("mkdir -p \"$(dirname {b})\"");
+    let out = if facts.same_platform_as_here() {
+        let file =
+            std::fs::File::open(exe).with_context(|| format!("reading {}", exe.display()))?;
+        remote_stdin(
+            dest,
+            &format!("set -e; {mkdir}; cat > {new}; chmod 755 {new}; {swap}"),
+            file.into(),
+        )?
+    } else {
+        let Some(src) = source.filter(|s| s.join("Cargo.toml").exists()) else {
+            bail!(
+                "{} is {} {}, unlike this machine, so Grove must be built there, but this grove's source folder is gone; install Grove there by hand",
+                facts.host,
+                facts.os,
+                facts.arch
+            );
+        };
+        if !facts.has("cargo") {
+            bail!("{} has no cargo to build Grove with", facts.host);
+        }
+        ship_source(dest, src)?;
+        run_remote(
+            dest,
+            &wrap(&format!(
+                "set -e; [ -f ~/.cargo/env ] && . ~/.cargo/env; cd ~/src/grove; cargo build --release --quiet; {mkdir}; install -m 755 target/release/grove {new}; {swap}"
+            )),
+        )?
+    };
+    if !out.status.success() {
+        bail!(
+            "installing grove on {dest} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .trim()
+        .to_string())
+}
+
+/// Replaces ~/src/grove on the finca with `src` (keeping its build cache),
+/// streamed as a tar over ssh.
+fn ship_source(dest: &str, src: &std::path::Path) -> Result<()> {
+    use std::process::{Command, Stdio};
+    let mut tar = Command::new("tar")
+        .arg("-C")
+        .arg(src)
+        .args([
+            "--exclude=./target",
+            "--exclude=./.git",
+            "--exclude=./.superpowers",
+            "-cf",
+            "-",
+            ".",
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("running tar")?;
+    let stdout = tar.stdout.take().context("tar output")?;
+    let out = remote_stdin(
+        dest,
+        "set -e; mkdir -p ~/src/grove; cd ~/src/grove; find . -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +; tar -xf -",
+        stdout.into(),
+    )?;
+    let tar_ok = tar.wait()?.success();
+    if !out.status.success() || !tar_ok {
+        bail!(
+            "copying Grove's source to {dest} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
 }
 
 /// `sh -c` command that runs interactive ssh to `dest` (one of the finca's

@@ -105,6 +105,8 @@ enum FincaCmd {
     Rm { name: String },
     /// List fincas.
     Ls,
+    /// Install this build of grove on fincas (all, or the named ones).
+    Update { names: Vec<String> },
 }
 
 fn main() {
@@ -374,6 +376,59 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
                 }
             }
         }
+        FincaCmd::Update { names } => {
+            let fincas: Vec<finca::Finca> = if names.is_empty() {
+                store
+                    .list_fincas()
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .collect()
+            } else {
+                names
+                    .iter()
+                    .map(|n| store.get_finca(n))
+                    .collect::<Result<_>>()?
+            };
+            let exe = std::env::current_exe()?;
+            let mut failed = 0;
+            for f in &fincas {
+                match update_one(f, &exe) {
+                    Ok(line) => println!("== {}: {line}", f.name),
+                    Err(e) => {
+                        failed += 1;
+                        eprintln!("== {}: {e:#}", f.name);
+                    }
+                }
+            }
+            if failed > 0 {
+                bail!("{failed} finca(s) not updated");
+            }
+        }
     }
     Ok(())
+}
+
+/// Installs this build on `f` through whichever destination answers.
+fn update_one(f: &finca::Finca, exe: &std::path::Path) -> Result<String> {
+    let dest = f
+        .destinations()
+        .find(|d| finca::run_remote(d, "true").is_ok_and(|o| o.status.success()))
+        .ok_or_else(|| anyhow::anyhow!("unreachable"))?;
+    let out = finca::run_remote(dest, &finca::login_shell_cmd(&finca::facts_script()))?;
+    let facts = setup::parse_facts(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| anyhow::anyhow!("couldn't read the machine's details"))?;
+    let how = if facts.same_platform_as_here() {
+        "copied"
+    } else {
+        "built there"
+    };
+    let v = finca::install_grove(
+        dest,
+        &facts,
+        &f.grove_bin,
+        exe,
+        finca::source_dir().as_deref(),
+        finca::login_shell_cmd,
+    )?;
+    Ok(format!("{v} ({how}, via {dest})"))
 }
