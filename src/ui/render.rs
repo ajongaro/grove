@@ -33,12 +33,20 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         render_fincas(frame, app, fincas, now);
         projects
     };
-    render_project_boxes(frame, app, projects);
+    let boxes = project_box_areas(app, projects);
+    render_project_boxes(frame, app, &boxes);
     match app.selected_finca() {
         Some(f) => render_finca_detail(frame, app, f, right, now),
         None if app.todo_slug.is_some() => {
-            let [sessions, todo] =
-                Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right);
+            // With an account box per group, the to-do starts level with the
+            // second one; otherwise the column splits in half.
+            let [sessions, todo] = match boxes.get(1) {
+                Some(b) => {
+                    Layout::vertical([Constraint::Length(b.y - right.y), Constraint::Fill(1)])
+                        .areas(right)
+                }
+                None => Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right),
+            };
             render_sessions(frame, app, sessions, now);
             render_todos(frame, app, todo);
         }
@@ -181,11 +189,17 @@ fn pane_block<'a>(spans: Vec<Span<'a>>, focused: bool) -> Block<'a> {
     }
 }
 
-/// One box per account group (play above work), stacked in equal shares;
-/// a single PROJECTS box when no account owns a folder.
-fn render_project_boxes(frame: &mut Frame, app: &App, area: Rect) {
+/// One box per account group (play above work), stacked in equal shares.
+fn project_box_areas(app: &App, area: Rect) -> Vec<Rect> {
+    Layout::vertical(app.groups().iter().map(|_| Constraint::Fill(1)))
+        .split(area)
+        .to_vec()
+}
+
+/// The account boxes in `areas`; a single PROJECTS box when no account owns
+/// a folder.
+fn render_project_boxes(frame: &mut Frame, app: &App, areas: &[Rect]) {
     let groups = app.groups();
-    let areas = Layout::vertical(groups.iter().map(|_| Constraint::Fill(1))).split(area);
     let mut start = 0;
     for (g, area) in groups.iter().zip(areas.iter()) {
         let len = app.projects[start..]

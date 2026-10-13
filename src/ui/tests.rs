@@ -1025,6 +1025,25 @@ fn play_box_sits_above_the_work_box() {
 }
 
 #[test]
+fn to_do_lines_up_with_the_work_box() {
+    let (_d, s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    s.add_finca(&Finca {
+        name: "homebox".into(),
+        ssh: "me@homebox".into(),
+        grove_bin: "/g".into(),
+        color: None,
+        backup: None,
+    })
+    .unwrap();
+    app.reload(&s);
+    // Fincas take space under the boxes, so equal halves wouldn't line up.
+    for h in [24, 37, 50] {
+        let out = screen(&app, 100, h);
+        assert_eq!(row_of(&out, "╭ WORK "), row_of(&out, "TO-DO"), "{out}");
+    }
+}
+
+#[test]
 fn an_empty_work_box_says_where_work_projects_go() {
     let (_d, _s, app) = work_and_play(&[("beta", "/code/beta")]);
     let out = screen(&app, 100, 20);
