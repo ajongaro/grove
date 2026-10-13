@@ -3,7 +3,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, state_is_live};
-use super::complete::complete_path;
+use super::complete::{complete_path, complete_ssh_host};
 use crate::todo::Effect;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
@@ -49,7 +49,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
 }
 
 fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent) -> Action {
-    if key.code == KeyCode::Tab && kind == PromptKind::AddProject {
+    if key.code == KeyCode::Tab && matches!(kind, PromptKind::AddProject | PromptKind::AddFinca) {
         tab_complete(app, kind, input);
         return Action::None;
     }
@@ -92,6 +92,8 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                     app.mode = Mode::ConfirmCreate { path: text };
                     Action::None
                 }
+                PromptKind::AddFinca if text.is_empty() => Action::None,
+                PromptKind::AddFinca => Action::SetupFinca { dest: text },
                 PromptKind::RenameSession { session_id } => {
                     let current = app
                         .sessions
@@ -137,7 +139,10 @@ fn tab_complete(app: &mut App, kind: PromptKind, input: String) {
         cycle_completion(app, kind, 1);
         return;
     }
-    let c = complete_path(&input);
+    let c = match kind {
+        PromptKind::AddFinca => complete_ssh_host(&input, &crate::setup::ssh_hosts(&app.ssh_dir)),
+        _ => complete_path(&input),
+    };
     app.completions = c.candidates;
     app.completion_idx = None;
     app.mode = Mode::Prompt {
@@ -169,6 +174,10 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('R') => Action::Update,
+        KeyCode::Char('F') => {
+            app.mode = add_finca_prompt();
+            Action::None
+        }
         KeyCode::Char('j') | KeyCode::Down => {
             // Off the bottom of the sessions: down into the to-do list.
             let last = app.visible_sessions().len().saturating_sub(1);
@@ -391,6 +400,10 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
             // A finca Grove too old to say which window: its dashboard.
             (None, _) => Action::ConnectFinca { slug, via },
         }),
+        KeyCode::Char('a') => {
+            app.mode = add_finca_prompt();
+            Some(Action::None)
+        }
         KeyCode::Char('s') => Some(match error {
             Some(e) => {
                 app.footer = Some(format!("{name} can't be used: {e}"));
@@ -405,6 +418,13 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
             Some(Action::None)
         }
         _ => None,
+    }
+}
+
+fn add_finca_prompt() -> Mode {
+    Mode::Prompt {
+        kind: PromptKind::AddFinca,
+        input: String::new(),
     }
 }
 

@@ -20,6 +20,7 @@ pub enum Pane {
 pub enum PromptKind {
     NewSession,
     AddProject,
+    AddFinca,
     RenameSession { session_id: String },
 }
 
@@ -79,6 +80,10 @@ pub struct FincaRow {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
+    /// Run the guided finca setup against this SSH destination.
+    SetupFinca {
+        dest: String,
+    },
     Quit,
     NewSession {
         slug: String,
@@ -174,6 +179,8 @@ pub struct App {
     pub open_todos: HashMap<String, usize>,
     /// Open shell windows per finca slug (refreshed from tmux by the loop).
     pub finca_shells: HashMap<String, Vec<crate::finca::ShellWindow>>,
+    /// ~/.ssh here, for completing finca destinations.
+    pub ssh_dir: std::path::PathBuf,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -215,6 +222,10 @@ impl App {
             todo_slug: None,
             open_todos: HashMap::new(),
             finca_shells: HashMap::new(),
+            ssh_dir: std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default()
+                .join(".ssh"),
         }
     }
 

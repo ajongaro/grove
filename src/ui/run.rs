@@ -100,6 +100,18 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 None => Outcome::Nothing,
             }
         }
+        Action::SetupFinca { dest } => {
+            let exe = std::env::current_exe().context("locating the grove binary")?;
+            let argv = vec![
+                exe.to_string_lossy().into_owned(),
+                "finca".into(),
+                "setup".into(),
+                dest,
+                "--pause".into(),
+            ];
+            ctx.tmux.display_popup(&ctx.store.paths.home, &argv)?;
+            Outcome::Nothing
+        }
         Action::FincaShellWindow { slug, window } => {
             ctx.tmux.select_window(&window)?;
             ctx.tmux

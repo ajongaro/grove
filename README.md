@@ -90,8 +90,9 @@ offline right now), not a failure.
      uses (each must already be logged in, e.g.
      `CLAUDE_CONFIG_DIR=~/.claude-work claude`), and which folder of projects
      goes with each.
-  3. Any other machines to add as fincas? Each needs key-based SSH from this
-     machine and Grove installed there.
+  3. Any other machines to add as fincas? `grove finca setup <dest>` is
+     interactive (it asks before each change and may need a password), so
+     ask the user to run it, or press `F` on the dashboard.
 - **Don't edit `~/.claude*/settings.json`.** Grove passes its hooks and MCP
   server to each session on the command line (`--settings`, `--mcp-config`).
   There's nothing to install into Claude Code.
@@ -133,6 +134,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
 | `R` | dashboard | update Grove after `cargo install` |
+| `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `?` | dashboard | list every key |
 | `q` | dashboard | detach; sessions keep running |
 
@@ -233,22 +235,34 @@ the footer counts remote sessions that need you.
   name. When the main one doesn't answer (you're away from home), polling
   tries the backup, and Enter and `s` connect to whichever one answered last.
 
-Setting up a finca:
-1. On the finca: install tmux and Claude Code, and log in to Claude.
-2. Install Grove there in `~/.local/bin` (or run `scripts/deploy-fincas.sh`
-   after step 4, which builds and copies it for you).
-3. Make sure this machine can SSH to it without a password
-   (`ssh-copy-id me@homebox.local`).
-4. On this machine:
+Adding a finca: press **`F`** on the dashboard (or run `grove finca setup
+me@homebox.local`). The setup checks SSH, tmux, Claude Code, Grove and the
+Claude login, and asks before fixing each one:
+- no key-based SSH yet: it can create a key and copy it there (you type the
+  password once);
+- missing tmux or Claude Code: it shows the install command and runs it
+  over SSH (sudo can prompt);
+- Grove: a machine with this one's OS and CPU gets a copy of this build;
+  any other builds it from source there (offering to install Rust first);
+- logged out of Claude there: it runs `claude auth login` for you;
+- if Tailscale here knows the machine, it offers its Tailscale name as the
+  backup.
+
+Running it again on an existing finca checks it and repairs what's
+missing.
 
 ```sh
-grove finca add homebox me@homebox.local   # checks SSH and finds grove there
+grove finca setup me@homebox.local         # guided, asks before each change
+grove finca add homebox me@homebox.local   # non-interactive: checks SSH, finds grove
 grove finca add homebox me@homebox.local --backup me@homebox.<tailnet>.ts.net
 grove finca ls
 grove finca rm homebox
+grove finca update [name...]   # put this build of grove on your fincas
 grove status            # what this machine reports (--json is what fincas send)
-scripts/deploy-fincas.sh [name...]   # build + install grove on your fincas
 ```
+
+`scripts/deploy-fincas.sh [name...]` installs this checkout here
+(`cargo install --path .`), then runs `grove finca update`.
 
 Grove shares one SSH connection per finca (`ControlMaster`, sockets in
 `~/.grove/run/`, kept 10 minutes after last use), so polls, new shell
@@ -301,7 +315,8 @@ Each file does one job, so new features usually touch one or two:
 | `src/tmux.rs` | tmux CLI wrapper (takes a socket) |
 | `src/mcp.rs` | MCP tools |
 | `src/status.rs` | the `status --json` document fincas report |
-| `src/finca.rs` | finca files, SSH probe, poller, connect, shells |
+| `src/finca.rs` | finca files, SSH probe, poller, connect, shells, installing grove there |
+| `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop, `help.rs` the `?` list |
 

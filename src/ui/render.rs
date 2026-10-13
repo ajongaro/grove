@@ -54,6 +54,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 PromptKind::AddProject => {
                     " Add project — path (Tab completes, Enter adds, Esc cancels) "
                 }
+                PromptKind::AddFinca => {
+                    " Add finca — SSH destination (Tab completes, Enter sets it up, Esc cancels) "
+                }
                 PromptKind::RenameSession { .. } => " Rename session (Enter saves, Esc cancels) ",
             };
             let area = popup(frame.area(), 70, 3);

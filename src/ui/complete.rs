@@ -76,6 +76,43 @@ pub fn complete_path(input: &str) -> Completion {
 
 /// Longest prefix shared by all names, compared case-insensitively and
 /// returned in the first name's case.
+/// Completes the host part of an SSH destination (after any `user@`)
+/// against `hosts`, keeping the user part.
+pub fn complete_ssh_host(input: &str, hosts: &[String]) -> Completion {
+    let (user, prefix) = match input.rsplit_once('@') {
+        Some((u, h)) => (format!("{u}@"), h),
+        None => (String::new(), input),
+    };
+    let want = prefix.to_lowercase();
+    let names: Vec<String> = hosts
+        .iter()
+        .filter(|h| h.to_lowercase().starts_with(&want))
+        .cloned()
+        .collect();
+    match names.len() {
+        0 => Completion {
+            input: input.to_string(),
+            candidates: Vec::new(),
+        },
+        1 => Completion {
+            input: format!("{user}{}", names[0]),
+            candidates: Vec::new(),
+        },
+        _ => {
+            let common = common_prefix(&names);
+            let completed = if common.chars().count() >= prefix.chars().count() {
+                common
+            } else {
+                prefix.to_string()
+            };
+            Completion {
+                input: format!("{user}{completed}"),
+                candidates: names.iter().map(|n| format!("{user}{n}")).collect(),
+            }
+        }
+    }
+}
+
 fn common_prefix(names: &[String]) -> String {
     let first: Vec<char> = names[0].chars().collect();
     let mut len = first.len();

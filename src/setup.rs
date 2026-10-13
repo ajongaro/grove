@@ -103,7 +103,6 @@ pub fn tailscale_backup(json: &str, host: &str) -> Option<String> {
 
 /// Hosts to offer for a destination: `Host` aliases in `config` (no
 /// patterns) and plain names in `known_hosts`; sorted, no duplicates.
-#[allow(dead_code)] // Used by the dashboard prompt (next task).
 pub fn ssh_hosts(ssh_dir: &Path) -> Vec<String> {
     let mut hosts = BTreeSet::new();
     if let Ok(cfg) = std::fs::read_to_string(ssh_dir.join("config")) {

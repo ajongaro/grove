@@ -788,14 +788,6 @@ fn session_keys_on_a_finca_point_to_connecting() {
             app.footer
         );
     }
-    handle_key(&mut app, ch('a'));
-    assert!(matches!(
-        app.mode,
-        Mode::Prompt {
-            kind: PromptKind::AddProject,
-            ..
-        }
-    ));
 }
 
 #[test]
@@ -1720,4 +1712,69 @@ fn finca_pane_lists_sessions_then_shells() {
     );
     assert!(n0 < w0 && w0 < shells && shells < shell, "{out}");
     assert!(out.contains("me@homebox: ~/stacks"), "{out}");
+}
+
+use super::complete::complete_ssh_host;
+
+#[test]
+fn big_f_prompts_for_a_destination_and_enter_sets_it_up() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('F'));
+    assert!(matches!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::AddFinca,
+            ..
+        }
+    ));
+    for c in "me@newbox".chars() {
+        handle_key(&mut app, ch(c));
+    }
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::SetupFinca {
+            dest: "me@newbox".into()
+        }
+    );
+}
+
+#[test]
+fn a_on_a_finca_adds_a_finca() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    handle_key(&mut app, ch('a'));
+    assert!(matches!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::AddFinca,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn ssh_completion_keeps_the_user_part() {
+    let hosts = vec![
+        "homebox".to_string(),
+        "homebox.local".to_string(),
+        "pi".to_string(),
+    ];
+    let c = complete_ssh_host("me@p", &hosts);
+    assert_eq!(c.input, "me@pi");
+    let c = complete_ssh_host("me@home", &hosts);
+    assert_eq!(c.input, "me@homebox");
+    assert_eq!(c.candidates, ["me@homebox", "me@homebox.local"]);
+    assert_eq!(complete_ssh_host("zz", &hosts).input, "zz");
+}
+
+#[test]
+fn tab_in_the_finca_prompt_completes_from_ssh_config() {
+    let (d, _s, mut app) = loaded(&["alpha"], &[]);
+    let ssh = d.path().join("ssh");
+    std::fs::create_dir_all(&ssh).unwrap();
+    std::fs::write(ssh.join("config"), "Host homebox\n").unwrap();
+    app.ssh_dir = ssh;
+    handle_key(&mut app, ch('F'));
+    handle_key(&mut app, ch('h'));
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert!(matches!(&app.mode, Mode::Prompt { input, .. } if input == "homebox"));
 }
