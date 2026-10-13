@@ -397,7 +397,10 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
             if pause {
                 setup::Io::ask(&mut io, "Press Enter to close", "");
             }
-            r?;
+            if r.is_err() {
+                // Already printed, before the pause.
+                std::process::exit(1);
+            }
         }
         FincaCmd::Update { names } => {
             let fincas: Vec<finca::Finca> = if names.is_empty() {
