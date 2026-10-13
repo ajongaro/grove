@@ -460,6 +460,8 @@ pub fn install_grove(
 fn ship_source(dest: &str, src: &std::path::Path) -> Result<()> {
     use std::process::{Command, Stdio};
     let mut tar = Command::new("tar")
+        // macOS tar would add ._ files for extended attributes.
+        .env("COPYFILE_DISABLE", "1")
         .arg("-C")
         .arg(src)
         .args([

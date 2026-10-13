@@ -1088,3 +1088,40 @@ fn a_copy_that_wont_run_there_keeps_the_working_grove() {
     assert!(r.is_err());
     assert_eq!(std::fs::read_to_string(&bin).unwrap(), "working");
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn shipped_source_has_no_macos_metadata_files() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    let src = d.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("Cargo.toml"), "[package]").unwrap();
+    // An extended attribute is what makes macOS tar add a ._ file.
+    std::process::Command::new("xattr")
+        .args(["-w", "com.example.test", "x"])
+        .arg(src.join("Cargo.toml"))
+        .status()
+        .unwrap();
+    // The finca extracts like Linux tar: ._ entries become files.
+    let bin = d.path().join("finca bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    script(
+        &bin,
+        "tar",
+        "exec /usr/bin/python3 -c \"import sys, tarfile; tarfile.open(fileobj=sys.stdin.buffer, mode='r|').extractall('.')\"",
+    );
+    let ssh = fake_ssh(d.path(), None);
+    with_env(&ssh, &home, || {
+        unsafe { std::env::set_var("FAKE_PATH", format!("{}:/usr/bin:/bin", bin.display())) };
+        let r = ship_source("me@box", &src);
+        unsafe { std::env::remove_var("FAKE_PATH") };
+        r
+    })
+    .unwrap();
+    let names: Vec<String> = std::fs::read_dir(home.join("src/grove"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["Cargo.toml"]);
+}
