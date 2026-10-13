@@ -24,29 +24,22 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
-    let projects = if app.fincas.is_empty() {
-        left
-    } else {
-        let rows = (app.fincas.len() as u16 + 2).min(left.height / 2).max(3);
-        let [projects, fincas] =
-            Layout::vertical([Constraint::Min(3), Constraint::Length(rows)]).areas(left);
+    // Left: one equal share per account box, plus one for the fincas.
+    let groups = app.groups().len();
+    let shares = groups + usize::from(!app.fincas.is_empty());
+    let mut boxes = Layout::vertical((0..shares).map(|_| Constraint::Fill(1)))
+        .split(left)
+        .to_vec();
+    if let Some(fincas) = boxes.get(groups).copied() {
         render_fincas(frame, app, fincas, now);
-        projects
-    };
-    let boxes = project_box_areas(app, projects);
+        boxes.truncate(groups);
+    }
     render_project_boxes(frame, app, &boxes);
     match app.selected_finca() {
         Some(f) => render_finca_detail(frame, app, f, right, now),
         None if app.todo_slug.is_some() => {
-            // With an account box per group, the to-do starts level with the
-            // second one; otherwise the column splits in half.
-            let [sessions, todo] = match boxes.get(1) {
-                Some(b) => {
-                    Layout::vertical([Constraint::Length(b.y - right.y), Constraint::Fill(1)])
-                        .areas(right)
-                }
-                None => Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right),
-            };
+            let [sessions, todo] =
+                Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right);
             render_sessions(frame, app, sessions, now);
             render_todos(frame, app, todo);
         }
@@ -189,15 +182,8 @@ fn pane_block<'a>(spans: Vec<Span<'a>>, focused: bool) -> Block<'a> {
     }
 }
 
-/// One box per account group (play above work), stacked in equal shares.
-fn project_box_areas(app: &App, area: Rect) -> Vec<Rect> {
-    Layout::vertical(app.groups().iter().map(|_| Constraint::Fill(1)))
-        .split(area)
-        .to_vec()
-}
-
-/// The account boxes in `areas`; a single PROJECTS box when no account owns
-/// a folder.
+/// One box per account group (play above work) in `areas`; a single
+/// PROJECTS box when no account owns a folder.
 fn render_project_boxes(frame: &mut Frame, app: &App, areas: &[Rect]) {
     let groups = app.groups();
     let mut start = 0;

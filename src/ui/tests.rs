@@ -1027,7 +1027,7 @@ fn play_box_sits_above_the_work_box() {
 }
 
 #[test]
-fn to_do_lines_up_with_the_work_box() {
+fn left_column_in_equal_thirds_and_right_in_halves() {
     let (_d, s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
     s.add_finca(&Finca {
         name: "homebox".into(),
@@ -1038,11 +1038,12 @@ fn to_do_lines_up_with_the_work_box() {
     })
     .unwrap();
     app.reload(&s);
-    // Fincas take space under the boxes, so equal halves wouldn't line up.
-    for h in [24, 37, 50] {
-        let out = screen(&app, 100, h);
-        assert_eq!(row_of(&out, "╭ WORK "), row_of(&out, "TO-DO"), "{out}");
-    }
+    // 30 rows above the footer.
+    let out = screen(&app, 100, 31);
+    assert_eq!(row_of(&out, "╭ PLAY "), 0, "{out}");
+    assert_eq!(row_of(&out, "╭ WORK "), 10, "{out}");
+    assert_eq!(row_of(&out, "╭ FINCAS "), 20, "{out}");
+    assert_eq!(row_of(&out, "TO-DO"), 15, "{out}");
 }
 
 #[test]
