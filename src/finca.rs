@@ -341,6 +341,25 @@ pub fn remote_stdin(
         .with_context(|| format!("running {}", ssh_program()))
 }
 
+/// Records `dest`'s host key if it's new (`accept-new`), without a
+/// terminal and without a shared master: a password login riding on one
+/// would make later key-only checks pass.
+pub fn accept_host_key(dest: &str) -> Result<std::process::Output> {
+    std::process::Command::new(ssh_program())
+        .args(SSH_BATCH_OPTS)
+        .args([
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+        ])
+        .arg(dest)
+        .arg("true")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .with_context(|| format!("running {}", ssh_program()))
+}
+
 /// argv for an interactive `ssh -t` to `dest`: `cmd` under the login shell,
 /// or a login shell when None. `extra` options go before the destination.
 pub fn interactive_ssh(dest: &str, cmd: Option<&str>, extra: &[&str]) -> Vec<String> {
@@ -388,7 +407,10 @@ pub fn install_grove(
     let b = sh_quote(bin);
     let new = sh_quote(&format!("{bin}.new"));
     // Rename over the old binary so a running grove keeps its (old) inode.
-    let swap = format!("mv -f {new} {b} && {b} --version");
+    // ...and only once the new one runs there.
+    let swap = format!(
+        "if {new} --version >/dev/null 2>&1; then mv -f {new} {b} && {b} --version; else rm -f {new}; echo 'the new grove does not run there' >&2; exit 1; fi"
+    );
     let mkdir = format!("mkdir -p \"$(dirname {b})\"");
     let out = if facts.same_platform_as_here() {
         let file =
@@ -432,7 +454,8 @@ pub fn install_grove(
         .to_string())
 }
 
-/// Replaces ~/src/grove on the finca with `src` (keeping its build cache),
+/// Replaces ~/src/grove on the finca with `src` (keeping its build cache
+/// and any clone's .git),
 /// streamed as a tar over ssh.
 fn ship_source(dest: &str, src: &std::path::Path) -> Result<()> {
     use std::process::{Command, Stdio};
@@ -453,7 +476,7 @@ fn ship_source(dest: &str, src: &std::path::Path) -> Result<()> {
     let stdout = tar.stdout.take().context("tar output")?;
     let out = remote_stdin(
         dest,
-        "set -e; mkdir -p ~/src/grove; cd ~/src/grove; find . -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +; tar -xf -",
+        "set -e; mkdir -p ~/src/grove; cd ~/src/grove; find . -mindepth 1 -maxdepth 1 ! -name target ! -name .git -exec rm -rf {} +; tar -xf -",
         stdout.into(),
     )?;
     let tar_ok = tar.wait()?.success();

@@ -43,7 +43,7 @@ fn install_commands_per_os_and_package_manager() {
         parse_facts("os=Linux\narch=aarch64\nhost=pi\nhome=/home/me\nhas=apt-get\n").unwrap();
     assert_eq!(
         install_command("tmux", &l),
-        Some("sudo apt-get install -y tmux")
+        Some("sudo apt-get update && sudo apt-get install -y tmux")
     );
     l.tools = ["dnf".to_string()].into();
     assert_eq!(
@@ -309,31 +309,70 @@ fn logged_out_claude_offers_login() {
 }
 
 #[test]
-fn unknown_host_key_is_accepted_once() {
+fn unknown_host_key_is_accepted_without_a_shared_connection() {
     let w = world(&["tmux", "claude"]);
     let accepted = w.home.join("accepted");
-    // ssh fails with a host-key error until the key is accepted.
+    // ssh fails with a host-key error until a call with accept-new comes in.
+    // That call must not open a shared master, or a password login there
+    // would make later key-only checks pass for 10 minutes.
     let ssh = crate::finca::tests::script(
         w._d.path(),
         "picky ssh",
         &format!(
-            "[ -f {a} ] || {{ echo 'Host key verification failed.' >&2; exit 255; }}\nexec {real} \"$@\"",
+            "case \"$*\" in *ControlMaster=auto*accept-new*|*accept-new*ControlMaster=auto*) exit 9;; *accept-new*) touch {a};; esac\n[ -f {a} ] || {{ echo 'Host key verification failed.' >&2; exit 255; }}\nexec {real} \"$@\"",
             a = crate::finca::sh_quote(&accepted.to_string_lossy()),
             real = crate::finca::sh_quote(&w.ssh.to_string_lossy()),
         ),
     );
     let w = World { ssh, ..w };
     let mut io = Script::new(&["y", "", "y"]); // accept key, name, grove
-    io.on_run = Box::new(move |argv| {
-        assert!(
-            argv.iter().any(|a| a == "StrictHostKeyChecking=accept-new"),
-            "{argv:?}"
-        );
-        std::fs::write(&accepted, "").unwrap();
-        true
-    });
     run(&w, &mut io, "me@homebox").unwrap();
-    assert_eq!(io.ran.len(), 1);
+    assert!(accepted.exists());
+    assert!(
+        io.ran.is_empty(),
+        "accepting needs no terminal: {:?}",
+        io.ran
+    );
+}
+
+#[test]
+fn a_failed_install_says_so_instead_of_blaming_path() {
+    let w = world(&["tmux", "apt-get"]);
+    let mut io = Script::new(&["", "y"]); // name, install claude
+    io.on_run = Box::new(|_| false); // the installer fails
+    let err = format!("{:#}", run(&w, &mut io, "me@homebox").unwrap_err());
+    assert!(
+        err.contains("didn't finish") && !err.contains("PATH"),
+        "{err}"
+    );
+}
+
+fn this_host() -> String {
+    let out = std::process::Command::new("sh")
+        .args(["-c", "hostname -s 2>/dev/null || hostname"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+#[test]
+fn same_machine_under_another_destination_is_checked_not_duplicated() {
+    let w = world(&["tmux", "claude"]);
+    let known = crate::finca::Finca {
+        name: this_host(),
+        ssh: "me@homebox.local".into(),
+        grove_bin: "/g".into(),
+        color: None,
+        backup: None,
+    };
+    w.store.add_finca(&known).unwrap();
+    let mut io = Script::new(&["y", "y"]); // same machine, install grove
+    let f = run(&w, &mut io, "homebox").unwrap();
+    assert_eq!(
+        (f.name.as_str(), f.ssh.as_str()),
+        (known.name.as_str(), "me@homebox.local")
+    );
+    assert_eq!(w.store.list_fincas().len(), 1);
 }
 
 #[test]
@@ -391,5 +430,9 @@ fn tailscale_peer_becomes_the_backup_when_it_answers() {
         r
     })
     .unwrap();
-    assert_eq!(f.backup.as_deref(), Some("box.tail.ts.net"));
+    assert_eq!(
+        f.backup.as_deref(),
+        Some("me@box.tail.ts.net"),
+        "keeps the user"
+    );
 }

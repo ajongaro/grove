@@ -84,7 +84,7 @@ pub fn install_command(tool: &str, f: &Facts) -> Option<&'static str> {
         "claude" => Some("curl -fsSL https://claude.ai/install.sh | bash"),
         "cargo" => Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"),
         "tmux" if f.os == "macos" => f.has("brew").then_some("brew install tmux"),
-        "tmux" if f.has("apt-get") => Some("sudo apt-get install -y tmux"),
+        "tmux" if f.has("apt-get") => Some("sudo apt-get update && sudo apt-get install -y tmux"),
         "tmux" if f.has("dnf") => Some("sudo dnf install -y tmux"),
         _ => None,
     }
@@ -210,7 +210,8 @@ impl Setup<'_> {
             .list_fincas()
             .into_iter()
             .filter_map(Result::ok)
-            .find(|f| f.ssh == dest || f.backup.as_deref() == Some(dest));
+            .find(|f| f.ssh == dest || f.backup.as_deref() == Some(dest))
+            .or_else(|| self.same_machine(io, &host));
         let name = match &existing {
             Some(f) => {
                 io.say(&format!("{} is already a finca: checking it", f.name));
@@ -230,7 +231,9 @@ impl Setup<'_> {
             if !io.confirm(&format!("Install {tool} on {host}? ({cmd})")) {
                 bail!("{host} needs {tool}: install it there, then run this again");
             }
-            io.interactive(&interactive_ssh(dest, Some(cmd), &[]));
+            if !io.interactive(&interactive_ssh(dest, Some(cmd), &[])) {
+                bail!("installing {tool} on {host} didn't finish (see above)");
+            }
             facts = self.facts(dest)?;
             if !facts.has(tool) {
                 bail!(
@@ -272,11 +275,7 @@ impl Setup<'_> {
         if err.contains("Host key verification failed")
             && io.confirm(&format!("Accept {dest}'s host key?"))
         {
-            io.interactive(&interactive_ssh(
-                dest,
-                Some("true"),
-                &["-o", "StrictHostKeyChecking=accept-new"],
-            ));
+            finca::accept_host_key(dest)?;
             let out = check()?;
             if out.status.success() {
                 io.say(&format!("✓ SSH to {dest}"));
@@ -328,6 +327,17 @@ impl Setup<'_> {
         })
     }
 
+    /// A finca named after this host, reached another way (an alias, or
+    /// without the user part), if the user says it's this machine.
+    fn same_machine(&self, io: &mut dyn Io, host: &str) -> Option<Finca> {
+        let f = self.store.get_finca(&crate::model::slugify(host)).ok()?;
+        io.confirm(&format!(
+            "{} is already a finca (at {}). Is it this machine? Check it instead?",
+            f.name, f.ssh
+        ))
+        .then_some(f)
+    }
+
     fn pick_name(&self, io: &mut dyn Io, host: &str) -> String {
         loop {
             let name = io.ask("Name for this finca?", host);
@@ -363,7 +373,12 @@ impl Setup<'_> {
             )) {
                 bail!("{} needs Rust (cargo) to build Grove", facts.host);
             }
-            io.interactive(&interactive_ssh(dest, Some(cmd), &[]));
+            if !io.interactive(&interactive_ssh(dest, Some(cmd), &[])) {
+                bail!(
+                    "installing Rust on {} didn't finish (see above)",
+                    facts.host
+                );
+            }
             *facts = self.facts(dest)?;
         }
         if !io.confirm(&format!("Install Grove at {bin}?")) {
@@ -405,15 +420,32 @@ impl Setup<'_> {
 
     fn backup(&self, io: &mut dyn Io, dest: &str, host: &str) -> Option<String> {
         let ts = tailscale_backup(self.tailscale_json.as_deref()?, host)?;
-        if ts == dest || !io.confirm(&format!("Use {ts} (Tailscale) as the backup route?")) {
+        // Same user as the main route.
+        let user = dest
+            .rsplit_once('@')
+            .map_or(String::new(), |(u, _)| format!("{u}@"));
+        let route = format!("{user}{ts}");
+        if route == dest || !io.confirm(&format!("Use {route} (Tailscale) as the backup route?")) {
             return None;
         }
-        if ok(&ts, "true") {
-            io.say(&format!("✓ backup {ts}"));
-            Some(ts)
-        } else {
-            io.say(&format!("{ts} didn't answer over SSH; no backup set"));
-            None
+        // Its host key is usually new here.
+        let _ = finca::accept_host_key(&route);
+        match run_remote(&route, "true") {
+            Ok(o) if o.status.success() => {
+                io.say(&format!("✓ backup {route}"));
+                Some(route)
+            }
+            Ok(o) => {
+                io.say(&format!(
+                    "{route} didn't answer over SSH ({}); no backup set",
+                    String::from_utf8_lossy(&o.stderr).trim()
+                ));
+                None
+            }
+            Err(e) => {
+                io.say(&format!("{route}: {e:#}; no backup set"));
+                None
+            }
         }
     }
 }

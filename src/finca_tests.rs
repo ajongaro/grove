@@ -979,6 +979,8 @@ fn other_platform_ships_source_without_target_or_git() {
     std::fs::write(src.join("target/release/big"), "x").unwrap();
     std::fs::create_dir_all(home.join("src/grove")).unwrap();
     std::fs::write(home.join("src/grove/stale.rs"), "old").unwrap();
+    std::fs::create_dir_all(home.join("src/grove/.git")).unwrap();
+    std::fs::write(home.join("src/grove/.git/HEAD"), "ref").unwrap();
     // A fake cargo "build" that installs a grove into target/release.
     let bin_dir = home.join("bin");
     std::fs::create_dir_all(&bin_dir).unwrap();
@@ -1010,7 +1012,11 @@ fn other_platform_ships_source_without_target_or_git() {
     assert_eq!(v, "grove 0.1.0");
     let shipped = home.join("src/grove");
     assert!(shipped.join("src/main.rs").exists());
-    assert!(!shipped.join(".git").exists());
+    assert_eq!(
+        std::fs::read_to_string(shipped.join(".git/HEAD")).unwrap(),
+        "ref",
+        "a clone there keeps its .git"
+    );
     assert!(!shipped.join("stale.rs").exists(), "old files go");
     assert!(
         !shipped.join("target/release/big").exists(),
@@ -1058,4 +1064,27 @@ fn source_build_needs_cargo_there() {
     f.tools.clear();
     let err = install_grove("me@box", &f, "/x/grove", d.path(), Some(d.path()), plain).unwrap_err();
     assert!(format!("{err:#}").contains("cargo"), "{err:#}");
+}
+
+#[test]
+fn a_copy_that_wont_run_there_keeps_the_working_grove() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("remote home");
+    let bin = home.join(".local/bin/grove");
+    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    std::fs::write(&bin, "working").unwrap();
+    let broken = script(d.path(), "broken", "exit 1");
+    let ssh = fake_ssh(d.path(), None);
+    let r = with_env(&ssh, &home, || {
+        install_grove(
+            "me@box",
+            &facts_for(&home, true),
+            &bin.to_string_lossy(),
+            &broken,
+            None,
+            plain,
+        )
+    });
+    assert!(r.is_err());
+    assert_eq!(std::fs::read_to_string(&bin).unwrap(), "working");
 }
