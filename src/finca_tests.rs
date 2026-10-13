@@ -111,7 +111,7 @@ fn status_json(host: &str) -> String {
     serde_json::to_string(&st).unwrap()
 }
 
-fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
+pub(crate) fn script(dir: &std::path::Path, name: &str, body: &str) -> std::path::PathBuf {
     let p = dir.join(name);
     std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
     std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();

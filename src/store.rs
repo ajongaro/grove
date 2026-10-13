@@ -177,6 +177,18 @@ impl Store {
                 )
             })
     }
+    /// Writes the finca's file, replacing one with the same slug.
+    pub fn save_finca(&self, f: &crate::finca::Finca) -> Result<()> {
+        let slug = f.slug();
+        if slug.is_empty() {
+            bail!("finca name {:?} has no letters or digits", f.name);
+        }
+        write_atomic(
+            &self.paths.fincas.join(format!("{slug}.toml")),
+            toml::to_string_pretty(f)?.as_bytes(),
+        )
+    }
+
     pub fn add_finca(&self, f: &crate::finca::Finca) -> Result<()> {
         let slug = f.slug();
         if slug.is_empty() {

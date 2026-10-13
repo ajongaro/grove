@@ -107,6 +107,14 @@ enum FincaCmd {
     Ls,
     /// Install this build of grove on fincas (all, or the named ones).
     Update { names: Vec<String> },
+    /// Set up a machine as a finca, step by step (asks before each change).
+    Setup {
+        /// SSH destination, e.g. me@homebox.local; asked for if left out.
+        dest: Option<String>,
+        /// Wait for Enter before exiting (the dashboard's popup).
+        #[arg(long, hide = true)]
+        pause: bool,
+    },
 }
 
 fn main() {
@@ -376,6 +384,21 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
                 }
             }
         }
+        FincaCmd::Setup { dest, pause } => {
+            let mut io = setup::TerminalIo;
+            let dest = match dest {
+                Some(d) => d,
+                None => setup::Io::ask(&mut io, "SSH destination (user@host)?", ""),
+            };
+            let r = setup_finca(&store, &mut io, dest.trim());
+            if let Err(e) = &r {
+                eprintln!("grove: {e:#}");
+            }
+            if pause {
+                setup::Io::ask(&mut io, "Press Enter to close", "");
+            }
+            r?;
+        }
         FincaCmd::Update { names } => {
             let fincas: Vec<finca::Finca> = if names.is_empty() {
                 store
@@ -406,6 +429,31 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Runs the setup wizard on the terminal against `dest`.
+fn setup_finca(store: &Store, io: &mut setup::TerminalIo, dest: &str) -> Result<finca::Finca> {
+    if dest.is_empty() {
+        bail!("no destination given");
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let tailscale_json = std::process::Command::new("tailscale")
+        .args(["status", "--json"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    let s = setup::Setup {
+        store,
+        ssh_dir: home.join(".ssh"),
+        exe: std::env::current_exe()?,
+        source: finca::source_dir(),
+        tailscale_json,
+        wrap: finca::login_shell_cmd,
+    };
+    s.run(io, dest)
 }
 
 /// Installs this build on `f` through whichever destination answers.

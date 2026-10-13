@@ -343,7 +343,6 @@ pub fn remote_stdin(
 
 /// argv for an interactive `ssh -t` to `dest`: `cmd` under the login shell,
 /// or a login shell when None. `extra` options go before the destination.
-#[allow(dead_code)] // Used by the setup wizard (next tasks).
 pub fn interactive_ssh(dest: &str, cmd: Option<&str>, extra: &[&str]) -> Vec<String> {
     let mut argv = vec![ssh_program(), "-t".to_string()];
     argv.extend(share_opts());
