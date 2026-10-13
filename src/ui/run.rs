@@ -88,6 +88,24 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::connect(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::FincaJump { slug, via, window } => {
+            let f = store.get_finca(&slug)?;
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            // Still connect if the window can't be selected (it just ended):
+            // the finca's dashboard is the next best place.
+            let missed = crate::finca::focus(&f, via.as_deref().unwrap_or(&f.ssh), &window).err();
+            crate::finca::connect(&ctx.tmux, &f, via.as_deref())?;
+            match missed {
+                Some(e) => Outcome::Message(format!("{e:#}")),
+                None => Outcome::Nothing,
+            }
+        }
+        Action::FincaShellWindow { slug, window } => {
+            ctx.tmux.select_window(&window)?;
+            ctx.tmux
+                .switch_client(&format!("={}", crate::finca::shell_session_name(&slug)))?;
+            Outcome::Nothing
+        }
         Action::FincaShell { slug, via } => {
             let f = store.get_finca(&slug)?;
             let via = via.filter(|v| f.destinations().any(|d| d == v));
@@ -350,6 +368,21 @@ pub fn observe(app: &App) -> Vec<crate::alert::Observed> {
 
 /// Updates the add-project default from the `GROVE_CWD` that `grove` sets on
 /// the tmux session each time it attaches.
+/// Each finca's open shell windows, for its pane.
+pub fn refresh_shells(ctx: &Ctx, app: &mut App) {
+    app.finca_shells = app
+        .fincas
+        .iter()
+        .map(|f| {
+            (
+                f.slug.clone(),
+                crate::finca::shell_windows(&ctx.tmux, &f.slug),
+            )
+        })
+        .filter(|(_, w)| !w.is_empty())
+        .collect();
+}
+
 pub fn refresh_cwd(ctx: &Ctx, app: &mut App) {
     if let Some(cwd) = ctx
         .tmux
@@ -422,6 +455,7 @@ fn event_loop(
                 app.footer = Some(format!("tmux: {e:#}"));
             }
             refresh_cwd(ctx, app);
+            refresh_shells(ctx, app);
             app.reload(&ctx.store);
             last_reconcile = Instant::now();
         }

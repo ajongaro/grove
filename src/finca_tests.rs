@@ -615,6 +615,13 @@ fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
         "{}",
         opt("default-command")
     );
+    // The dashboard lists the shell's windows to jump back into.
+    assert_eq!(shell_windows(&tmux, "homebox").len(), 1);
+    out(&["new-window", "-d", "-t", "=finca-homebox-sh:"]);
+    let wins = shell_windows(&tmux, "homebox");
+    assert_eq!(wins.len(), 2, "{wins:?}");
+    assert!(wins.iter().all(|w| w.id.starts_with('@')), "{wins:?}");
+    assert!(shell_windows(&tmux, "nowhere").is_empty());
     let keys = out(&["list-keys", "-T", "grove-shell"]);
     assert!(
         keys.contains("C-q") && keys.contains("switch-client -t =grove"),
@@ -802,4 +809,50 @@ fn every_ssh_grove_runs_shares_connections() {
     for call in calls.lines() {
         assert!(call.contains("ControlMaster=auto"), "{call}");
     }
+}
+
+#[test]
+fn shell_window_titles_skip_tmuxs_default() {
+    // tmux titles a pane with this machine's host name until the remote
+    // shell sets one.
+    let out = "@4\t1\tlaptop\tlaptop\n@7\t2\tme@homebox: ~/stacks\tlaptop\n";
+    assert_eq!(
+        parse_shell_windows(out),
+        [
+            ShellWindow {
+                id: "@4".into(),
+                index: 1,
+                title: None
+            },
+            ShellWindow {
+                id: "@7".into(),
+                index: 2,
+                title: Some("me@homebox: ~/stacks".into())
+            },
+        ]
+    );
+}
+
+#[test]
+fn focus_asks_the_finca_to_select_the_window() {
+    let d = tempfile::tempdir().unwrap();
+    let log = d.path().join("args.txt");
+    let bin = script(
+        d.path(),
+        "grove",
+        &format!("echo \"$@\" > {}", sh_quote(&log.to_string_lossy())),
+    );
+    let ssh = fake_ssh(d.path(), None);
+    with_env(&ssh, d.path(), || {
+        focus(&finca_with_bin(&bin), "me@box", "@3")
+    })
+    .unwrap();
+    assert_eq!(std::fs::read_to_string(&log).unwrap().trim(), "focus @3");
+
+    let failing = script(d.path(), "old grove", "echo 'no such command' >&2; exit 2");
+    let err = with_env(&ssh, d.path(), || {
+        focus(&finca_with_bin(&failing), "me@box", "@3")
+    })
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("no such command"), "{err:#}");
 }

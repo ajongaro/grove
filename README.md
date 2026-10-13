@@ -225,8 +225,10 @@ the footer counts remote sessions that need you.
   shells on the finca too.
 - **`C-q`** comes back to your local dashboard from either. The connection
   stays open, so Enter or `s` returns instantly.
-- Selecting a finca shows its sessions read-only. To start, kill or edit
-  sessions, connect.
+- Selecting a finca lists its sessions and the shells you've opened there.
+  `l` (or Tab) moves into the list; **Enter** on a session connects
+  straight into that session's window, and Enter on a shell goes back to
+  it. To start, kill or edit sessions, connect.
 - A finca can have a **backup** SSH destination, such as its Tailscale
   name. When the main one doesn't answer (you're away from home), polling
   tries the backup, and Enter and `s` connect to whichever one answered last.

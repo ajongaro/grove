@@ -420,6 +420,67 @@ pub fn ensure_shell_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
     Ok(true)
 }
 
+/// A window of a finca's shell session (`s`), listed on the dashboard.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShellWindow {
+    pub id: String,
+    pub index: u32,
+    /// What the remote shell titled it (often user@host: dir), if anything.
+    pub title: Option<String>,
+}
+
+/// The finca's open shell windows; none if no shell session is open.
+pub fn shell_windows(tmux: &crate::tmux::Tmux, slug: &str) -> Vec<ShellWindow> {
+    tmux.list_windows_as(
+        &shell_session_name(slug),
+        "#{window_id}\t#{window_index}\t#{pane_title}\t#{host}",
+    )
+    .map(|lines| parse_shell_windows(&lines.join("\n")))
+    .unwrap_or_default()
+}
+
+/// Parses `id \t index \t pane title \t host` lines. A title equal to the
+/// host name is tmux's default, not something the remote shell set.
+fn parse_shell_windows(out: &str) -> Vec<ShellWindow> {
+    out.lines()
+        .filter_map(|l| {
+            let mut f = l.split('\t');
+            let (id, index, title, host) = (f.next()?, f.next()?, f.next()?, f.next()?);
+            Some(ShellWindow {
+                id: id.to_string(),
+                index: index.parse().ok()?,
+                title: (!title.is_empty() && title != host).then(|| title.to_string()),
+            })
+        })
+        .collect()
+}
+
+/// Makes `window` current in the finca's Grove session, so the connection
+/// shows it (now, or when it next attaches).
+pub fn focus(f: &Finca, dest: &str, window: &str) -> Result<()> {
+    let cmd = login_shell_cmd(&format!(
+        "{} focus {}",
+        sh_quote(&f.grove_bin),
+        sh_quote(window)
+    ));
+    let out = std::process::Command::new(ssh_program())
+        .args(SSH_BATCH_OPTS)
+        .args(share_opts())
+        .arg(dest)
+        .arg(cmd)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .with_context(|| format!("running {}", ssh_program()))?;
+    if !out.status.success() {
+        bail!(
+            "couldn't open that session on {}: {}",
+            f.name,
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// Switches the current client to a shell on the finca, like `connect`.
 pub fn open_shell(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result<()> {
     ensure_shell_session(tmux, f, via.unwrap_or(&f.ssh))?;

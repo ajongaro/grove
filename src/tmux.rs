@@ -98,13 +98,12 @@ impl Tmux {
 
     /// Window ids (`@N`) in `session`.
     pub fn list_windows(&self, session: &str) -> Result<Vec<String>> {
-        let out = self.run(&[
-            "list-windows",
-            "-t",
-            &format!("={session}"),
-            "-F",
-            "#{window_id}",
-        ])?;
+        self.list_windows_as(session, "#{window_id}")
+    }
+
+    /// One line per window in `session`, in tmux `format`.
+    pub fn list_windows_as(&self, session: &str, format: &str) -> Result<Vec<String>> {
+        let out = self.run(&["list-windows", "-t", &format!("={session}"), "-F", format])?;
         Ok(out.lines().map(str::to_string).collect())
     }
 

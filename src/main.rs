@@ -70,6 +70,10 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Internal: make a window current in the Grove session, so the next
+    /// attach (another Grove connecting to this finca) lands in it.
+    #[command(hide = true)]
+    Focus { window: String },
     /// Internal: the dashboard that runs in tmux window 0.
     #[command(hide = true)]
     Dashboard,
@@ -121,6 +125,7 @@ fn main() {
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),

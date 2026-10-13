@@ -33,6 +33,10 @@ pub struct SessionStatus {
     #[serde(default)]
     pub message: Option<String>,
     pub updated_at: DateTime<Utc>,
+    /// Its tmux window on the finca, for jumping straight in. Older Groves
+    /// don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +70,7 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
                         state: s.state,
                         message: s.message.clone(),
                         updated_at: s.updated_at,
+                        window: s.tmux_window.clone(),
                     })
                     .collect(),
                 name: p.name,

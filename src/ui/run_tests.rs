@@ -386,6 +386,7 @@ fn observe_names_local_and_finca_sessions() {
                 state: State::NeedsYou,
                 message: None,
                 updated_at: chrono::Utc::now(),
+                window: None,
             }],
         }],
     };

@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::app::{App, FincaRow, Mode, Pane, PromptKind, format_age};
+use super::app::{App, FincaItem, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
 /// Focus: the focused pane's border and the selected row.
@@ -388,36 +388,69 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         }
         Some(Reach::Reachable(_)) => {}
     }
-    if let Some(st) = &f.last_status {
-        let mut any = false;
-        let name_w = name_width(
-            st.projects
-                .iter()
-                .flat_map(|p| &p.sessions)
-                .map(|s| s.name.as_str()),
-        );
-        for p in st.projects.iter().filter(|p| !p.sessions.is_empty()) {
-            any = true;
-            lines.push(Line::raw(p.name.clone()).bold());
-            for s in &p.sessions {
+    let items = app.finca_items();
+    let name_w = name_width(items.iter().filter_map(|i| match i {
+        FincaItem::Session { session, .. } => Some(session.name.as_str()),
+        FincaItem::Shell(_) => None,
+    }));
+    // The selected row, filled to the pane's width like a list highlight.
+    let inner = area.width.saturating_sub(2) as usize;
+    let mark = |line: Line<'static>, i: usize| {
+        if i != app.sess_idx {
+            return line;
+        }
+        let pad = inner.saturating_sub(line.width());
+        let mut line = line.patch_style(highlight(app.pane == Pane::Sessions));
+        line.spans.push(Span::raw(" ".repeat(pad)));
+        line
+    };
+    let no_sessions = !items.iter().any(|i| matches!(i, FincaItem::Session { .. }));
+    if f.last_status.is_some() && no_sessions {
+        lines.push(Line::raw(format!("No live sessions on {}.", f.name)).dark_gray());
+    }
+    let mut heading: Option<&str> = None;
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            FincaItem::Session {
+                project,
+                session: s,
+            } => {
+                if heading != Some(project.as_str()) {
+                    heading = Some(project);
+                    lines.push(Line::raw(project.clone()).bold());
+                }
                 let color = state_color(s.state);
-                lines.push(Line::from(vec![
-                    Span::styled("  ● ", Style::new().fg(color)),
-                    Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
-                    Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
-                    Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
-                ]));
+                lines.push(mark(
+                    Line::from(vec![
+                        Span::styled("  ● ", Style::new().fg(color)),
+                        Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
+                        Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
+                        Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
+                    ]),
+                    i,
+                ));
                 if let Some(m) = &s.message {
                     lines.push(Line::styled(format!("      {m}"), Style::new().fg(color)));
                 }
             }
-        }
-        if !any {
-            lines.push(Line::raw(format!("No live sessions on {}.", f.name)).dark_gray());
+            FincaItem::Shell(w) => {
+                if heading != Some("") {
+                    heading = Some("");
+                    lines.push(Line::raw("Shells").bold());
+                }
+                let mut spans = vec![
+                    Span::raw("  ● ").fg(FINCAS_COLOR),
+                    Span::raw(format!("{:<w$}", format!("shell {}", w.index), w = name_w)).bold(),
+                ];
+                if let Some(t) = &w.title {
+                    spans.push(Span::raw(t.clone()).dark_gray());
+                }
+                lines.push(mark(Line::from(spans), i));
+            }
         }
     }
     lines.push(Line::raw(""));
-    lines.push(Line::raw("Enter: connect · s: shell · C-q: come back").dark_gray());
+    lines.push(Line::raw("Enter: open · s: shell · C-q: come back").dark_gray());
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })

@@ -556,6 +556,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             state: State::NeedsYou,
             message: Some("Permission needed: Bash".into()),
             updated_at: t0(),
+            window: Some(format!("@1{i}")),
         });
     }
     for i in 0..working {
@@ -564,6 +565,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             state: State::Working,
             message: None,
             updated_at: t0(),
+            window: Some(format!("@2{i}")),
         });
     }
     Status {
@@ -1617,4 +1619,104 @@ fn long_finca_session_names_keep_a_gap_before_the_state() {
     poll(&mut app, "homebox", Reach::Reachable(st), t0());
     let s = screen(&app, 110, 24);
     assert!(s.contains("Minecraft Server  working"), "{s}");
+}
+
+// ---------- finca sessions and shells ----------
+
+use crate::finca::ShellWindow;
+
+/// homebox with n0 (needs you, @10) and w0 (working, @20), and one shell.
+fn finca_with_items() -> (tempfile::TempDir, Store, App) {
+    let (d, s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 1, 1)),
+        t0(),
+    );
+    app.finca_shells.insert(
+        "homebox".into(),
+        vec![ShellWindow {
+            id: "@5".into(),
+            index: 1,
+            title: Some("me@homebox: ~/stacks".into()),
+        }],
+    );
+    app.pane = Pane::Sessions;
+    (d, s, app)
+}
+
+#[test]
+fn enter_on_a_finca_session_jumps_straight_into_it() {
+    let (_d, _s, mut app) = finca_with_items();
+    handle_key(&mut app, ch('j'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            window: "@20".into(),
+        }
+    );
+}
+
+#[test]
+fn enter_on_a_finca_shell_goes_back_to_that_window() {
+    let (_d, _s, mut app) = finca_with_items();
+    for _ in 0..5 {
+        handle_key(&mut app, ch('j'));
+    }
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaShellWindow {
+            slug: "homebox".into(),
+            window: "@5".into(),
+        },
+        "j stops on the last row, the shell"
+    );
+}
+
+#[test]
+fn enter_on_the_finca_row_still_opens_its_dashboard() {
+    let (_d, _s, mut app) = finca_with_items();
+    app.pane = Pane::Projects;
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::ConnectFinca { .. }
+    ));
+}
+
+#[test]
+fn a_session_from_an_older_finca_grove_opens_its_dashboard() {
+    let (_d, _s, mut app) = finca_with_items();
+    let mut st = remote_status("homebox", 1, 0);
+    st.projects[0].sessions[0].window = None;
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::ConnectFinca { .. }
+    ));
+}
+
+#[test]
+fn finca_selection_survives_a_reload() {
+    let (_d, s, mut app) = finca_with_items();
+    handle_key(&mut app, ch('j'));
+    handle_key(&mut app, ch('j'));
+    app.reload(&s);
+    assert_eq!(app.sess_idx, 2, "still on the shell");
+}
+
+#[test]
+fn finca_pane_lists_sessions_then_shells() {
+    let (_d, _s, app) = finca_with_items();
+    let out = screen(&app, 110, 24);
+    let (n0, w0, shells, shell) = (
+        row_of(&out, "n0"),
+        row_of(&out, "w0"),
+        row_of(&out, "Shells"),
+        row_of(&out, "shell 1"),
+    );
+    assert!(n0 < w0 && w0 < shells && shells < shell, "{out}");
+    assert!(out.contains("me@homebox: ~/stacks"), "{out}");
 }

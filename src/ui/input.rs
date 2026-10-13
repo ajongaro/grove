@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use super::app::{Action, App, Mode, Pane, PromptKind, state_is_live};
+use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, state_is_live};
 use super::complete::complete_path;
 use crate::todo::Effect;
 
@@ -342,7 +342,10 @@ fn move_selection(app: &mut App, delta: isize) {
             (&mut app.proj_idx, len)
         }
         Pane::Sessions => {
-            let len = app.visible_sessions().len();
+            let len = match app.selected_finca() {
+                Some(_) => app.finca_items().len(),
+                None => app.visible_sessions().len(),
+            };
             (&mut app.sess_idx, len)
         }
         // todo_key handles its own movement.
@@ -368,13 +371,25 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
         f.error.clone(),
         f.via.clone(),
     );
+    let item = (app.pane == Pane::Sessions)
+        .then(|| app.selected_finca_item())
+        .flatten();
     match code {
-        KeyCode::Enter => Some(match error {
-            Some(e) => {
+        KeyCode::Enter => Some(match (error, item) {
+            (Some(e), _) => {
                 app.footer = Some(format!("{name} can't be used: {e}"));
                 Action::None
             }
-            None => Action::ConnectFinca { slug, via },
+            (None, Some(FincaItem::Shell(w))) => Action::FincaShellWindow { slug, window: w.id },
+            (None, Some(FincaItem::Session { session, .. })) if session.window.is_some() => {
+                Action::FincaJump {
+                    slug,
+                    via,
+                    window: session.window.unwrap_or_default(),
+                }
+            }
+            // A finca Grove too old to say which window: its dashboard.
+            (None, _) => Action::ConnectFinca { slug, via },
         }),
         KeyCode::Char('s') => Some(match error {
             Some(e) => {

@@ -140,6 +140,58 @@ fn status_json_reports_only_sessions_with_a_live_window() {
     let _ = std::fs::remove_file(sock.trim());
     assert_eq!(v["needs_you"], 1, "{v}");
     assert_eq!(v["projects"][0]["sessions"][0]["name"], "s1");
+    // So the laptop can jump straight into it.
+    assert_eq!(v["projects"][0]["sessions"][0]["window"], w.trim());
+}
+
+#[test]
+fn focus_makes_a_window_current_for_the_next_attach() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let socket = format!("grove-test-{}-focus", std::process::id());
+    let tmux = |args: &[&str]| {
+        let out = Command::new("tmux")
+            .args(["-L", &socket, "-f", "/dev/null"])
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    tmux(&["new-session", "-d", "-s", "grove", "sleep", "30"]);
+    let second = tmux(&[
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{window_id}",
+        "-t",
+        "grove",
+        "sleep",
+        "30",
+    ]);
+    let focus = |window: &str| {
+        grove(&home)
+            .args(["focus", window])
+            .env("GROVE_TMUX_SOCKET", &socket)
+            .output()
+            .unwrap()
+    };
+    let ok = focus(&second);
+    let current = tmux(&["display-message", "-p", "-t", "grove", "#{window_id}"]);
+    let missing = focus("@999");
+    let sock = tmux(&["display-message", "-p", "#{socket_path}"]);
+    tmux(&["kill-server"]);
+    let _ = std::fs::remove_file(sock);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert_eq!(current, second);
+    assert!(
+        !missing.status.success(),
+        "a window that's gone is an error"
+    );
 }
 
 /// Fake ssh + a fake grove in the "remote" home's ~/.local/bin.

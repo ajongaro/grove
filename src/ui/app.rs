@@ -117,6 +117,17 @@ pub enum Action {
         /// The destination that last answered; None means the primary.
         via: Option<String>,
     },
+    /// Connect to the finca straight into one of its sessions' windows.
+    FincaJump {
+        slug: String,
+        via: Option<String>,
+        window: String,
+    },
+    /// Back to one of the windows of the finca's shell session.
+    FincaShellWindow {
+        slug: String,
+        window: String,
+    },
     RenameSession {
         session_id: String,
         name: String,
@@ -161,6 +172,28 @@ pub struct App {
     pub todo_slug: Option<String>,
     /// Unchecked to-dos per project slug, for the project rows.
     pub open_todos: HashMap<String, usize>,
+    /// Open shell windows per finca slug (refreshed from tmux by the loop).
+    pub finca_shells: HashMap<String, Vec<crate::finca::ShellWindow>>,
+}
+
+/// A row of the selected finca's pane: a remote session or a local shell.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FincaItem {
+    Session {
+        project: String,
+        session: crate::status::SessionStatus,
+    },
+    Shell(crate::finca::ShellWindow),
+}
+
+impl FincaItem {
+    /// Identifies the row across reloads.
+    fn key(&self) -> String {
+        match self {
+            FincaItem::Session { project, session } => format!("s:{project}:{}", session.name),
+            FincaItem::Shell(w) => format!("w:{}", w.id),
+        }
+    }
 }
 
 impl App {
@@ -181,6 +214,7 @@ impl App {
             todos: crate::todo::Todos::default(),
             todo_slug: None,
             open_todos: HashMap::new(),
+            finca_shells: HashMap::new(),
         }
     }
 
@@ -207,6 +241,7 @@ impl App {
         let keep_project = self.selected_project().map(|p| p.slug.clone());
         let keep_finca = self.selected_finca().map(|f| f.slug.clone());
         let keep_session = self.selected_session().map(|s| s.id.clone());
+        let keep_item = self.selected_finca_item().map(|i| i.key());
 
         self.projects = store
             .list_projects()
@@ -272,7 +307,15 @@ impl App {
         if let Some(i) = keep_session.and_then(|id| visible.iter().position(|v| *v == id)) {
             self.sess_idx = i;
         }
-        self.sess_idx = self.sess_idx.min(visible.len().saturating_sub(1));
+        let mut len = visible.len();
+        if self.selected_finca().is_some() {
+            let items: Vec<String> = self.finca_items().iter().map(FincaItem::key).collect();
+            if let Some(i) = keep_item.and_then(|k| items.iter().position(|v| *v == k)) {
+                self.sess_idx = i;
+            }
+            len = items.len();
+        }
+        self.sess_idx = self.sess_idx.min(len.saturating_sub(1));
 
         self.open_todos = self
             .projects
@@ -358,6 +401,36 @@ impl App {
 
     pub fn selected_session(&self) -> Option<&Session> {
         self.visible_sessions().get(self.sess_idx).copied()
+    }
+
+    /// The selected finca's rows: its sessions (from the last good status),
+    /// project by project, then its open shell windows.
+    pub fn finca_items(&self) -> Vec<FincaItem> {
+        let Some(f) = self.selected_finca() else {
+            return Vec::new();
+        };
+        let sessions = f
+            .last_status
+            .iter()
+            .flat_map(|st| &st.projects)
+            .flat_map(|p| {
+                p.sessions.iter().map(|s| FincaItem::Session {
+                    project: p.name.clone(),
+                    session: s.clone(),
+                })
+            });
+        let shells = self
+            .finca_shells
+            .get(&f.slug)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .map(FincaItem::Shell);
+        sessions.chain(shells).collect()
+    }
+
+    pub fn selected_finca_item(&self) -> Option<FincaItem> {
+        self.finca_items().into_iter().nth(self.sess_idx)
     }
 
     /// Local sessions needing you plus those on reachable fincas.
