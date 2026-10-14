@@ -452,10 +452,112 @@ fn connect_argv_quotes_dest_and_bin_for_both_shells() {
     assert_eq!(got, want);
 }
 
-#[test]
-fn connect_failure_pauses_with_the_exit_code() {
+/// Runs an ssh_script (with the fake ssh `body`) as the window would,
+/// pressing Enter at the pause, and returns what it printed.
+fn run_failed_ssh(body: &str, remote: Option<&str>, grace: u64) -> String {
     let d = tempfile::tempdir().unwrap();
-    let ssh = script(d.path(), "bad ssh", "echo 'no route' >&2; exit 255");
+    let ssh = script(d.path(), "bad ssh", body);
+    let f = Finca {
+        name: "pi".into(),
+        ssh: "x".into(),
+        grove_bin: "/g".into(),
+        color: None,
+        backup: None,
+    };
+    let sh = with_env(&ssh, d.path(), || {
+        ssh_script_with(&f, &f.ssh, remote, grace)
+    });
+    let out = std::process::Command::new("sh")
+        .args(["-c", &sh])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(b"\n")?;
+            c.wait_with_output()
+        })
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn connect_failure_says_it_couldnt_connect_and_why() {
+    let text = run_failed_ssh(
+        "echo 'ssh: connect to host x port 22: No route to host' >&2; exit 255",
+        Some("grove"),
+        10,
+    );
+    assert!(text.contains("Couldn't connect to pi"), "{text}");
+    assert!(text.contains("No route to host"), "{text}");
+    assert!(text.contains("Press Enter to close"), "{text}");
+}
+
+#[test]
+fn connect_failure_resets_the_screen_first() {
+    let text = run_failed_ssh("exit 255", Some("grove"), 10);
+    // Leaves the remote's full-screen view and stops focus and theme reports
+    // before anything is printed.
+    let reset = text
+        .find("\x1b[?1049l")
+        .expect("leaves the alternate screen");
+    assert!(text.contains("\x1b[?1004l"), "focus reports off");
+    assert!(text.contains("\x1b[?2031l"), "theme reports off");
+    assert!(reset < text.find("Couldn't").unwrap(), "{text:?}");
+}
+
+#[test]
+fn a_dropped_connection_says_it_was_lost() {
+    let text = run_failed_ssh(
+        "echo 'Shared connection to x closed.' >&2; exit 255",
+        Some("grove"),
+        0,
+    );
+    assert!(text.contains("Lost the connection to pi"), "{text}");
+    assert!(text.contains("Shared connection to x closed."), "{text}");
+}
+
+#[test]
+fn a_remote_grove_failure_names_its_exit_code() {
+    let text = run_failed_ssh("exit 3", Some("grove"), 10);
+    assert!(text.contains("Grove on pi exited (code 3)"), "{text}");
+}
+
+#[test]
+fn a_remote_shell_failure_names_its_exit_code() {
+    let text = run_failed_ssh("exit 3", None, 10);
+    assert!(text.contains("The shell on pi exited (code 3)"), "{text}");
+}
+
+#[test]
+fn a_clean_exit_does_not_pause() {
+    let text = run_failed_ssh(
+        "echo 'Shared connection to x closed.' >&2; exit 0",
+        Some("grove"),
+        10,
+    );
+    assert!(!text.contains("Enter"), "{text}");
+}
+
+#[test]
+fn a_failed_connection_leaves_a_clean_pane() {
+    let d = tempfile::tempdir().unwrap();
+    let tmux = crate::tmux::Tmux::new(format!("grove-test-{}-sshfail", std::process::id()));
+    struct Kill<'a>(&'a crate::tmux::Tmux);
+    impl Drop for Kill<'_> {
+        fn drop(&mut self) {
+            self.0.kill_server();
+        }
+    }
+    let _k = Kill(&tmux);
+    // The remote dashboard takes over the screen, asks for mouse and focus
+    // reports, then the link dies.
+    let ssh = script(
+        d.path(),
+        "dying ssh",
+        "printf '\\033[?1049h\\033[?1000h\\033[?1004hREMOTE DASHBOARD'; sleep 0.3; exit 255",
+    );
     let f = Finca {
         name: "pi".into(),
         ssh: "x".into(),
@@ -464,22 +566,28 @@ fn connect_failure_pauses_with_the_exit_code() {
         backup: None,
     };
     let argv = with_env(&ssh, d.path(), || connect_argv(&f, &f.ssh));
-    let out = std::process::Command::new(&argv[0])
-        .args(&argv[1..])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut c| {
-            use std::io::Write;
-            c.stdin.take().unwrap().write_all(b"\n")?;
-            c.wait_with_output()
-        })
+    tmux.new_session_detached("finca-pi", "pi", d.path(), &argv)
         .unwrap();
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        text.contains("exited (255)") && text.contains("Enter"),
-        "{text}"
-    );
+    let show =
+        |what: &[&str]| String::from_utf8(tmux.cmd().args(what).output().unwrap().stdout).unwrap();
+    let mut screen = String::new();
+    for _ in 0..50 {
+        screen = show(&["capture-pane", "-p", "-t", "=finca-pi:"]);
+        if screen.contains("Press Enter") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(screen.contains("Couldn't connect to pi"), "{screen}");
+    assert!(!screen.contains("REMOTE DASHBOARD"), "{screen}");
+    let flags = show(&[
+        "display-message",
+        "-p",
+        "-t",
+        "=finca-pi:",
+        "#{alternate_on} #{mouse_any_flag}",
+    ]);
+    assert_eq!(flags.trim(), "0 0");
 }
 
 #[test]

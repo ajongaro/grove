@@ -511,6 +511,14 @@ pub fn shell_argv(f: &Finca, dest: &str) -> Vec<String> {
 /// Interactive ssh to `dest`, running `remote` there if given; on failure it
 /// pauses so the error can be read.
 fn ssh_script(f: &Finca, dest: &str, remote: Option<&str>) -> String {
+    ssh_script_with(f, dest, remote, CONNECT_GRACE_SECS)
+}
+
+/// How long ssh must have run for a failure to count as a lost connection
+/// rather than one that never got going.
+const CONNECT_GRACE_SECS: u64 = 10;
+
+fn ssh_script_with(f: &Finca, dest: &str, remote: Option<&str>, grace: u64) -> String {
     // Keep-alives end ssh within ~45s of a dead link (laptop slept, network
     // changed) instead of leaving a frozen session; share_opts has them.
     let mut opts = share_opts();
@@ -534,9 +542,43 @@ fn ssh_script(f: &Finca, dest: &str, remote: Option<&str>) -> String {
     if let Some(r) = remote {
         ssh = format!("{ssh} {}", sh_quote(r));
     }
+    let other = if remote.is_some() {
+        "Grove on $name exited (code $code)"
+    } else {
+        "The shell on $name exited (code $code)"
+    };
+    // ssh's own messages (not the remote's output, which -t sends through
+    // the tty) go to $err, so the reason can be shown after the screen is
+    // reset. The reset leaves whatever full-screen view the remote left
+    // behind and turns off the mouse, focus, paste and theme reports it
+    // asked for, which would otherwise arrive as typing at the prompt.
     format!(
-        "{ssh} || {{ code=$?; echo; echo \"ssh to {} exited ($code) — press Enter to close\"; read _; }}",
-        f.name.replace(['"', '$', '`', '\\'], "")
+        r#"name={name}
+start=$(date +%s)
+err=$(mktemp "${{TMPDIR:-/tmp}}/grove-ssh.XXXXXX" 2>/dev/null) || err=/dev/null
+{ssh} 2>"$err"
+code=$?
+if [ "$code" -ne 0 ]; then
+  if [ "$code" -eq 255 ]; then
+    if [ $(( $(date +%s) - start )) -ge {grace} ]; then
+      msg="Lost the connection to $name"
+    else
+      msg="Couldn't connect to $name"
+    fi
+  else
+    msg="{other}"
+  fi
+  why=$(grep -v '^[[:space:]]*$' "$err" | tail -n 1)
+  printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033[?2031l\033[?25h\033[0m\033[2J\033[H'
+  printf '\n  %s\n' "$msg"
+  [ -n "$why" ] && printf '  %s\n' "$why"
+  printf '\n  Press Enter to close.'
+  stty -echo 2>/dev/null
+  read _
+  stty echo 2>/dev/null
+fi
+[ "$err" = /dev/null ] || rm -f "$err""#,
+        name = sh_quote(&f.name),
     )
 }
 
