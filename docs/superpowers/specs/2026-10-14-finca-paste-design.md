@@ -25,9 +25,11 @@ The binding runs `grove paste --pane #{pane_id} --session #{session_name}`
 in the background (`run-shell -b`), so the client never freezes. It then
 does the first of these that applies:
 
-1. **Image on the clipboard:** write it out as a PNG and send it.
-2. **A file reference on the clipboard** (Finder ⌘C): send that file as
-   it is. If several are copied, the first one is sent.
+1. **A file reference on the clipboard** (Finder ⌘C): send that file as
+   it is. If several are copied, the first one is sent. This is checked
+   first because Finder may also put the file's icon on the clipboard as
+   an image.
+2. **Image on the clipboard:** write it out as a PNG and send it.
 3. **Anything else** (text, empty, or clipboard reading unsupported here):
    send `C-v` on to the pane (`send-keys -t <pane> C-v`), so it reaches the
    finca as if the binding weren't there.
@@ -67,7 +69,8 @@ Built-in `osascript`, so nothing needs installing:
   under `~/.grove/run/`. That file is deleted after sending.
 - **File reference:** `POSIX path of (the clipboard as «class furl»)`.
 - Each one fails cleanly (non-zero exit) when the clipboard holds
-  something else. The image check runs first.
+  something else. The file check runs first. A failed image read still
+  leaves an empty file, which is deleted.
 
 On other systems, clipboard reading reports "unsupported", so `C-v`
 passes through and `grove send` without a file says it can't read the
@@ -80,6 +83,7 @@ clipboard here. Passing a file always works.
   - `Clip` (`Image(PathBuf)`, `File(PathBuf)`, `Nothing`) and
     `read_clipboard(run_dir) -> Clip`, which shells out to osascript;
     tests replace osascript with a fake via `GROVE_OSASCRIPT`;
+    `read_clipboard` returns `Nothing` off macOS;
   - `send(f, dest, file, name) -> Result<String>`, which returns the
     remote path;
   - `paste(tmux, store, session, pane)`: the `C-v` flow.
