@@ -165,3 +165,44 @@ fn text_clipboard_is_nothing_and_leaves_no_temp_file() {
     assert_eq!(clip, Clip::Nothing);
     assert_eq!(std::fs::read_dir(&run).unwrap().count(), 0);
 }
+
+#[test]
+fn folder_on_the_clipboard_is_not_sent_as_its_icon() {
+    let d = tempfile::tempdir().unwrap();
+    let folder = d.path().join("project");
+    std::fs::create_dir_all(&folder).unwrap();
+    let icon = d.path().join("icon.png");
+    std::fs::write(&icon, "icon").unwrap();
+    let clip = with_clip(d.path(), Some(&folder), Some(&icon), || {
+        read_clipboard(d.path())
+    });
+    assert_eq!(clip, Clip::Folder(folder));
+}
+
+#[test]
+fn file_names_keep_their_spaces() {
+    let d = tempfile::tempdir().unwrap();
+    let doc = d.path().join("notes ");
+    std::fs::write(&doc, "x").unwrap();
+    let clip = with_clip(d.path(), Some(&doc), None, || read_clipboard(d.path()));
+    assert_eq!(clip, Clip::File(doc));
+}
+
+#[test]
+fn a_silent_ssh_failure_still_says_something() {
+    let d = tempfile::tempdir().unwrap();
+    let ssh = crate::finca::tests::script(d.path(), "quiet ssh", "exit 3");
+    let src = d.path().join("a.png");
+    std::fs::write(&src, "x").unwrap();
+    let err = with_env(&ssh, d.path(), || send("me@box", &src, "a.png")).unwrap_err();
+    assert!(format!("{err:#}").contains("exited"), "{err:#}");
+}
+
+#[test]
+fn failure_messages_name_the_finca() {
+    let e = anyhow::anyhow!("connection refused");
+    assert_eq!(
+        failure("homebox", &e),
+        "couldn't send to homebox: connection refused"
+    );
+}

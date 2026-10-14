@@ -478,6 +478,7 @@ fn send_cmd(paths: &Paths, name: String, file: Option<PathBuf>) -> Result<()> {
                 (p, n, false)
             }
             transfer::Clip::Image(p) => (p, "clipboard.png".to_string(), true),
+            transfer::Clip::Folder(p) => bail!("can't send a folder ({})", p.display()),
             transfer::Clip::Nothing => {
                 bail!("no file or image on the clipboard (or it can't be read here); give a file")
             }

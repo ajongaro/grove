@@ -56,7 +56,11 @@ pub fn send(dest: &str, file: &Path, name: &str) -> Result<String> {
     );
     let out = finca::remote_stdin(dest, &cmd, input.into())?;
     if !out.status.success() {
-        bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        if err.is_empty() {
+            bail!("ssh exited {}", out.status.code().unwrap_or(-1));
+        }
+        bail!("{err}");
     }
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
@@ -72,6 +76,8 @@ pub enum Clip {
     File(std::path::PathBuf),
     /// An image, written to this temp PNG (the caller deletes it).
     Image(std::path::PathBuf),
+    /// A folder copied in Finder: not sent.
+    Folder(std::path::PathBuf),
     Nothing,
 }
 
@@ -95,9 +101,15 @@ pub fn read_clipboard(run_dir: &Path) -> Clip {
     if let Ok(o) = file
         && o.status.success()
     {
-        let p = std::path::PathBuf::from(String::from_utf8_lossy(&o.stdout).trim());
+        // Only the newline: file names may end in spaces.
+        let out = String::from_utf8_lossy(&o.stdout);
+        let p = std::path::PathBuf::from(out.trim_end_matches(['\n', '\r']));
         if p.is_file() {
             return Clip::File(p);
+        }
+        // A copied folder comes with its icon as an image: never send that.
+        if p.is_dir() {
+            return Clip::Folder(p);
         }
     }
     let tmp = run_dir.join(format!("clipboard-{}.png", std::process::id()));
@@ -127,6 +139,11 @@ pub fn read_clipboard(run_dir: &Path) -> Clip {
     }
 }
 
+/// The status line after a failed send.
+pub fn failure(finca: &str, e: &anyhow::Error) -> String {
+    format!("couldn't send to {finca}: {e:#}")
+}
+
 /// `C-v` in a finca window: sends the clipboard's file or image and pastes
 /// its path in `pane`, or passes `C-v` through when there's nothing to
 /// send. Reports through tmux, never stdout (run-shell would show it).
@@ -135,6 +152,10 @@ pub fn paste(paths: &crate::config::Paths, tmux: &crate::tmux::Tmux, session: &s
     let (file, original, temp) = match clip {
         Clip::Nothing => {
             let _ = tmux.send_keys(pane, &["C-v"]);
+            return;
+        }
+        Clip::Folder(p) => {
+            tmux.display_message(pane, &format!("can't send a folder ({})", p.display()));
             return;
         }
         Clip::File(p) => {
@@ -147,22 +168,23 @@ pub fn paste(paths: &crate::config::Paths, tmux: &crate::tmux::Tmux, session: &s
         Clip::Image(p) => (p, "clipboard.png".to_string(), true),
     };
     let name = remote_name(&original, chrono::Local::now());
+    let slug = finca::finca_for_session(session).unwrap_or(session);
+    let mut finca_name = slug.to_string();
     let result = (|| {
-        let slug = finca::finca_for_session(session)
-            .ok_or_else(|| anyhow::anyhow!("{session} isn't a finca window"))?;
         let f = crate::store::Store::new(paths.clone()).get_finca(slug)?;
+        finca_name = f.name.clone();
         let dest = pick_dest(&f, tmux.session_option(session, "@grove_dest").as_deref())?;
-        Ok::<_, anyhow::Error>((f.name.clone(), send(&dest, &file, &name)?))
+        send(&dest, &file, &name)
     })();
     if temp {
         let _ = std::fs::remove_file(&file);
     }
     match result {
-        Ok((finca_name, remote)) => {
+        Ok(remote) => {
             let _ = tmux.paste_text(pane, &format!("{remote} "));
             tmux.display_message(pane, &format!("sent {original} to {finca_name}"));
         }
-        Err(e) => tmux.display_message(pane, &format!("couldn't send: {e:#}")),
+        Err(e) => tmux.display_message(pane, &failure(&finca_name, &e)),
     }
 }
 
