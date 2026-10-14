@@ -560,6 +560,14 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
     Ok(true)
 }
 
+/// The finca slug of a finca connection (`finca-<slug>`) or shell
+/// (`finca-<slug>-sh`) session.
+#[allow(dead_code)] // Used by paste (Task 3).
+pub fn finca_for_session(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix("finca-")?;
+    Some(rest.strip_suffix("-sh").unwrap_or(rest)).filter(|s| !s.is_empty())
+}
+
 /// The tmux session name for a finca's shell.
 pub fn shell_session_name(slug: &str) -> String {
     format!("finca-{slug}-sh")

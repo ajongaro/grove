@@ -14,6 +14,7 @@ mod status;
 mod store;
 mod tmux;
 mod todo;
+mod transfer;
 mod ui;
 
 use std::io::Read;
@@ -75,6 +76,12 @@ enum Cmd {
     /// attach (another Grove connecting to this finca) lands in it.
     #[command(hide = true)]
     Focus { window: String },
+    /// Send a file (or this Mac's clipboard) to a finca's ~/.grove/inbox;
+    /// prints the path there.
+    Send {
+        finca: String,
+        file: Option<PathBuf>,
+    },
     /// Internal: the dashboard that runs in tmux window 0.
     #[command(hide = true)]
     Dashboard,
@@ -136,6 +143,7 @@ fn main() {
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
@@ -435,6 +443,26 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn send_cmd(paths: &Paths, name: String, file: Option<PathBuf>) -> Result<()> {
+    let store = Store::new(paths.clone());
+    let f = store.get_finca(&name)?;
+    let Some(file) = file else {
+        bail!("give a file to send");
+    };
+    let original = file
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dest = transfer::pick_dest(&f, None)?;
+    let path = transfer::send(
+        &dest,
+        &file,
+        &transfer::remote_name(&original, chrono::Local::now()),
+    )?;
+    println!("{path}");
     Ok(())
 }
 
