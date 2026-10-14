@@ -549,6 +549,8 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| "/".into());
     tmux.new_session_detached(&name, &f.name, &home, &connect_argv(f, dest))?;
+    // Where this connection goes, for C-v (transfer::paste).
+    tmux.set_option(&name, "@grove_dest", dest)?;
     tmux.set_option(&name, "key-table", "grove-finca")?;
     tmux.set_option(&name, "prefix", "None")?;
     // When ssh ends (remote q, dropped link) move the client to another
@@ -562,7 +564,6 @@ pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
 
 /// The finca slug of a finca connection (`finca-<slug>`) or shell
 /// (`finca-<slug>-sh`) session.
-#[allow(dead_code)] // Used by paste (Task 3).
 pub fn finca_for_session(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("finca-")?;
     Some(rest.strip_suffix("-sh").unwrap_or(rest)).filter(|s| !s.is_empty())
@@ -586,6 +587,8 @@ pub fn ensure_shell_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> 
         .unwrap_or_else(|| "/".into());
     let argv = shell_argv(f, dest);
     tmux.new_session_detached(&name, &f.name, &home, &argv)?;
+    // Where this connection goes, for C-v (transfer::paste).
+    tmux.set_option(&name, "@grove_dest", dest)?;
     tmux.set_option(&name, "key-table", "grove-shell")?;
     tmux.set_option(
         &name,

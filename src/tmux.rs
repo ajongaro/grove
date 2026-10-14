@@ -194,6 +194,42 @@ impl Tmux {
             .map(str::to_string)
     }
 
+    /// A session's option (e.g. a user `@` option), if set.
+    pub fn session_option(&self, session: &str, option: &str) -> Option<String> {
+        let out = self
+            .cmd()
+            .args(["show-options", "-qv", "-t", session, option])
+            .output()
+            .ok()?;
+        let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (out.status.success() && !v.is_empty()).then_some(v)
+    }
+
+    pub fn send_keys(&self, target: &str, keys: &[&str]) -> Result<()> {
+        let mut args = vec!["send-keys", "-t", target];
+        args.extend_from_slice(keys);
+        self.run(&args).map(|_| ())
+    }
+
+    /// Pastes `text` into `target` as a paste (bracketed if the program asked).
+    pub fn paste_text(&self, target: &str, text: &str) -> Result<()> {
+        self.run(&["set-buffer", "-b", "grove-paste", "--", text])?;
+        self.run(&[
+            "paste-buffer",
+            "-p",
+            "-d",
+            "-b",
+            "grove-paste",
+            "-t",
+            target,
+        ])
+        .map(|_| ())
+    }
+
+    pub fn display_message(&self, target: &str, msg: &str) {
+        let _ = self.run(&["display-message", "-d", "4000", "-t", target, msg]);
+    }
+
     #[cfg(test)]
     /// Kills the server and removes its socket file (tmux leaves it behind).
     pub fn kill_server(&self) {

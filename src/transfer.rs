@@ -127,6 +127,45 @@ pub fn read_clipboard(run_dir: &Path) -> Clip {
     }
 }
 
+/// `C-v` in a finca window: sends the clipboard's file or image and pastes
+/// its path in `pane`, or passes `C-v` through when there's nothing to
+/// send. Reports through tmux, never stdout (run-shell would show it).
+pub fn paste(paths: &crate::config::Paths, tmux: &crate::tmux::Tmux, session: &str, pane: &str) {
+    let clip = read_clipboard(&paths.run);
+    let (file, original, temp) = match clip {
+        Clip::Nothing => {
+            let _ = tmux.send_keys(pane, &["C-v"]);
+            return;
+        }
+        Clip::File(p) => {
+            let n = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            (p, n, false)
+        }
+        Clip::Image(p) => (p, "clipboard.png".to_string(), true),
+    };
+    let name = remote_name(&original, chrono::Local::now());
+    let result = (|| {
+        let slug = finca::finca_for_session(session)
+            .ok_or_else(|| anyhow::anyhow!("{session} isn't a finca window"))?;
+        let f = crate::store::Store::new(paths.clone()).get_finca(slug)?;
+        let dest = pick_dest(&f, tmux.session_option(session, "@grove_dest").as_deref())?;
+        Ok::<_, anyhow::Error>((f.name.clone(), send(&dest, &file, &name)?))
+    })();
+    if temp {
+        let _ = std::fs::remove_file(&file);
+    }
+    match result {
+        Ok((finca_name, remote)) => {
+            let _ = tmux.paste_text(pane, &format!("{remote} "));
+            tmux.display_message(pane, &format!("sent {original} to {finca_name}"));
+        }
+        Err(e) => tmux.display_message(pane, &format!("couldn't send: {e:#}")),
+    }
+}
+
 #[cfg(test)]
 #[path = "transfer_tests.rs"]
 mod tests;

@@ -76,6 +76,14 @@ enum Cmd {
     /// attach (another Grove connecting to this finca) lands in it.
     #[command(hide = true)]
     Focus { window: String },
+    /// Internal: C-v in a finca window (sends the clipboard, pastes the path).
+    #[command(hide = true)]
+    Paste {
+        #[arg(long)]
+        session: String,
+        #[arg(long)]
+        pane: String,
+    },
     /// Send a file (or this Mac's clipboard) to a finca's ~/.grove/inbox;
     /// prints the path there.
     Send {
@@ -143,6 +151,10 @@ fn main() {
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::Paste { session, pane }) => {
+            let _ = paths.ensure();
+            transfer::paste(&paths, &grove_tmux(&paths), &session, &pane);
+        }
         Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),

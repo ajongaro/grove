@@ -554,11 +554,14 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
         keys.contains("C-q") && keys.contains("switch-client -t =grove"),
         "{keys}"
     );
+    assert!(keys.contains("C-v") && keys.contains("paste --session"), "{keys}");
     assert_eq!(
         keys.lines().count(),
-        1,
-        "only C-q in the finca table: {keys}"
+        2,
+        "only C-q and C-v in the finca table: {keys}"
     );
+    // C-v sends through the address this connection uses.
+    assert_eq!(opt("@grove_dest").trim(), "x");
 
     disconnect(&tmux, "homebox");
     assert!(!tmux.has_session("finca-homebox"));

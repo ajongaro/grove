@@ -428,3 +428,175 @@ fn finca_setup_without_a_terminal_refuses_instead_of_saying_yes() {
             .is_ok_and(|mut d| d.next().is_some())
     );
 }
+
+/// A test tmux server with session `finca-homebox` (a pane running
+/// `cat -v` in raw-ish mode), a finca file, a fake ssh and a fake osascript.
+struct PasteRig {
+    _d: tempfile::TempDir,
+    home: std::path::PathBuf,
+    remote: std::path::PathBuf,
+    socket: String,
+    env: Vec<(String, std::path::PathBuf)>,
+}
+
+impl PasteRig {
+    fn new(tag: &str, ssh_exit: Option<i32>) -> Self {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path().join("home");
+        std::fs::create_dir_all(home.join("fincas")).unwrap();
+        std::fs::create_dir_all(home.join("run")).unwrap();
+        std::fs::write(
+            home.join("fincas/homebox.toml"),
+            "name = \"homebox\"\nssh = \"me@homebox.local\"\ngrove_bin = \"/g\"\n",
+        )
+        .unwrap();
+        let remote = d.path().join("remote home");
+        std::fs::create_dir_all(&remote).unwrap();
+        let ssh = d.path().join("fake ssh");
+        let body = match ssh_exit {
+            Some(c) => format!("#!/bin/sh\necho 'connection refused' >&2\nexit {c}\n"),
+            None => "#!/bin/sh\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) shift 2;; -t|-T) shift;; *) break;; esac; done\nshift\nHOME=\"$FAKE_HOME\" exec sh -c \"$*\"\n".into(),
+        };
+        std::fs::write(&ssh, body).unwrap();
+        let osa = d.path().join("osascript");
+        std::fs::write(&osa, "#!/bin/sh\nfor a; do last=$a; done\ncase \"$*\" in\n*furl*) [ -n \"$FAKE_CLIP_FILE\" ] || exit 1; echo \"$FAKE_CLIP_FILE\";;\n*PNGf*) : > \"$last\"; [ -n \"$FAKE_CLIP_PNG\" ] || exit 1; cat \"$FAKE_CLIP_PNG\" > \"$last\";;\n*) exit 1;;\nesac\n").unwrap();
+        for p in [&ssh, &osa] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let socket = format!("grove-test-{}-{tag}", std::process::id());
+        let rig = Self {
+            env: vec![
+                ("GROVE_SSH".into(), ssh),
+                ("FAKE_HOME".into(), remote.clone()),
+                ("GROVE_OSASCRIPT".into(), osa),
+            ],
+            home,
+            remote,
+            socket,
+            _d: d,
+        };
+        rig.tmux(&[
+            "new-session",
+            "-d",
+            "-s",
+            "finca-homebox",
+            "-x",
+            "120",
+            "-y",
+            "10",
+            "sh",
+            "-c",
+            "stty -icanon -iexten -echo; cat -v",
+        ]);
+        rig.tmux(&[
+            "set-option",
+            "-t",
+            "finca-homebox",
+            "@grove_dest",
+            "me@homebox.local",
+        ]);
+        rig
+    }
+
+    fn tmux(&self, args: &[&str]) -> String {
+        let out = Command::new("tmux")
+            .args(["-L", &self.socket, "-f", "/dev/null"])
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    fn paste(&self, clip_png: Option<&std::path::Path>) -> std::process::Output {
+        let pane = self.tmux(&["display-message", "-p", "-t", "finca-homebox", "#{pane_id}"]);
+        let mut c = grove(&self.home);
+        c.args(["paste", "--session", "finca-homebox", "--pane", &pane])
+            .env("GROVE_TMUX_SOCKET", &self.socket)
+            .env_remove("FAKE_CLIP_FILE");
+        for (k, v) in &self.env {
+            c.env(k, v);
+        }
+        match clip_png {
+            Some(p) => c.env("FAKE_CLIP_PNG", p),
+            None => c.env_remove("FAKE_CLIP_PNG"),
+        };
+        c.output().unwrap()
+    }
+
+    /// The pane's text, after giving cat a moment to echo.
+    fn screen(&self) -> String {
+        for _ in 0..50 {
+            let s = self.tmux(&["capture-pane", "-p", "-t", "finca-homebox"]);
+            if !s.trim().is_empty() {
+                return s;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        String::new()
+    }
+}
+
+impl Drop for PasteRig {
+    fn drop(&mut self) {
+        let sock = self.tmux(&["display-message", "-p", "#{socket_path}"]);
+        self.tmux(&["kill-server"]);
+        let _ = std::fs::remove_file(sock);
+    }
+}
+
+#[test]
+fn paste_sends_a_clipboard_image_and_types_its_path() {
+    let rig = PasteRig::new("paste-img", None);
+    let png = rig.home.join("shot.png");
+    std::fs::write(&png, "pixels").unwrap();
+    let out = rig.paste(Some(&png));
+    assert!(
+        out.status.success() && out.stdout.is_empty() && out.stderr.is_empty(),
+        "{out:?}"
+    );
+    let inbox = rig.remote.join(".grove/inbox");
+    let sent: Vec<_> = std::fs::read_dir(&inbox)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(sent[0].to_string_lossy().ends_with("-clipboard.png"));
+    assert_eq!(std::fs::read_to_string(&sent[0]).unwrap(), "pixels");
+    assert!(
+        rig.screen().contains(&*sent[0].to_string_lossy()),
+        "{}",
+        rig.screen()
+    );
+    assert_eq!(
+        std::fs::read_dir(rig.home.join("run")).unwrap().count(),
+        0,
+        "temp png removed"
+    );
+}
+
+#[test]
+fn paste_without_an_image_passes_c_v_through() {
+    let rig = PasteRig::new("paste-text", None);
+    let out = rig.paste(None);
+    assert!(out.status.success(), "{out:?}");
+    assert!(rig.screen().contains("^V"), "{}", rig.screen());
+}
+
+#[test]
+fn paste_reports_a_failed_send_and_pastes_nothing() {
+    let rig = PasteRig::new("paste-down", Some(255));
+    let png = rig.home.join("shot.png");
+    std::fs::write(&png, "pixels").unwrap();
+    let out = rig.paste(Some(&png));
+    assert!(
+        out.status.success() && out.stdout.is_empty() && out.stderr.is_empty(),
+        "{out:?}"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(
+        rig.tmux(&["capture-pane", "-p", "-t", "finca-homebox"])
+            .trim()
+            .is_empty()
+    );
+}

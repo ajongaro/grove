@@ -135,6 +135,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `t` | dashboard | jump to the project's to-do list |
 | `R` | dashboard | update Grove after `cargo install` |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
+| `C-v` | finca window | send the clipboard's file or image there, paste its path |
 | `?` | dashboard | list every key |
 | `q` | dashboard | detach; sessions keep running |
 
@@ -231,6 +232,12 @@ the footer counts remote sessions that need you.
   `l` (or Tab) moves into the list; **Enter** on a session connects
   straight into that session's window, and Enter on a shell goes back to
   it. To start, kill or edit sessions, connect.
+- **`C-v`** in a finca window (its Grove or a shell there) sends a file
+  you copied in Finder (⌘C) or an image on the clipboard (a screenshot
+  taken with ⌘⇧⌃4) to the finca's `~/.grove/inbox`, and pastes its path.
+  Claude there reads it as an image. Other clipboard contents pass
+  through, so paste text with ⌘V as usual. Inbox files are removed after
+  7 days. Reading the clipboard is macOS-only for now.
 - A finca can have a **backup** SSH destination, such as its Tailscale
   name. When the main one doesn't answer (you're away from home), polling
   tries the backup, and Enter and `s` connect to whichever one answered last.
@@ -258,6 +265,7 @@ grove finca add homebox me@homebox.local --backup me@homebox.<tailnet>.ts.net
 grove finca ls
 grove finca rm homebox
 grove finca update [name...]   # put this build of grove on your fincas
+grove send homebox ~/Desktop/shot.png  # prints the path there (no file: the clipboard)
 grove status            # what this machine reports (--json is what fincas send)
 ```
 
@@ -316,6 +324,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/mcp.rs` | MCP tools |
 | `src/status.rs` | the `status --json` document fincas report |
 | `src/finca.rs` | finca files, SSH probe, poller, connect, shells, installing grove there |
+| `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop, `help.rs` the `?` list |

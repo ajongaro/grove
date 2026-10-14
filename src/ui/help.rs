@@ -7,6 +7,10 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("C-g", "back to the dashboard"),
             ("C-q", "back from a finca or finca shell"),
+            (
+                "C-v",
+                "in a finca: send the clipboard's file or image, paste its path",
+            ),
         ],
     ),
     (

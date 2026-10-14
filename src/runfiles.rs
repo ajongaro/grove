@@ -81,9 +81,19 @@ unbind -n C-y
     // Finca sessions use the grove-finca table instead of root (finca.rs), so
     // only C-q is intercepted and every other key reaches the remote grove.
     // Finca shells use grove-shell: C-q too, but the prefix still works.
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "grove".into());
+    let paste = format!(
+        "run-shell -b \"'{}' paste --session '#{{session_name}}' --pane '#{{pane_id}}' >/dev/null 2>&1\"",
+        exe.replace(['\'', '"'], "")
+    );
     format!(
         "{base}bind -T grove-finca C-q switch-client -t ={session}\n\
          bind -T grove-shell C-q switch-client -t ={session}\n\
+         # C-v in a finca window sends this Mac's clipboard file or image there (transfer.rs).\n\
+         bind -T grove-finca C-v {paste}\n\
+         bind -T grove-shell C-v {paste}\n\
          bind r source-file \"{}\" \\; display \"Reloaded Grove tmux config\"\n\
          {copy}\
          \n# Your own setup, loaded last.\n\
@@ -216,6 +226,20 @@ mod tests {
         assert!(
             c.contains("bind -T grove-shell C-q switch-client -t =g2"),
             "{c}"
+        );
+        for table in ["grove-finca", "grove-shell"] {
+            let line = c
+                .lines()
+                .find(|l| l.starts_with(&format!("bind -T {table} C-v run-shell -b ")))
+                .unwrap_or_else(|| panic!("C-v in {table}: {c}"));
+            assert!(
+                line.contains("paste --session") && line.contains("#{pane_id}"),
+                "{line}"
+            );
+        }
+        assert!(
+            !c.lines().any(|l| l.starts_with("bind -n C-v")),
+            "local sessions keep C-v"
         );
         let local = format!(
             "source-file -q \"{}\"",
