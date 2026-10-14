@@ -227,7 +227,8 @@ impl Tmux {
     }
 
     pub fn display_message(&self, target: &str, msg: &str) {
-        let _ = self.run(&["display-message", "-d", "4000", "-t", target, msg]);
+        // The message carries file names and errors: shown, never expanded.
+        let _ = self.run(&["display-message", "-d", "4000", "-t", target, &literal(msg)]);
     }
 
     #[cfg(test)]
@@ -258,6 +259,12 @@ fn check(out: &Output, args: &[&str]) -> Result<String> {
 }
 
 /// Parses `tmux -V` output such as "tmux 3.6a" or "tmux next-3.7".
+/// `s` as text tmux shows unchanged: `#` starts formats (`#{}`, `#()`)
+/// in messages, so it's doubled.
+pub fn literal(s: &str) -> String {
+    s.replace('#', "##")
+}
+
 pub fn parse_version(s: &str) -> Option<(u32, u32)> {
     let v = s.split_whitespace().nth(1)?;
     let v = v.rsplit('-').next()?;
@@ -299,6 +306,20 @@ mod tests {
     }
     fn sh(cmd: &str) -> Vec<String> {
         vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+
+    #[test]
+    fn literal_text_survives_tmux_format_expansion() {
+        let t = server("literal");
+        let d = tempfile::tempdir().unwrap();
+        t.0.new_session_detached("s", "w", d.path(), &sh("sleep 30"))
+            .unwrap();
+        // A file name shown in a message must not expand or run anything.
+        let name = "sent #{session_name} #(touch x) ##.png";
+        let out =
+            t.0.run(&["display-message", "-p", "-t", "s", &literal(name)])
+                .unwrap();
+        assert_eq!(out.trim(), name);
     }
 
     #[test]

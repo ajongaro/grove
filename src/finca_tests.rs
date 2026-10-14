@@ -554,7 +554,10 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
         keys.contains("C-q") && keys.contains("switch-client -t =grove"),
         "{keys}"
     );
-    assert!(keys.contains("C-v") && keys.contains("paste --session"), "{keys}");
+    assert!(
+        keys.contains("C-v") && keys.contains("paste --session"),
+        "{keys}"
+    );
     assert_eq!(
         keys.lines().count(),
         2,
