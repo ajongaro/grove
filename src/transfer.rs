@@ -66,6 +66,67 @@ pub fn send(dest: &str, file: &Path, name: &str) -> Result<String> {
         .to_string())
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Clip {
+    /// A file copied in Finder.
+    File(std::path::PathBuf),
+    /// An image, written to this temp PNG (the caller deletes it).
+    Image(std::path::PathBuf),
+    Nothing,
+}
+
+/// `$GROVE_OSASCRIPT` (tests), else osascript on macOS.
+fn osascript() -> Option<String> {
+    match std::env::var("GROVE_OSASCRIPT") {
+        Ok(p) if !p.is_empty() => Some(p),
+        _ => cfg!(target_os = "macos").then(|| "osascript".to_string()),
+    }
+}
+
+/// What's on this machine's clipboard that can be sent: a Finder file
+/// first (Finder may also put its icon there as an image), then an image.
+pub fn read_clipboard(run_dir: &Path) -> Clip {
+    let Some(osa) = osascript() else {
+        return Clip::Nothing;
+    };
+    let file = std::process::Command::new(&osa)
+        .args(["-e", "POSIX path of (the clipboard as «class furl»)"])
+        .output();
+    if let Ok(o) = file
+        && o.status.success()
+    {
+        let p = std::path::PathBuf::from(String::from_utf8_lossy(&o.stdout).trim());
+        if p.is_file() {
+            return Clip::File(p);
+        }
+    }
+    let tmp = run_dir.join(format!("clipboard-{}.png", std::process::id()));
+    let ok = std::process::Command::new(&osa)
+        .args([
+            "-e",
+            "on run argv",
+            "-e",
+            "set f to open for access POSIX file (item 1 of argv) with write permission",
+            "-e",
+            "set eof f to 0",
+            "-e",
+            "write (the clipboard as «class PNGf») to f",
+            "-e",
+            "close access f",
+            "-e",
+            "end run",
+        ])
+        .arg(&tmp)
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if ok && std::fs::metadata(&tmp).is_ok_and(|m| m.len() > 0) {
+        Clip::Image(tmp)
+    } else {
+        let _ = std::fs::remove_file(&tmp);
+        Clip::Nothing
+    }
+}
+
 #[cfg(test)]
 #[path = "transfer_tests.rs"]
 mod tests;

@@ -449,20 +449,39 @@ fn finca_cmd(paths: &Paths, cmd: FincaCmd) -> Result<()> {
 fn send_cmd(paths: &Paths, name: String, file: Option<PathBuf>) -> Result<()> {
     let store = Store::new(paths.clone());
     let f = store.get_finca(&name)?;
-    let Some(file) = file else {
-        bail!("give a file to send");
+    paths.ensure()?;
+    let name_of = |p: &std::path::Path| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
     };
-    let original = file
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let dest = transfer::pick_dest(&f, None)?;
-    let path = transfer::send(
-        &dest,
-        &file,
-        &transfer::remote_name(&original, chrono::Local::now()),
-    )?;
-    println!("{path}");
+    let (file, original, temp) = match file {
+        Some(p) => {
+            let n = name_of(&p);
+            (p, n, false)
+        }
+        None => match transfer::read_clipboard(&paths.run) {
+            transfer::Clip::File(p) => {
+                let n = name_of(&p);
+                (p, n, false)
+            }
+            transfer::Clip::Image(p) => (p, "clipboard.png".to_string(), true),
+            transfer::Clip::Nothing => {
+                bail!("no file or image on the clipboard (or it can't be read here); give a file")
+            }
+        },
+    };
+    let sent = transfer::pick_dest(&f, None).and_then(|dest| {
+        transfer::send(
+            &dest,
+            &file,
+            &transfer::remote_name(&original, chrono::Local::now()),
+        )
+    });
+    if temp {
+        let _ = std::fs::remove_file(&file);
+    }
+    println!("{}", sent?);
     Ok(())
 }
 

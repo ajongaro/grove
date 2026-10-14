@@ -96,3 +96,72 @@ fn send_lands_in_the_inbox_and_clears_old_files() {
     assert!(!old.exists(), "older than 7 days");
     assert!(!inbox.join("20261014-093012-shot.png.part").exists());
 }
+
+/// A fake osascript: `FAKE_CLIP_FILE` answers the file query, and
+/// `FAKE_CLIP_PNG` (a file) the image query. Like the real one, a failed
+/// image read leaves an empty file behind.
+fn fake_osascript(dir: &Path) -> std::path::PathBuf {
+    crate::finca::tests::script(
+        dir,
+        "osascript",
+        "for a; do last=$a; done\n\
+         case \"$*\" in\n\
+         *furl*) [ -n \"$FAKE_CLIP_FILE\" ] || exit 1; echo \"$FAKE_CLIP_FILE\";;\n\
+         *PNGf*) : > \"$last\"; [ -n \"$FAKE_CLIP_PNG\" ] || exit 1; cat \"$FAKE_CLIP_PNG\" > \"$last\";;\n\
+         *) exit 1;;\n\
+         esac",
+    )
+}
+
+fn with_clip<T>(dir: &Path, file: Option<&Path>, png: Option<&Path>, f: impl FnOnce() -> T) -> T {
+    let _g = crate::finca::tests::ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let set = |k: &str, v: Option<&Path>| match v {
+        Some(v) => unsafe { std::env::set_var(k, v) },
+        None => unsafe { std::env::remove_var(k) },
+    };
+    set("GROVE_OSASCRIPT", Some(&fake_osascript(dir)));
+    set("FAKE_CLIP_FILE", file);
+    set("FAKE_CLIP_PNG", png);
+    let r = f();
+    for k in ["GROVE_OSASCRIPT", "FAKE_CLIP_FILE", "FAKE_CLIP_PNG"] {
+        unsafe { std::env::remove_var(k) };
+    }
+    r
+}
+
+#[test]
+fn file_reference_wins_over_an_image() {
+    let d = tempfile::tempdir().unwrap();
+    let doc = d.path().join("report.pdf");
+    std::fs::write(&doc, "pdf").unwrap();
+    let png = d.path().join("icon.png");
+    std::fs::write(&png, "icon").unwrap();
+    let clip = with_clip(d.path(), Some(&doc), Some(&png), || {
+        read_clipboard(d.path())
+    });
+    assert_eq!(clip, Clip::File(doc));
+}
+
+#[test]
+fn image_is_written_to_a_temp_png() {
+    let d = tempfile::tempdir().unwrap();
+    let png = d.path().join("shot.png");
+    std::fs::write(&png, "pixels").unwrap();
+    let clip = with_clip(d.path(), None, Some(&png), || read_clipboard(d.path()));
+    let Clip::Image(p) = clip else {
+        panic!("{clip:?}")
+    };
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "pixels");
+}
+
+#[test]
+fn text_clipboard_is_nothing_and_leaves_no_temp_file() {
+    let d = tempfile::tempdir().unwrap();
+    let run = d.path().join("run");
+    std::fs::create_dir_all(&run).unwrap();
+    let clip = with_clip(d.path(), None, None, || read_clipboard(&run));
+    assert_eq!(clip, Clip::Nothing);
+    assert_eq!(std::fs::read_dir(&run).unwrap().count(), 0);
+}
