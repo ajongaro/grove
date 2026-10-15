@@ -11,6 +11,9 @@ use super::app::{App, FincaItem, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
 /// Focus: the focused pane's border and the selected row.
+/// Width of each session-state count on a project row: glyph, two digits,
+/// a space.
+const SLOT_W: usize = 4;
 const ACCENT: Color = Color::Rgb(102, 187, 106);
 /// Each pane's title word keeps its color whatever has focus (green and
 /// red stay free for focus and needs-you). Account boxes use the account's.
@@ -245,6 +248,7 @@ fn render_projects(
         frame.render_widget(p, area);
         return;
     }
+    let inner_w = area.width.saturating_sub(2) as usize;
     let items: Vec<ListItem> = app.projects[rows.clone()]
         .iter()
         .map(|p| {
@@ -259,16 +263,21 @@ fn render_projects(
                 "● ",
                 Style::new().fg(parse_hex(p.color.as_deref()).unwrap_or(ACCENT)),
             );
-            let mut spans = vec![dot, Span::raw(p.name.clone())];
+            let todo = app
+                .open_todos
+                .get(&p.slug)
+                .filter(|n| **n > 0)
+                .map(|n| format!("  ☐{n}"));
             // Live sessions by state, most urgent first, in the Sessions
-            // pane's colors (starting counts as working).
+            // pane's colors (starting counts as working). Each state has a
+            // fixed slot at the right edge so the counts line up.
             let count = |want: &[State]| {
                 app.sessions
                     .iter()
                     .filter(|s| s.project == p.slug && want.contains(&s.state))
                     .count()
             };
-            let badges: Vec<Span> = [
+            let slots = [
                 ("⚑", State::NeedsYou, count(&[State::NeedsYou])),
                 ("●", State::YourTurn, count(&[State::YourTurn])),
                 (
@@ -276,19 +285,36 @@ fn render_projects(
                     State::Working,
                     count(&[State::Working, State::Starting]),
                 ),
-            ]
-            .into_iter()
-            .filter(|(_, _, n)| *n > 0)
-            .map(|(glyph, state, n)| {
-                Span::styled(format!("{glyph}{n}"), Style::new().fg(state_color(state)))
-            })
-            .collect();
-            for (i, b) in badges.into_iter().enumerate() {
-                spans.push(Span::raw(if i == 0 { "  " } else { " " }));
-                spans.push(b);
+            ];
+            let mut name = p.name.clone();
+            let mut right = Vec::new();
+            if slots.iter().any(|(_, _, n)| *n > 0) {
+                right = slots
+                    .iter()
+                    .map(|&(glyph, state, n)| match n {
+                        0 => Span::raw(" ".repeat(SLOT_W)),
+                        n => Span::styled(
+                            format!("{glyph}{n:<w$}", w = SLOT_W - 1),
+                            Style::new().fg(state_color(state)),
+                        ),
+                    })
+                    .collect();
+                let fixed = 2 + todo.as_ref().map_or(0, |t| t.chars().count()) + 3 * SLOT_W + 1;
+                let room = inner_w.saturating_sub(fixed);
+                if name.chars().count() > room {
+                    name = name.chars().take(room.saturating_sub(1)).collect();
+                    name.push('…');
+                }
             }
-            if let Some(n) = app.open_todos.get(&p.slug).filter(|n| **n > 0) {
-                spans.push(Span::raw(format!("  ☐{n}")).dark_gray());
+            let mut spans = vec![dot, Span::raw(name)];
+            if let Some(t) = todo {
+                spans.push(Span::raw(t).dark_gray());
+            }
+            if !right.is_empty() {
+                let used: usize = spans.iter().map(|s| s.width()).sum();
+                let pad = inner_w.saturating_sub(used + 3 * SLOT_W);
+                spans.push(Span::raw(" ".repeat(pad.max(1))));
+                spans.extend(right);
             }
             ListItem::new(Line::from(spans))
         })

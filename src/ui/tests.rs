@@ -1466,7 +1466,26 @@ fn todo_count_sits_after_live_sessions_and_needs_you() {
     );
     s.write_todos("alpha", "- [ ] a\n").unwrap();
     app.reload(&s);
-    assert!(screen(&app, 100, 20).contains("● alpha  ⚑1  ☐1"));
+    let out = screen(&app, 100, 20);
+    let row = project_row(&out, "alpha");
+    assert!(row.contains("● alpha  ☐1") && row.contains("⚑1"), "{out}");
+}
+
+/// The projects box's part of the row listing project `name`, up to and
+/// including its right border.
+fn project_row(out: &str, name: &str) -> String {
+    let row = out
+        .lines()
+        .find(|l| l.contains(&format!("● {name}")))
+        .unwrap();
+    let end = row.find("││").unwrap();
+    row[..end + "│".len()].to_string()
+}
+
+/// Character column of the last `pat` in project `name`'s row.
+fn col_of(out: &str, name: &str, pat: char) -> usize {
+    let chars: Vec<char> = project_row(out, name).chars().collect();
+    chars.iter().rposition(|c| *c == pat).unwrap()
 }
 
 #[test]
@@ -1483,11 +1502,48 @@ fn project_row_counts_live_sessions_by_state() {
     );
     let out = screen(&app, 100, 20);
     // Most urgent first; starting counts as working; ended isn't counted.
-    assert!(out.contains("● alpha  ⚑1 ●1 ●2"), "{out}");
+    assert!(out.contains("⚑1  ●1  ●2"), "{out}");
     use ratatui::style::Color;
     assert_eq!(fg_of(&app, 100, 20, "⚑1"), Color::Red);
     assert_eq!(fg_of(&app, 100, 20, "●1"), Color::Yellow);
     assert_eq!(fg_of(&app, 100, 20, "●2"), Color::Green);
+}
+
+#[test]
+fn project_counts_line_up_at_the_right_edge() {
+    let (_d, _s, app) = loaded(
+        &["alpha", "longer-name"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "longer-name", "s2", State::NeedsYou, Some("@2")),
+            session("3", "longer-name", "s3", State::Working, Some("@3")),
+        ],
+    );
+    let out = screen(&app, 100, 20);
+    // The working slot is the same column in both rows, however long the
+    // name, and sits just inside the box's right border.
+    let a = col_of(&out, "alpha", '●');
+    assert_eq!(a, col_of(&out, "longer-name", '●'), "{out}");
+    let row: Vec<char> = out
+        .lines()
+        .find(|l| l.contains("alpha"))
+        .unwrap()
+        .chars()
+        .collect();
+    assert_eq!(&row[a..a + 5].iter().collect::<String>(), "●1  │", "{out}");
+    // A project without live sessions shows no slots.
+    assert!(!out.contains("⚑0") && !out.contains("●0"), "{out}");
+}
+
+#[test]
+fn a_long_name_is_cut_short_to_keep_its_counts() {
+    let long = "a-project-name-far-too-long-for-the-narrow-box";
+    let (_d, _s, app) = loaded(
+        &[long],
+        &[session("1", long, "s1", State::Working, Some("@1"))],
+    );
+    let out = screen(&app, 60, 20);
+    assert!(out.contains("…") && out.contains("●1"), "{out}");
 }
 
 #[test]
@@ -1497,7 +1553,7 @@ fn project_row_shows_only_states_it_has() {
         &[session("1", "alpha", "s1", State::Working, Some("@1"))],
     );
     let out = screen(&app, 100, 20);
-    assert!(out.contains("● alpha  ●1 "), "{out}");
+    assert!(out.contains("●1"), "{out}");
     assert!(!out.contains("⚑"), "{out}");
 }
 
@@ -1831,3 +1887,4 @@ fn tab_in_the_finca_prompt_completes_from_ssh_config() {
     handle_key(&mut app, key(KeyCode::Tab));
     assert!(matches!(&app.mode, Mode::Prompt { input, .. } if input == "homebox"));
 }
+
