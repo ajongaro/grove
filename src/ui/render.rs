@@ -699,7 +699,7 @@ const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
 const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
 const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 
-/// An olive branch: (text, color) runs per row.
+/// An olive branch growing to the right: (text, color) runs per row.
 const BRANCH: [&[(&str, Color)]; 3] = [
     &[("   ▄▀  ▄▀ ", LEAF), ("●", OLIVE)],
     &[(" ━━━━━━━━━", STEM)],
@@ -717,13 +717,16 @@ const WORDMARK: [&str; 3] = [
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     let logo: Vec<Line> = (0..3)
         .map(|i| {
-            let mut spans: Vec<Span> = BRANCH[i]
-                .iter()
-                .map(|(t, c)| Span::styled(*t, Style::new().fg(*c)))
-                .collect();
-            let pad = 14usize.saturating_sub(spans.iter().map(|s| s.width()).sum());
-            spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()));
+            // The branch's stem starts just past the E's middle bar.
+            let mut spans = vec![
+                Span::raw(" "),
+                Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),
+            ];
+            spans.extend(
+                BRANCH[i]
+                    .iter()
+                    .map(|(t, c)| Span::styled(*t, Style::new().fg(*c))),
+            );
             Line::from(spans)
         })
         .collect();

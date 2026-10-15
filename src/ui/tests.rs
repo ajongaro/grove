@@ -1906,9 +1906,9 @@ fn header_shows_the_logo_and_session_totals() {
     let out = screen(&app, 110, 30);
     let top: Vec<&str> = out.lines().take(3).collect();
     assert!(top[0].contains("█▀▀▀ █▀▀█"), "{out}");
-    // The olive branch sits left of the wordmark.
+    // The olive branch grows off the right of the wordmark.
     assert!(
-        top[1].find("━━").unwrap() < top[1].find("█").unwrap(),
+        top[1].find("━━").unwrap() > top[1].rfind("█").unwrap(),
         "{out}"
     );
     assert!(
