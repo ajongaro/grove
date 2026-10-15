@@ -691,8 +691,9 @@ fn highlight(focused: bool) -> Style {
     }
 }
 
-/// Rows the header takes, and the window height below which it's hidden.
-const HEADER_ROWS: u16 = 2;
+/// Rows the header takes (the logo's two plus a blank one under it), and
+/// the window height below which it's hidden.
+const HEADER_ROWS: u16 = 3;
 const HEADER_MIN_HEIGHT: u16 = 24;
 
 const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
