@@ -692,32 +692,28 @@ fn highlight(focused: bool) -> Style {
 }
 
 /// Rows the header takes, and the window height below which it's hidden.
-const HEADER_ROWS: u16 = 3;
+const HEADER_ROWS: u16 = 2;
 const HEADER_MIN_HEIGHT: u16 = 24;
 
 const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
 const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
 const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 
-/// An olive branch growing to the right: (text, color) runs per row.
-const BRANCH: [&[(&str, Color)]; 3] = [
-    &[("   ▄▀  ▄▀ ", LEAF), ("●", OLIVE)],
-    &[(" ━━━━━━━━━", STEM)],
-    &[("  ", LEAF), ("●", OLIVE), ("  ▀▄  ▀▄", LEAF)],
+/// An olive branch growing to the right: (text, color) runs per row. The
+/// stem is a run of upper half blocks, so it sits where the rows meet.
+const BRANCH: [&[(&str, Color)]; 2] = [
+    &[("   ▄▀ ▄▀ ▄▀ ", LEAF), ("●", OLIVE)],
+    &[("  ▀▀▀▀▀▀▀▀▀▀▀▀", STEM)],
 ];
 
-const WORDMARK: [&str; 3] = [
-    "█▀▀▀ █▀▀█ █▀▀█ █   █ █▀▀▀",
-    "█ ▀█ █▄▄▀ █  █ ▀▄ ▄▀ █▀▀ ",
-    "▀▀▀▀ ▀ ▀▀ ▀▀▀▀   ▀   ▀▀▀▀",
-];
+const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", "█▄█ █▀▄ █▄█ ▀▄▀ ██▄"];
 
 /// Logo on the left; this machine's session totals and the fincas that are
 /// up on the right.
 fn render_header(frame: &mut Frame, app: &App, area: Rect) {
-    let logo: Vec<Line> = (0..3)
+    let logo: Vec<Line> = (0..2)
         .map(|i| {
-            // The branch's stem starts just past the E's middle bar.
+            // The branch grows off the E, its stem level with the rows' seam.
             let mut spans = vec![
                 Span::raw(" "),
                 Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),

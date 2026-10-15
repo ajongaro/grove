@@ -1023,12 +1023,12 @@ fn left_column_in_equal_thirds_and_right_in_halves() {
     })
     .unwrap();
     app.reload(&s);
-    // 30 rows between the 3-row header and the footer.
-    let out = screen(&app, 100, 34);
-    assert_eq!(row_of(&out, "╭ PLAY "), 3, "{out}");
-    assert_eq!(row_of(&out, "╭ WORK "), 13, "{out}");
-    assert_eq!(row_of(&out, "╭ FINCAS "), 23, "{out}");
-    assert_eq!(row_of(&out, "TO-DO"), 18, "{out}");
+    // 30 rows between the 2-row header and the footer.
+    let out = screen(&app, 100, 33);
+    assert_eq!(row_of(&out, "╭ PLAY "), 2, "{out}");
+    assert_eq!(row_of(&out, "╭ WORK "), 12, "{out}");
+    assert_eq!(row_of(&out, "╭ FINCAS "), 22, "{out}");
+    assert_eq!(row_of(&out, "TO-DO"), 17, "{out}");
 }
 
 #[test]
@@ -1905,12 +1905,15 @@ fn header_shows_the_logo_and_session_totals() {
     app.host = "testbox".into();
     let out = screen(&app, 110, 30);
     let top: Vec<&str> = out.lines().take(3).collect();
-    assert!(top[0].contains("█▀▀▀ █▀▀█"), "{out}");
-    // The olive branch grows off the right of the wordmark.
+    assert!(top[0].contains("█▀▀ █▀█ █▀█ █ █ █▀▀"), "{out}");
+    assert!(top[1].contains("█▄█ █▀▄ █▄█ ▀▄▀ ██▄"), "{out}");
+    // The olive branch's stem runs off the right of the wordmark, and the
+    // header is two rows: the lists start on the third.
     assert!(
-        top[1].find("━━").unwrap() > top[1].rfind("█").unwrap(),
+        top[1].find("▀▀▀▀▀").unwrap() > top[1].find("██▄").unwrap(),
         "{out}"
     );
+    assert!(top[2].contains("╭ "), "{out}");
     assert!(
         top[0].contains("⚑1 needs you  ●2 your turn  ●1 working"),
         "{out}"
