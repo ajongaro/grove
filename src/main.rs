@@ -298,8 +298,7 @@ fn preflight(paths: &Paths) -> Result<Config> {
 fn start(paths: &Paths) -> Result<()> {
     let cfg = preflight(paths)?;
     paths.ensure()?;
-    let exe = std::env::current_exe().context("locating the grove binary")?;
-    let exe = exe.canonicalize().unwrap_or(exe);
+    let exe = runfiles::grove_exe()?;
     runfiles::write_all(paths, &exe, &cfg.tmux_session)?;
 
     let tmux = grove_tmux(paths);

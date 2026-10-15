@@ -19,7 +19,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("j k", "cross Sessions ↔ To-do at the ends"),
             ("t", "to-do list"),
             ("a", "add a project"),
-            ("R", "update Grove (after cargo install)"),
+            ("R", "update Grove (after upgrading)"),
             ("?", "this help"),
             ("q", "detach (sessions keep running)"),
         ],

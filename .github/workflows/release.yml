@@ -1,0 +1,55 @@
+# Pushing a v* tag builds grove for macOS and Linux (arm64 and x86_64) and
+# publishes them, with SHA256SUMS and install.sh, as that tag's release.
+# scripts/release.sh pushes the tag and then updates the Homebrew formula.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          # musl: static binaries, so any distro's glibc works.
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: rustup target add ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          tar -czf grove-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release grove
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grove-${{ matrix.target }}
+          path: grove-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp install.sh dist/
+          cd dist
+          sha256sum grove-*.tar.gz > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            grove-*.tar.gz SHA256SUMS install.sh

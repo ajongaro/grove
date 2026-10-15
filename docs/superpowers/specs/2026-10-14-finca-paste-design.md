@@ -114,7 +114,7 @@ clipboard here. Passing a file always works.
   - text sends `C-v` through;
   - a failed send pastes nothing.
 - **Generated config:** it contains both `C-v` bindings.
-- **Live:** on pi and therver, paste a screenshot into a Claude session
+- **Live:** on a Linux and a macOS finca, paste a screenshot into a Claude session
   and confirm it attaches as an image. Also check a Finder-copied file,
   and text passing through.
 

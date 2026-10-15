@@ -134,7 +134,7 @@ each finca's ssh, then its backup, and prints each one's resulting version.
 - `install_grove` against a fake remote home: `.new` then the swap.
 - Dashboard: `F` opens the prompt; Enter gives `SetupFinca`; Tab completes
   from a temporary ssh config.
-- Live: run the wizard against `therver`, where everything is present, as a
+- Live: run the wizard against a finca where everything is present, as a
   health check. Nothing should be asked and its file should stay unchanged.
 
 ## Out of scope

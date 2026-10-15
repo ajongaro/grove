@@ -1,9 +1,9 @@
 //! Files Grove regenerates on every start under `run/`: the hooks settings
 //! file, the MCP config, and Grove's tmux config.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 
 use crate::config::Paths;
@@ -81,7 +81,7 @@ unbind -n C-y
     // Finca sessions use the grove-finca table instead of root (finca.rs), so
     // only C-q is intercepted and every other key reaches the remote grove.
     // Finca shells use grove-shell: C-q too, but the prefix still works.
-    let exe = std::env::current_exe()
+    let exe = grove_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "grove".into());
     let paste = format!(
@@ -132,6 +132,30 @@ pub fn on_path(prog: &str) -> bool {
         .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(prog).is_file()))
 }
 
+/// This grove's path, as written into hooks, MCP config and tmux bindings.
+/// Symlinks are resolved, except that a Homebrew install gives the stable
+/// `<prefix>/opt/grove/...` link: the versioned Cellar folder is deleted by
+/// `brew upgrade`, which would leave every written path dangling.
+pub fn grove_exe() -> Result<PathBuf> {
+    let exe = std::env::current_exe().context("locating the grove binary")?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    Ok(brew_opt_path(&exe).filter(|p| p.exists()).unwrap_or(exe))
+}
+
+/// `<prefix>/Cellar/grove/<version>/<rest>` → `<prefix>/opt/grove/<rest>`.
+fn brew_opt_path(exe: &Path) -> Option<PathBuf> {
+    let parts: Vec<_> = exe.components().collect();
+    let i = parts
+        .windows(2)
+        .position(|w| w[0].as_os_str() == "Cellar" && w[1].as_os_str() == "grove")?;
+    let rest = parts.get(i + 3..).filter(|r| !r.is_empty())?;
+    let mut p: PathBuf = parts[..i].iter().collect();
+    p.push("opt");
+    p.push("grove");
+    p.extend(rest);
+    Some(p)
+}
+
 pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str) -> Result<()> {
     let pretty = |v: serde_json::Value| serde_json::to_string_pretty(&v).map(String::into_bytes);
     write_atomic(
@@ -158,6 +182,32 @@ pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brew_cellar_path_maps_to_the_opt_link() {
+        let p = Path::new("/opt/homebrew/Cellar/grove/0.2.0/bin/grove");
+        assert_eq!(
+            brew_opt_path(p).as_deref(),
+            Some(Path::new("/opt/homebrew/opt/grove/bin/grove"))
+        );
+        let linux = Path::new("/home/linuxbrew/.linuxbrew/Cellar/grove/1.0.0_1/bin/grove");
+        assert_eq!(
+            brew_opt_path(linux).as_deref(),
+            Some(Path::new("/home/linuxbrew/.linuxbrew/opt/grove/bin/grove"))
+        );
+    }
+
+    #[test]
+    fn other_paths_have_no_opt_link() {
+        for p in [
+            "/Users/me/.cargo/bin/grove",
+            "/Users/me/.local/bin/grove",
+            "/opt/homebrew/Cellar/tmux/3.5/bin/tmux",
+            "/opt/homebrew/Cellar/grove",
+        ] {
+            assert_eq!(brew_opt_path(Path::new(p)), None, "{p}");
+        }
+    }
 
     #[test]
     fn hooks_json_registers_every_event_in_exec_form() {

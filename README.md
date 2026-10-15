@@ -23,7 +23,6 @@ follow them top to bottom. Each step ends with a check.
 
 | Needs | Check | Install |
 |---|---|---|
-| Rust (cargo) | `cargo --version` | <https://rustup.rs> |
 | tmux 3.2 or newer | `tmux -V` | macOS: `brew install tmux` · Debian/Ubuntu: `sudo apt install tmux` |
 | Claude Code, logged in | `claude --version` | `curl -fsSL https://claude.ai/install.sh \| bash`, then run `claude` once to log in ([docs](https://code.claude.com/docs)) |
 
@@ -31,13 +30,23 @@ macOS and Linux only.
 
 ### 2. Install
 
+Any one of these:
+
 ```sh
-git clone <this repo> grove && cd grove
+# Homebrew (macOS or Linux); also installs tmux
+brew install ajongaro/grove/grove
+
+# Or the install script: the right binary for your OS and CPU, into ~/.local/bin
+curl -fsSL https://github.com/ajongaro/grove/releases/latest/download/install.sh | sh
+
+# Or from source (needs Rust: https://rustup.rs)
+git clone https://github.com/ajongaro/grove.git && cd grove
 cargo install --path .
 ```
 
-Check: `grove --version` prints a version. If `grove` isn't found, add
-`~/.cargo/bin` to your `PATH`.
+Check: `grove --version` prints a version. If `grove` isn't found, add the
+folder it went into to your `PATH`: `~/.local/bin` for the install script,
+`~/.cargo/bin` for cargo.
 
 ### 3. Point Grove at your Claude account
 
@@ -134,7 +143,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
-| `R` | dashboard | update Grove after `cargo install` |
+| `R` | dashboard | restart on a new Grove, after upgrading |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
 | `prefix r` | anywhere | reload Grove's tmux config |
@@ -161,8 +170,12 @@ Claude can update the summary through Grove's MCP tools (`list_projects`,
 
 ### Updating
 
+Upgrade the way you installed:
+
 ```sh
-git pull && cargo install --path .
+brew upgrade grove                     # Homebrew
+curl -fsSL https://github.com/ajongaro/grove/releases/latest/download/install.sh | sh
+git pull && cargo install --path .     # source
 ```
 
 Then press `R` on the dashboard. It refreshes Grove's generated files and tmux
@@ -253,7 +266,9 @@ Claude login, and asks before fixing each one:
 - missing tmux or Claude Code: it shows the install command and runs it
   over SSH (sudo can prompt);
 - Grove: a machine with this one's OS and CPU gets a copy of this build;
-  any other builds it from source there (offering to install Rust first);
+  any other builds it from source there (offering to install Rust first).
+  Building there needs this Grove to have been built from a source
+  checkout; otherwise install Grove on that machine yourself first;
 - logged out of Claude there: it runs `claude auth login` for you;
 - if Tailscale here knows the machine, it offers its Tailscale name as the
   backup.
@@ -333,8 +348,21 @@ Each file does one job, so new features usually touch one or two:
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop, `help.rs` the `?` list |
 
 ```sh
-cargo test     # ~280 tests, including real tmux servers on throwaway sockets
+cargo test     # ~370 tests, including real tmux servers on throwaway sockets
 cargo clippy --all-targets -- -D warnings
 ```
+
+### Releasing
+
+```sh
+scripts/release.sh 0.2.0
+```
+
+It sets the version, runs the tests, tags `v0.2.0` and pushes. The tag
+starts `.github/workflows/release.yml`, which builds macOS and Linux
+binaries (arm64 and x86_64; Linux ones are static, musl) and publishes them
+with `SHA256SUMS` and `install.sh`. The script then writes the Homebrew
+formula (`scripts/formula.sh`) to the
+[ajongaro/homebrew-grove](https://github.com/ajongaro/homebrew-grove) tap.
 
 Design history: [`docs/superpowers/specs/`](docs/superpowers/specs/).

@@ -111,7 +111,7 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
         }
         Action::SetupFinca { dest } => {
-            let exe = std::env::current_exe().context("locating the grove binary")?;
+            let exe = crate::runfiles::grove_exe()?;
             let argv = vec![
                 exe.to_string_lossy().into_owned(),
                 "finca".into(),
@@ -138,8 +138,7 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             Outcome::Message(rename_session(ctx, &session_id, &name)?)
         }
         Action::Update => {
-            let exe = std::env::current_exe().context("locating the grove binary")?;
-            let exe = exe.canonicalize().unwrap_or(exe);
+            let exe = crate::runfiles::grove_exe()?;
             let cwd = ctx
                 .tmux
                 .show_environment(&ctx.cfg.tmux_session, "GROVE_CWD")
