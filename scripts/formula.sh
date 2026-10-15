@@ -26,7 +26,6 @@ cat <<EOF
 class Grove < Formula
   desc "Dashboard for Claude Code sessions, in tmux"
   homepage "https://github.com/ajongaro/grove"
-  version "$version"
   license "MIT"
 
   depends_on "tmux"

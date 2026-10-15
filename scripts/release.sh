@@ -35,11 +35,12 @@ if ! $formula_only; then
 
   echo "Waiting for the release workflow…"
   run=""
-  for _ in $(seq 30); do
-    run="$(gh run list --workflow release.yml --json databaseId,headBranch \
-      -q ".[] | select(.headBranch == \"$tag\") | .databaseId" | head -1)"
+  # The runs API, not `gh run list --workflow`, which can miss a new run.
+  for _ in $(seq 40); do
+    run="$(gh api "repos/ajongaro/grove/actions/runs?event=push&branch=$tag" \
+      -q '.workflow_runs[0].id // empty')"
     [[ -n "$run" ]] && break
-    sleep 2
+    sleep 3
   done
   [[ -n "$run" ]] || die "no release workflow run started for $tag"
   gh run watch "$run" --exit-status >/dev/null || die "the release workflow failed: gh run view $run --log-failed"
