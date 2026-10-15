@@ -1324,6 +1324,44 @@ fn footer_mentions_help() {
 }
 
 #[test]
+fn footer_mentions_the_project_shell() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    assert!(screen(&app, 160, 12).contains("s shell"));
+}
+
+#[test]
+fn help_lists_prompt_and_editing_keys() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    let out = screen(&app, 140, 50);
+    for k in [
+        "Prompts",
+        "complete a path or SSH host",
+        "pick a match",
+        "clear the line",
+        "back to projects",
+        "prefix r",
+        "send the clipboard to a finca",
+    ] {
+        assert!(out.contains(k), "help lacks {k:?}\n{out}");
+    }
+}
+
+#[test]
+fn help_colors_sections_keys_and_notes() {
+    use ratatui::style::Color;
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    // Section headings take their pane's color.
+    assert_eq!(fg_of(&app, 140, 50, "Fincas"), super::render::FINCAS_COLOR);
+    assert_eq!(fg_of(&app, 140, 50, "Prompts"), Color::White);
+    // Keys stand out from what they do; asides in parentheses are dimmed.
+    assert_eq!(fg_of(&app, 140, 50, "C-g"), super::render::KEY_COLOR);
+    assert_eq!(fg_of(&app, 140, 50, "back to the dashboard"), Color::Reset);
+    assert_eq!(fg_of(&app, 140, 50, "(folder kept)"), Color::DarkGray);
+}
+
+#[test]
 fn big_r_updates_grove() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     assert_eq!(handle_key(&mut app, ch('R')), Action::Update);
@@ -1342,6 +1380,18 @@ fn help_fits_a_laptop_sized_window() {
         "rename",
     ] {
         assert!(out.contains(k), "help lacks {k:?} at 110x32\n{out}");
+    }
+}
+
+#[test]
+fn every_help_line_shows_in_full_at_laptop_size() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    let out = screen(&app, 110, 32);
+    for (_, keys) in super::help::SECTIONS {
+        for (k, what) in *keys {
+            assert!(out.contains(what), "{k}: {what:?} is cut off\n{out}");
+        }
     }
 }
 

@@ -11,15 +11,17 @@ use super::app::{App, FincaItem, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
 /// Focus: the focused pane's border and the selected row.
+/// Keys in the help popup.
+pub(super) const KEY_COLOR: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 /// Width of each session-state count on a project row: glyph, two digits,
 /// a space.
 const SLOT_W: usize = 4;
 const ACCENT: Color = Color::Rgb(102, 187, 106);
 /// Each pane's title word keeps its color whatever has focus (green and
 /// red stay free for focus and needs-you). Account boxes use the account's.
-const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
-const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
-const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
+pub(super) const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
+pub(super) const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
+pub(super) const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     // The header gives its rows back to the lists in a short window.
@@ -607,12 +609,29 @@ fn render_help(frame: &mut Frame) {
     let sections: Vec<Vec<Line>> = super::help::SECTIONS
         .iter()
         .map(|(section, keys)| {
-            let mut lines = vec![Line::raw(*section).bold().fg(ACCENT)];
+            // Each heading in its pane's color.
+            let color = match *section {
+                "Projects" => ACCENT,
+                "Sessions" => SESSIONS_COLOR,
+                "To-do" => TODO_COLOR,
+                "Fincas" => FINCAS_COLOR,
+                _ => Color::White,
+            };
+            let mut lines = vec![Line::raw(*section).bold().fg(color)];
             for (k, what) in *keys {
-                lines.push(Line::from(vec![
-                    Span::raw(format!("  {k:<10} ")).bold(),
-                    Span::raw(*what),
-                ]));
+                let mut spans = vec![
+                    Span::raw("  "),
+                    Span::raw(format!("{k:<10} ")).bold().fg(KEY_COLOR),
+                ];
+                // A trailing aside in parentheses is dimmed.
+                match what.find(" (").filter(|_| what.ends_with(')')) {
+                    Some(i) => {
+                        spans.push(Span::raw(&what[..i]));
+                        spans.push(Span::raw(&what[i..]).dark_gray());
+                    }
+                    None => spans.push(Span::raw(*what)),
+                }
+                lines.push(Line::from(spans));
             }
             lines.push(Line::raw(""));
             lines
@@ -633,8 +652,11 @@ fn render_help(frame: &mut Frame) {
     frame.render_widget(Clear, area);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .title(" Keys (any key closes) ")
-        .fg(ACCENT);
+        .border_style(Style::new().fg(Color::DarkGray))
+        .title(Line::from(vec![
+            Span::raw(" Keys ").fg(ACCENT).bold(),
+            Span::raw("(any key closes) ").dark_gray(),
+        ]));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let [l, r] =
@@ -675,7 +697,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
         None => spans.push(
-            Span::raw("enter open/jump · n new · r rename · a add · t to-do · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
+            Span::raw("enter open/jump · n new · s shell · r rename · a add · t to-do · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

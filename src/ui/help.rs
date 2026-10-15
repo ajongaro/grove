@@ -9,8 +9,9 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("C-q", "back from a finca or finca shell"),
             (
                 "C-v",
-                "in a finca: send the clipboard's file or image, paste its path",
+                "send the clipboard to a finca",
             ),
+            ("prefix r", "reload Grove's tmux config"),
         ],
     ),
     (
@@ -18,7 +19,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("j k ↑ ↓", "move"),
             ("Tab h l", "switch pane"),
-            ("j k", "also cross Sessions ↔ To-do at the ends"),
+            ("j k", "cross Sessions ↔ To-do at the ends"),
             ("t", "to-do list"),
             ("a", "add a project"),
             ("R", "update Grove (after cargo install)"),
@@ -31,7 +32,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Enter", "start a session"),
             ("n", "start a named session"),
-            ("s", "a shell in its folder (exit closes)"),
+            ("s", "shell in its folder (C-d closes)"),
             ("e", "edit the project file"),
             ("c", "clear ended sessions"),
             ("d", "remove from Grove (folder kept)"),
@@ -56,6 +57,8 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("dd p P", "delete / paste below, above"),
             ("u", "undo"),
             ("E", "open in your editor"),
+            ("C-u", "clear the line (while editing)"),
+            ("h", "back to projects"),
         ],
     ),
     (
@@ -64,7 +67,16 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "connect to its Grove"),
             ("s", "open a shell there"),
             ("l Enter", "jump into a session or shell"),
-            ("F", "add a finca (guided setup; a on a finca too)"),
+            ("F", "add a finca (or a on a finca)"),
+        ],
+    ),
+    (
+        "Prompts",
+        &[
+            ("Tab", "complete a path or SSH host"),
+            ("j k", "pick a match from the list"),
+            ("C-u", "clear the line"),
+            ("Enter Esc", "confirm / cancel"),
         ],
     ),
 ];

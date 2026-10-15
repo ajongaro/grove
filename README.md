@@ -137,6 +137,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `R` | dashboard | update Grove after `cargo install` |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
+| `prefix r` | anywhere | reload Grove's tmux config |
 | `?` | dashboard | list every key |
 | `q` | dashboard | detach; sessions keep running |
 
