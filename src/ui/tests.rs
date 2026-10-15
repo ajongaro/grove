@@ -1964,6 +1964,9 @@ fn header_shows_the_logo_and_session_totals() {
         "{out}"
     );
     assert!(top[2].trim().is_empty(), "{out}");
+    // Two olives on the branch: one among the leaves, one at the tip.
+    let logo: String = top[0].chars().take(40).collect();
+    assert_eq!(logo.matches('●').count(), 2, "{out}");
     assert!(out.lines().nth(3).unwrap().contains("╭ "), "{out}");
     assert!(
         top[0].contains("⚑1 needs you  ●2 your turn  ●1 working"),
@@ -2006,4 +2009,3 @@ fn header_is_dropped_in_a_short_window() {
     assert!(!out.contains("█▀▀▀"), "{out}");
     assert!(out.lines().next().unwrap().contains("alpha"), "{out}");
 }
-

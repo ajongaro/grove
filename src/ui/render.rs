@@ -725,7 +725,12 @@ const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 /// An olive branch growing to the right: (text, color) runs per row. The
 /// stem is a run of upper half blocks, so it sits where the rows meet.
 const BRANCH: [&[(&str, Color)]; 2] = [
-    &[("   ▄▀ ▄▀ ▄▀ ", LEAF), ("●", OLIVE)],
+    &[
+        ("   ▄▀ ▄▀", LEAF),
+        ("●", OLIVE),
+        ("▄▀ ", LEAF),
+        ("●", OLIVE),
+    ],
     &[("  ▀▀▀▀▀▀▀▀▀▀▀▀", STEM)],
 ];
 

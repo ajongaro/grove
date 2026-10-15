@@ -7,10 +7,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("C-g", "back to the dashboard"),
             ("C-q", "back from a finca or finca shell"),
-            (
-                "C-v",
-                "send the clipboard to a finca",
-            ),
+            ("C-v", "send the clipboard to a finca"),
             ("prefix r", "reload Grove's tmux config"),
         ],
     ),
