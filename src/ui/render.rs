@@ -22,8 +22,21 @@ const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
 const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
-    let [main, footer] =
-        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
+    // The header gives its rows back to the lists in a short window.
+    let header_h = if frame.area().height >= HEADER_MIN_HEIGHT {
+        HEADER_ROWS
+    } else {
+        0
+    };
+    let [header, main, footer] = Layout::vertical([
+        Constraint::Length(header_h),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
+    if header_h > 0 {
+        render_header(frame, app, header);
+    }
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
@@ -676,6 +689,87 @@ fn highlight(focused: bool) -> Style {
     } else {
         Style::new().bg(Color::Rgb(40, 40, 40))
     }
+}
+
+/// Rows the header takes, and the window height below which it's hidden.
+const HEADER_ROWS: u16 = 3;
+const HEADER_MIN_HEIGHT: u16 = 24;
+
+const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
+const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
+const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
+
+/// An olive branch: (text, color) runs per row.
+const BRANCH: [&[(&str, Color)]; 3] = [
+    &[("   ▄▀  ▄▀ ", LEAF), ("●", OLIVE)],
+    &[(" ━━━━━━━━━", STEM)],
+    &[("  ", LEAF), ("●", OLIVE), ("  ▀▄  ▀▄", LEAF)],
+];
+
+const WORDMARK: [&str; 3] = [
+    "█▀▀▀ █▀▀█ █▀▀█ █   █ █▀▀▀",
+    "█ ▀█ █▄▄▀ █  █ ▀▄ ▄▀ █▀▀ ",
+    "▀▀▀▀ ▀ ▀▀ ▀▀▀▀   ▀   ▀▀▀▀",
+];
+
+/// Logo on the left; this machine's session totals and the fincas that are
+/// up on the right.
+fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+    let logo: Vec<Line> = (0..3)
+        .map(|i| {
+            let mut spans: Vec<Span> = BRANCH[i]
+                .iter()
+                .map(|(t, c)| Span::styled(*t, Style::new().fg(*c)))
+                .collect();
+            let pad = 14usize.saturating_sub(spans.iter().map(|s| s.width()).sum());
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()));
+            Line::from(spans)
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(logo), area);
+
+    let count = |want: &[State]| {
+        app.sessions
+            .iter()
+            .filter(|s| want.contains(&s.state))
+            .count()
+    };
+    let total = |glyph: &str, n: usize, label: &str, state: State| {
+        let style = if n > 0 {
+            Style::new().fg(state_color(state))
+        } else {
+            Style::new().dark_gray()
+        };
+        Span::styled(format!("{glyph}{n} {label}"), style)
+    };
+    let totals = Line::from(vec![
+        total("⚑", count(&[State::NeedsYou]), "needs you", State::NeedsYou),
+        Span::raw("  "),
+        total("●", count(&[State::YourTurn]), "your turn", State::YourTurn),
+        Span::raw("  "),
+        total(
+            "●",
+            count(&[State::Working, State::Starting]),
+            "working",
+            State::Working,
+        ),
+        Span::raw(" "),
+    ]);
+    let mut place = app.host.clone();
+    if !app.fincas.is_empty() {
+        let up = app
+            .fincas
+            .iter()
+            .filter(|f| matches!(f.reach, Some(crate::finca::Reach::Reachable(_))))
+            .count();
+        place = format!("{place} · fincas {up}/{} up", app.fincas.len());
+    }
+    let place = Line::from(vec![Span::raw(place).dark_gray(), Span::raw(" ")]);
+    frame.render_widget(
+        Paragraph::new(vec![totals, place]).alignment(ratatui::layout::Alignment::Right),
+        area,
+    );
 }
 
 fn state_color(s: State) -> Color {

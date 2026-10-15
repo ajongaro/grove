@@ -169,6 +169,8 @@ pub struct App {
     pub footer: Option<String>,
     /// Default for the add-project prompt.
     pub cwd: String,
+    /// This machine's short host name, for the header.
+    pub host: String,
     /// Tab-completion matches in the add-project prompt (full paths).
     pub completions: Vec<String>,
     /// Which match the prompt currently shows, once Tab cycles.
@@ -210,6 +212,7 @@ impl FincaItem {
 impl App {
     pub fn new(cwd: String) -> Self {
         Self {
+            host: String::new(),
             projects: Vec::new(),
             fincas: Vec::new(),
             sessions: Vec::new(),

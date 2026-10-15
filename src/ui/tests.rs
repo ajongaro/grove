@@ -1023,12 +1023,12 @@ fn left_column_in_equal_thirds_and_right_in_halves() {
     })
     .unwrap();
     app.reload(&s);
-    // 30 rows above the footer.
-    let out = screen(&app, 100, 31);
-    assert_eq!(row_of(&out, "╭ PLAY "), 0, "{out}");
-    assert_eq!(row_of(&out, "╭ WORK "), 10, "{out}");
-    assert_eq!(row_of(&out, "╭ FINCAS "), 20, "{out}");
-    assert_eq!(row_of(&out, "TO-DO"), 15, "{out}");
+    // 30 rows between the 3-row header and the footer.
+    let out = screen(&app, 100, 34);
+    assert_eq!(row_of(&out, "╭ PLAY "), 3, "{out}");
+    assert_eq!(row_of(&out, "╭ WORK "), 13, "{out}");
+    assert_eq!(row_of(&out, "╭ FINCAS "), 23, "{out}");
+    assert_eq!(row_of(&out, "TO-DO"), 18, "{out}");
 }
 
 #[test]
@@ -1886,5 +1886,70 @@ fn tab_in_the_finca_prompt_completes_from_ssh_config() {
     handle_key(&mut app, ch('h'));
     handle_key(&mut app, key(KeyCode::Tab));
     assert!(matches!(&app.mode, Mode::Prompt { input, .. } if input == "homebox"));
+}
+
+// ---------- header ----------
+
+#[test]
+fn header_shows_the_logo_and_session_totals() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha", "beta"],
+        &[
+            session("1", "alpha", "s1", State::NeedsYou, Some("@1")),
+            session("2", "beta", "s2", State::YourTurn, Some("@2")),
+            session("3", "beta", "s3", State::YourTurn, Some("@3")),
+            session("4", "beta", "s4", State::Starting, None),
+            session("5", "beta", "s5", State::Ended, None),
+        ],
+    );
+    app.host = "testbox".into();
+    let out = screen(&app, 110, 30);
+    let top: Vec<&str> = out.lines().take(3).collect();
+    assert!(top[0].contains("█▀▀▀ █▀▀█"), "{out}");
+    // The olive branch sits left of the wordmark.
+    assert!(
+        top[1].find("━━").unwrap() < top[1].find("█").unwrap(),
+        "{out}"
+    );
+    assert!(
+        top[0].contains("⚑1 needs you  ●2 your turn  ●1 working"),
+        "{out}"
+    );
+    assert!(top[1].contains("testbox"), "{out}");
+    use ratatui::style::Color;
+    assert_eq!(fg_of(&app, 110, 30, "⚑1 needs"), Color::Red);
+    assert_eq!(fg_of(&app, 110, 30, "●2 your"), Color::Yellow);
+    assert_eq!(fg_of(&app, 110, 30, "●1 working"), Color::Green);
+}
+
+#[test]
+fn header_counts_fincas_that_are_up() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox", "pi"]);
+    app.host = "testbox".into();
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 0, 0)),
+        t0(),
+    );
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable {
+            error: "no route".into(),
+        },
+        t0(),
+    );
+    let out = screen(&app, 110, 30);
+    let second = out.lines().nth(1).unwrap();
+    assert!(second.contains("testbox · fincas 1/2 up"), "{out}");
+}
+
+#[test]
+fn header_is_dropped_in_a_short_window() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    let out = screen(&app, 110, 18);
+    assert!(!out.contains("█▀▀▀"), "{out}");
+    assert!(out.lines().next().unwrap().contains("alpha"), "{out}");
 }
 

@@ -191,6 +191,16 @@ pub fn update_command(exe: &std::path::Path, cwd: &str) -> std::process::Command
     c
 }
 
+/// This machine's name without its domain (`hostname -s`), or empty.
+fn short_host() -> String {
+    std::process::Command::new("hostname")
+        .arg("-s")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
 /// Your login shell ($SHELL), or sh.
 pub(crate) fn shell_argv(shell: Option<&str>) -> Vec<String> {
     let shell = shell.filter(|s| !s.is_empty()).unwrap_or("/bin/sh");
@@ -451,6 +461,7 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut app = App::new(cwd);
+    app.host = short_host();
     app.cfg = ctx.cfg.clone();
     app.reload(&ctx.store);
 
