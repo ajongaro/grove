@@ -264,6 +264,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                     Action::None
                 }
                 KeyCode::Char('e') => Action::EditProject { slug },
+                KeyCode::Char('s') => Action::ProjectShell { slug },
                 KeyCode::Char('c') => Action::ClearEnded { slug },
                 KeyCode::Char('d') if app.pane == Pane::Projects => {
                     let name = app.selected_project().map(|p| p.name.clone());

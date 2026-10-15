@@ -81,6 +81,16 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             open_in_editor(ctx, &file.to_string_lossy())?;
             Outcome::Nothing
         }
+        Action::ProjectShell { slug } => {
+            let project = store.get_project(&slug)?;
+            if !project.path.is_dir() {
+                bail!("{} doesn't exist", project.path.display());
+            }
+            let argv = shell_argv(std::env::var("SHELL").ok().as_deref());
+            ctx.tmux
+                .display_popup(&project.path, Some(&project.name), &argv)?;
+            Outcome::Nothing
+        }
         Action::ConnectFinca { slug, via } => {
             let f = store.get_finca(&slug)?;
             // A stale via (backup since removed from the file) falls back to ssh.
@@ -109,7 +119,7 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 dest,
                 "--pause".into(),
             ];
-            ctx.tmux.display_popup(&ctx.store.paths.home, &argv)?;
+            ctx.tmux.display_popup(&ctx.store.paths.home, None, &argv)?;
             Outcome::Nothing
         }
         Action::FincaShellWindow { slug, window } => {
@@ -181,13 +191,19 @@ pub fn update_command(exe: &std::path::Path, cwd: &str) -> std::process::Command
     c
 }
 
+/// Your login shell ($SHELL), or sh.
+pub(crate) fn shell_argv(shell: Option<&str>) -> Vec<String> {
+    let shell = shell.filter(|s| !s.is_empty()).unwrap_or("/bin/sh");
+    vec![shell.to_string()]
+}
+
 fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
     let mut argv: Vec<String> = editor(&ctx.cfg)
         .split_whitespace()
         .map(str::to_string)
         .collect();
     argv.push(target.to_string());
-    ctx.tmux.display_popup(&ctx.store.paths.home, &argv)
+    ctx.tmux.display_popup(&ctx.store.paths.home, None, &argv)
 }
 
 /// Creates the folder at `path` (and any missing parents), runs `git init`

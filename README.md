@@ -128,6 +128,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
+| `s` | dashboard | a shell in the project's folder (popup; `exit` closes it) |
 | `r` | session | rename it (tmux window too) |
 | `x` | session | kill it (asks first) |
 | `c` | dashboard | clear ended sessions for the project |
@@ -144,7 +145,8 @@ in your editor.
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
 → **your turn** (Claude finished) → **ended**. A session that needs you also
-gets ⚑ in front of its tmux window name.
+gets ⚑ in front of its tmux window name. Each project row counts its live
+sessions by state: red ⚑ needs you, yellow ● your turn, green ● working.
 
 While the dashboard runs, it sends a **desktop alert** when a session needs
 you, here or on a finca, unless that session's window is already on screen

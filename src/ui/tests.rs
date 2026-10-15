@@ -91,7 +91,6 @@ fn reload_reads_projects_and_sessions() {
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
     assert_eq!(app.visible_sessions().len(), 1);
     assert_eq!(app.needs_you_count(), 1);
-    assert_eq!(app.needs_you_by_project().get("beta"), Some(&1));
 }
 
 #[test]
@@ -804,12 +803,6 @@ fn s_on_a_finca_opens_a_shell_there() {
 }
 
 #[test]
-fn s_on_a_project_does_nothing() {
-    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
-    assert_eq!(handle_key(&mut app, ch('s')), Action::None);
-}
-
-#[test]
 fn enter_in_sessions_pane_on_a_finca_connects() {
     let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
     app.pane = Pane::Sessions;
@@ -1341,7 +1334,13 @@ fn help_fits_a_laptop_sized_window() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('?'));
     let out = screen(&app, 110, 32);
-    for k in ["C-g", "open a shell there", "open in your editor", "rename"] {
+    for k in [
+        "C-g",
+        "open a shell there",
+        "shell in its folder",
+        "open in your editor",
+        "rename",
+    ] {
         assert!(out.contains(k), "help lacks {k:?} at 110x32\n{out}");
     }
 }
@@ -1467,7 +1466,61 @@ fn todo_count_sits_after_live_sessions_and_needs_you() {
     );
     s.write_todos("alpha", "- [ ] a\n").unwrap();
     app.reload(&s);
-    assert!(screen(&app, 100, 20).contains("● alpha  1  ⚑1  ☐1"));
+    assert!(screen(&app, 100, 20).contains("● alpha  ⚑1  ☐1"));
+}
+
+#[test]
+fn project_row_counts_live_sessions_by_state() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "alpha", "s2", State::YourTurn, Some("@2")),
+            session("3", "alpha", "s3", State::NeedsYou, Some("@3")),
+            session("4", "alpha", "s4", State::Starting, None),
+            session("5", "alpha", "s5", State::Ended, None),
+        ],
+    );
+    let out = screen(&app, 100, 20);
+    // Most urgent first; starting counts as working; ended isn't counted.
+    assert!(out.contains("● alpha  ⚑1 ●1 ●2"), "{out}");
+    use ratatui::style::Color;
+    assert_eq!(fg_of(&app, 100, 20, "⚑1"), Color::Red);
+    assert_eq!(fg_of(&app, 100, 20, "●1"), Color::Yellow);
+    assert_eq!(fg_of(&app, 100, 20, "●2"), Color::Green);
+}
+
+#[test]
+fn project_row_shows_only_states_it_has() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    let out = screen(&app, 100, 20);
+    assert!(out.contains("● alpha  ●1 "), "{out}");
+    assert!(!out.contains("⚑"), "{out}");
+}
+
+#[test]
+fn s_opens_a_shell_in_the_selected_project() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    let want = Action::ProjectShell {
+        slug: "alpha".into(),
+    };
+    assert_eq!(handle_key(&mut app, ch('s')), want);
+    app.pane = Pane::Sessions;
+    assert_eq!(handle_key(&mut app, ch('s')), want);
+}
+
+#[test]
+fn s_on_a_broken_project_says_why() {
+    let (_d, s) = store_with(&[], &[]);
+    s.paths.ensure().unwrap();
+    std::fs::write(s.paths.projects.join("broken.toml"), "name = [").unwrap();
+    let mut app = App::new("/x".into());
+    app.reload(&s);
+    assert_eq!(handle_key(&mut app, ch('s')), Action::None);
+    assert!(app.footer.is_some());
 }
 
 // ---------- moving between sessions and to-do ----------

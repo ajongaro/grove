@@ -31,6 +31,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Enter", "start a session"),
             ("n", "start a named session"),
+            ("s", "a shell in its folder (exit closes)"),
             ("e", "edit the project file"),
             ("c", "clear ended sessions"),
             ("d", "remove from Grove (folder kept)"),

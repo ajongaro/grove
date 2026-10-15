@@ -133,11 +133,14 @@ impl Tmux {
             .map(|_| ())
     }
 
-    pub fn display_popup(&self, cwd: &Path, argv: &[String]) -> Result<()> {
+    pub fn display_popup(&self, cwd: &Path, title: Option<&str>, argv: &[String]) -> Result<()> {
         let mut c = self.cmd();
         c.args(["display-popup", "-E", "-w", "80%", "-h", "80%", "-d"])
-            .arg(cwd)
-            .args(argv);
+            .arg(cwd);
+        if let Some(t) = title {
+            c.arg("-T").arg(format!(" {} ", literal(t)));
+        }
+        c.args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
         check(&out, &["display-popup"]).map(|_| ())
     }
@@ -258,13 +261,13 @@ fn check(out: &Output, args: &[&str]) -> Result<String> {
     }
 }
 
-/// Parses `tmux -V` output such as "tmux 3.6a" or "tmux next-3.7".
 /// `s` as text tmux shows unchanged: `#` starts formats (`#{}`, `#()`)
 /// in messages, so it's doubled.
 pub fn literal(s: &str) -> String {
     s.replace('#', "##")
 }
 
+/// Parses `tmux -V` output such as "tmux 3.6a" or "tmux next-3.7".
 pub fn parse_version(s: &str) -> Option<(u32, u32)> {
     let v = s.split_whitespace().nth(1)?;
     let v = v.rsplit('-').next()?;

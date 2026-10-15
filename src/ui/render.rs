@@ -245,7 +245,6 @@ fn render_projects(
         frame.render_widget(p, area);
         return;
     }
-    let needs = app.needs_you_by_project();
     let items: Vec<ListItem> = app.projects[rows.clone()]
         .iter()
         .map(|p| {
@@ -261,16 +260,32 @@ fn render_projects(
                 Style::new().fg(parse_hex(p.color.as_deref()).unwrap_or(ACCENT)),
             );
             let mut spans = vec![dot, Span::raw(p.name.clone())];
-            let live = app
-                .sessions
-                .iter()
-                .filter(|s| s.project == p.slug && s.state != State::Ended)
-                .count();
-            if live > 0 {
-                spans.push(Span::raw(format!("  {live}")).dark_gray());
-            }
-            if let Some(n) = needs.get(&p.slug) {
-                spans.push(Span::raw(format!("  ⚑{n}")).red().bold());
+            // Live sessions by state, most urgent first, in the Sessions
+            // pane's colors (starting counts as working).
+            let count = |want: &[State]| {
+                app.sessions
+                    .iter()
+                    .filter(|s| s.project == p.slug && want.contains(&s.state))
+                    .count()
+            };
+            let badges: Vec<Span> = [
+                ("⚑", State::NeedsYou, count(&[State::NeedsYou])),
+                ("●", State::YourTurn, count(&[State::YourTurn])),
+                (
+                    "●",
+                    State::Working,
+                    count(&[State::Working, State::Starting]),
+                ),
+            ]
+            .into_iter()
+            .filter(|(_, _, n)| *n > 0)
+            .map(|(glyph, state, n)| {
+                Span::styled(format!("{glyph}{n}"), Style::new().fg(state_color(state)))
+            })
+            .collect();
+            for (i, b) in badges.into_iter().enumerate() {
+                spans.push(Span::raw(if i == 0 { "  " } else { " " }));
+                spans.push(b);
             }
             if let Some(n) = app.open_todos.get(&p.slug).filter(|n| **n > 0) {
                 spans.push(Span::raw(format!("  ☐{n}")).dark_gray());

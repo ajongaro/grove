@@ -193,6 +193,35 @@ fn new_session_for_missing_project_dir_is_an_error() {
 }
 
 #[test]
+fn project_shell_for_missing_project_dir_is_an_error() {
+    let t = setup("shellerr");
+    t.ctx
+        .store
+        .add_project(&Project {
+            name: "gone".into(),
+            path: "/no/such".into(),
+            color: None,
+            summary: None,
+        })
+        .unwrap();
+    let err = perform(
+        &t.ctx,
+        Action::ProjectShell {
+            slug: "gone".into(),
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("/no/such"), "{err:#}");
+}
+
+#[test]
+fn project_shell_runs_your_shell() {
+    assert_eq!(shell_argv(Some("/bin/zsh")), vec!["/bin/zsh".to_string()]);
+    assert_eq!(shell_argv(Some("")), vec!["/bin/sh".to_string()]);
+    assert_eq!(shell_argv(None), vec!["/bin/sh".to_string()]);
+}
+
+#[test]
 fn quit_and_none() {
     let t = setup("quit");
     assert_eq!(perform(&t.ctx, Action::Quit).unwrap(), Outcome::Quit);

@@ -105,6 +105,10 @@ pub enum Action {
     EditProject {
         slug: String,
     },
+    /// A throwaway shell in the project's folder, in a popup.
+    ProjectShell {
+        slug: String,
+    },
     /// A login shell on the finca, at `via` like `ConnectFinca`.
     FincaShell {
         slug: String,
@@ -457,15 +461,6 @@ impl App {
                 .iter()
                 .map(|(_, n)| n)
                 .sum::<usize>()
-    }
-
-    /// needs-you count per project slug (for the project list badges).
-    pub fn needs_you_by_project(&self) -> HashMap<String, usize> {
-        let mut m = HashMap::new();
-        for s in self.sessions.iter().filter(|s| s.state == State::NeedsYou) {
-            *m.entry(s.project.clone()).or_insert(0) += 1;
-        }
-        m
     }
 }
 
