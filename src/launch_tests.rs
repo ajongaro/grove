@@ -395,3 +395,32 @@ fn build_stamp_changes_when_the_binary_is_replaced() {
     assert_ne!(a, build_stamp(&bin));
     assert_eq!(build_stamp(&dir.path().join("missing")), "unknown");
 }
+
+#[test]
+fn a_prompt_that_could_be_read_as_an_option_or_command_is_refused() {
+    let e = env();
+    for bad in ["--dangerously-skip-permissions", "-p", "  --x y", "update"] {
+        let err = build_with_bin(
+            &cfg(&e),
+            &e.paths,
+            &project(&e),
+            "u",
+            "s1",
+            Some(bad),
+            "/b/claude",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("prompt"), "{bad}: {err:#}");
+    }
+    let ok = build_with_bin(
+        &cfg(&e),
+        &e.paths,
+        &project(&e),
+        "u",
+        "s1",
+        Some("fix the - flag"),
+        "/b/claude",
+    )
+    .unwrap();
+    assert_eq!(ok.argv.last().map(String::as_str), Some("fix the - flag"));
+}

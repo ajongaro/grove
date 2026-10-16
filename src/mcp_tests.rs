@@ -619,3 +619,37 @@ fn send_prompt_types_into_a_waiting_session_only() {
     assert!(ask.unwrap_err().contains("needs you"));
     assert!(own.unwrap_err().contains("own"));
 }
+
+#[test]
+fn send_prompt_strips_control_characters() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let session = t.cfg.tmux_session.clone();
+    let out = t.dir.path().join("typed");
+    // Records exactly what arrives on the pane's input.
+    t.tmux
+        .new_session_detached(
+            &session,
+            "w",
+            t.dir.path(),
+            &[
+                "sh".into(),
+                "-c".into(),
+                format!("stty raw -echo; head -c 200 > '{}'", out.display()),
+            ],
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    // An end-of-paste marker plus a fake "approve" keystroke, and a bell.
+    let sent = t.do_send_prompt("wait".into(), "hi\u{1b}[201~1\r\u{7}there".into());
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    t.tmux.kill_server();
+    sent.unwrap();
+    let got = std::fs::read(&out).unwrap_or_default();
+    assert!(!got.contains(&0x07), "{got:?}");
+    let text = String::from_utf8_lossy(&got);
+    assert!(text.contains("hi[201~1there"), "{text:?}");
+    assert_eq!(text.matches('\u{1b}').count(), 0, "{text:?}");
+}

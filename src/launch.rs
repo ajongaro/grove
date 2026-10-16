@@ -63,8 +63,17 @@ fn build_with_bin(
         window_name.clone(),
     ];
     argv.extend(cfg.claude_args.iter().cloned());
-    // Claude's first message.
-    if let Some(p) = prompt.filter(|p| !p.trim().is_empty()) {
+    // Claude's first message, as its last argument. `claude [options]
+    // [command] [prompt]` would read `--flag` as an option and a single word
+    // like `update` as a subcommand, so neither is allowed (the prompt can
+    // come from another Claude, through the MCP tools).
+    if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        if p.starts_with('-') {
+            bail!("a first prompt can't start with \"-\"");
+        }
+        if !p.contains(char::is_whitespace) {
+            bail!("a first prompt needs more than one word");
+        }
         argv.push(p.to_string());
     }
     let account_name = account.name.clone();

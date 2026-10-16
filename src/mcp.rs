@@ -339,6 +339,13 @@ impl GroveMcp {
                 ));
             }
         }
+        // Only text: an escape sequence could end the paste early and type
+        // keys of its own (say, answering a permission prompt), and a bare
+        // carriage return would submit.
+        let text: String = text
+            .chars()
+            .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+            .collect();
         if text.trim().is_empty() {
             return Err("nothing to send".into());
         }
@@ -508,7 +515,7 @@ pub struct ReadSessionArgs {
 pub struct StartSessionArgs {
     /// Project name or slug. Defaults to the current Grove session's project.
     pub project: Option<String>,
-    /// The new session's first message.
+    /// The new session's first message: more than one word, not starting with "-".
     pub prompt: Option<String>,
     /// A short name for it (default s1, s2, …).
     pub name: Option<String>,
