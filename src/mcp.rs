@@ -426,15 +426,18 @@ impl GroveMcp {
             return Err("nothing to send".into());
         }
         // `!` runs a shell command and `/` a slash command in Claude's input,
-        // neither through that session's permission prompts.
-        if start.starts_with('!') {
+        // neither through that session's permission prompts. Every line
+        // counts: if the input isn't taking a bracketed paste, a newline
+        // submits and the next line starts fresh.
+        let starts = |c: char| text.lines().any(|l| l.trim_start().starts_with(c));
+        if starts('!') {
             return Err(
-                "text starting with \"!\" would run a shell command there; rephrase it".into(),
+                "a line starting with \"!\" would run a shell command there; rephrase it".into(),
             );
         }
-        if start.starts_with('/') {
+        if starts('/') {
             return Err(
-                "text starting with \"/\" would run a slash command there; rephrase it".into(),
+                "a line starting with \"/\" would run a slash command there; rephrase it".into(),
             );
         }
         let window = self.window(&s, &p, &handle)?;
