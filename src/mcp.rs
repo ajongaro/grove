@@ -631,7 +631,6 @@ pub async fn serve(store: Store, tmux: Tmux, account_flag: Option<String>) -> an
 /// Where Claude keeps user-scope MCP servers for the account in `dir`:
 /// `~/.claude.json` for the default `~/.claude` (used without
 /// CLAUDE_CONFIG_DIR), else `<dir>/.claude.json`.
-#[allow(dead_code)] // read by grove doctor (plan task 7)
 pub fn claude_json(dir: &Path, home: &Path) -> PathBuf {
     if dir == home.join(".claude") {
         home.join(".claude.json")

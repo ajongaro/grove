@@ -72,6 +72,7 @@ pub fn run(paths: &Paths, probes: &Probes) -> Vec<Check> {
         }
     };
     accounts(&cfg, &mut out);
+    mcp(&cfg, &mut out);
     let store = Store::new(paths.clone());
     projects(&store, &cfg, &mut out);
     fincas(&store, probes, &mut out);
@@ -126,6 +127,34 @@ fn accounts(cfg: &Config, out: &mut Vec<Check>) {
             ));
         } else {
             out.push(check(Level::Ok, what, show(&a.dir)));
+        }
+    }
+}
+
+/// Whether Claude's user-scope config at `path` has a `grove` MCP server.
+pub fn mcp_registered(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v["mcpServers"]["grove"].is_object())
+}
+
+/// One line per account: whether its plain `claude` sessions get Grove's
+/// tools (Grove's own sessions always do).
+fn mcp(cfg: &Config, out: &mut Vec<Check>) {
+    let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+        return;
+    };
+    for a in cfg.all_accounts() {
+        let what = format!("mcp {}", a.name);
+        if mcp_registered(&crate::mcp::claude_json(&a.dir, &home)) {
+            out.push(check(Level::Ok, what, "registered"));
+        } else {
+            out.push(check(
+                Level::Warn,
+                what,
+                "not registered, so only Grove's own sessions have its tools; grove mcp setup prints the command",
+            ));
         }
     }
 }
@@ -329,5 +358,32 @@ mod tests {
             ..ok_probes()
         };
         assert_eq!(level_of(&run(&paths, &probes), "alerts"), Level::Warn);
+    }
+
+    #[test]
+    fn mcp_registration_is_read_from_claude_json() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join(".claude.json");
+        assert!(!mcp_registered(&f));
+        std::fs::write(&f, r#"{"mcpServers":{"other":{}}}"#).unwrap();
+        assert!(!mcp_registered(&f));
+        std::fs::write(
+            &f,
+            r#"{"mcpServers":{"grove":{"command":"/b/grove","args":["mcp","--account","work"]}}}"#,
+        )
+        .unwrap();
+        assert!(mcp_registered(&f));
+        std::fs::write(&f, "not json").unwrap();
+        assert!(!mcp_registered(&f));
+    }
+
+    #[test]
+    fn doctor_has_an_mcp_line_per_account() {
+        let d = tempfile::tempdir().unwrap();
+        let paths = Paths::new(d.path().join("home"));
+        paths.ensure().unwrap();
+        let checks = run(&paths, &ok_probes());
+        // A fresh GROVE_HOME has only the default account.
+        assert!(checks.iter().any(|c| c.what == "mcp default"), "{checks:?}");
     }
 }

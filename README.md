@@ -104,7 +104,9 @@ offline right now), not a failure.
      ask the user to run it, or press `F` on the dashboard.
 - **Don't edit `~/.claude*/settings.json`.** Grove passes its hooks and MCP
   server to each session on the command line (`--settings`, `--mcp-config`).
-  There's nothing to install into Claude Code.
+  There's nothing to install into Claude Code. Optionally, `grove mcp setup`
+  prints a command per account that gives plain `claude` sessions Grove's
+  tools too; show it to the user rather than running it.
 - **Don't run `grove` with no arguments.** It attaches tmux and needs the
   user's terminal. Use `grove doctor` to verify, then ask the user to run
   `grove`.
@@ -120,6 +122,7 @@ grove                           # open the dashboard
 grove add ~/code/some-project   # add a project
 grove rm some-project           # forget it (the folder is kept)
 grove doctor                    # check tmux, claude, accounts, projects, fincas
+grove mcp setup                 # how to give every Claude session Grove's tools
 ```
 
 Grove runs on its **own tmux server** (`tmux -L grove`), so its key bindings
@@ -165,8 +168,8 @@ Linux. Set `alerts = false` in `config.toml` to turn alerts off, for example
 on a finca nobody sits at.
 
 Each new session starts knowing its project's name, folder and summary.
-Claude can update the summary through Grove's MCP tools (`list_projects`,
-`get_project`, `update_project`).
+Claude can update the summary, and see much more, through Grove's MCP
+tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
 
 ### Updating
 
@@ -202,6 +205,30 @@ there), edited with vim keys:
 It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
 on every change. It's just for you: Claude sessions don't see it. Projects
 with open items show the count next to their name (`☐3`).
+
+## Claude's view of your projects (MCP)
+
+Every Claude that Grove starts can see your projects through Grove's MCP
+tools, limited to that session's account. A work Claude sees only the
+projects under the work folder; a personal one sees the rest, and neither
+can see, edit or message the other's.
+
+| Tool | What Claude can do |
+|---|---|
+| `list_projects`, `get_project` | see each project: summary, sessions, to-dos, git branch and recent commits, README and CLAUDE.md |
+| `list_sessions`, `read_session` | see which sessions are working, need you or wait for you, and read one's screen |
+| `get_todos`, `edit_todos` | read and edit a project's to-do list |
+| `update_project` | set a project's summary or color |
+| `start_session` | start a session in a project, with a first prompt |
+| `send_prompt` | send a prompt to a session that's waiting for you ("your turn") |
+
+Claude asks before using a tool unless you've allowed it. Nothing answers
+permission prompts for you: a session that needs you still needs you.
+
+To give the tools to every Claude session, including a plain `claude` in a
+terminal, run `grove mcp setup` and run the command it prints for each
+account. Grove doesn't change Claude's settings itself. `grove doctor` shows
+which accounts have it.
 
 ## More than one Claude account
 
@@ -339,7 +366,8 @@ Each file does one job, so new features usually touch one or two:
 | `src/config.rs` | `config.toml`, accounts and which folder picks which |
 | `src/launch.rs` | builds the `claude` command + window env |
 | `src/tmux.rs` | tmux CLI wrapper (takes a socket) |
-| `src/mcp.rs` | MCP tools |
+| `src/mcp.rs` | MCP tools, each limited to one Claude account's projects |
+| `src/mcp_overview.rs` | what the MCP tools say about a project: sessions, git, docs |
 | `src/status.rs` | the `status --json` document fincas report |
 | `src/finca.rs` | finca files, SSH probe, poller, connect, shells, installing grove there |
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
