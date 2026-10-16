@@ -429,7 +429,11 @@ impl GroveMcp {
         // neither through that session's permission prompts. Every line
         // counts: if the input isn't taking a bracketed paste, a newline
         // submits and the next line starts fresh.
-        let starts = |c: char| text.lines().any(|l| l.trim_start().starts_with(c));
+        // (Control characters are gone by now; Unicode line separators aren't.)
+        let starts = |c: char| {
+            text.split(['\n', '\u{2028}', '\u{2029}'])
+                .any(|l| l.trim_start().starts_with(c))
+        };
         if starts('!') {
             return Err(
                 "a line starting with \"!\" would run a shell command there; rephrase it".into(),

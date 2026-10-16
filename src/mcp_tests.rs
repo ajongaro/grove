@@ -749,12 +749,14 @@ fn send_prompt_refuses_shell_and_slash_commands() {
     // Each line counts: without bracketed paste, a newline submits.
     let later = t.do_send_prompt("wait".into(), "hello\n  !rm -rf ~".into());
     let later_slash = t.do_send_prompt("wait".into(), "ok\r\n/permissions".into());
+    let sep = t.do_send_prompt("wait".into(), "ok\u{2028}!rm -rf ~".into());
     std::thread::sleep(std::time::Duration::from_millis(200));
     t.tmux.kill_server();
     assert!(bang.unwrap_err().contains('!'));
     assert!(slash.unwrap_err().contains('/'));
     assert!(later.unwrap_err().contains('!'));
     assert!(later_slash.unwrap_err().contains('/'));
+    assert!(sep.unwrap_err().contains('!'));
     assert_eq!(std::fs::read_to_string(&out).unwrap_or_default(), "");
 }
 
