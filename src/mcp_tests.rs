@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{AccountConfig, Config, Paths};
-use crate::model::Project;
+use crate::model::{Project, Session, State};
 
 /// Projects live in <tmp>/code/<name>; <tmp>/work is the work account's folder.
 struct T {
@@ -35,13 +35,20 @@ fn two_accounts(dir: &std::path::Path) -> Config {
 
 /// A server scoped to `account` ("play" or "work").
 fn scoped(account: &str, default: Option<&str>) -> T {
+    // Each test gets its own tmux server: tests run in parallel.
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let socket = format!("grove-test-{}-mcp{n}", std::process::id());
     let dir = tempfile::tempdir().unwrap();
-    let cfg = two_accounts(dir.path());
+    let cfg = Config {
+        tmux_session: socket.clone(),
+        ..two_accounts(dir.path())
+    };
     let store = Store::new(Paths::new(dir.path().join("home")));
     let m = GroveMcp {
         store,
         cfg,
-        tmux: crate::tmux::Tmux::new(format!("grove-test-{}-mcp", std::process::id())),
+        tmux: crate::tmux::Tmux::new(socket),
         scope: Ok(account.to_string()),
         default_project: default.map(str::to_string),
         own_session: None,
@@ -424,4 +431,98 @@ fn todos_of_another_account_are_hidden() {
             .is_err()
     );
     assert_eq!(t.store.read_todos("beta"), "- [ ] secret\n");
+}
+
+fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&str>) -> Session {
+    let now = chrono::Utc::now();
+    let s = Session {
+        id: format!("id-{project}-{name}"),
+        project: project.into(),
+        name: name.into(),
+        host: "local".into(),
+        tmux_window: window.map(str::to_string),
+        state,
+        message: None,
+        created_at: now,
+        updated_at: now,
+    };
+    t.store.save_session(&s).unwrap();
+    s
+}
+
+#[test]
+fn list_sessions_is_scoped_and_skips_ended() {
+    let t = scoped("work", None);
+    add_in(&t, "alpha", true);
+    add_in(&t, "beta", false);
+    add_session(&t, "alpha", "s1", State::Working, None);
+    add_session(&t, "alpha", "old", State::Ended, None);
+    add_session(&t, "beta", "s1", State::YourTurn, None);
+    let out = t.do_list_sessions(None).unwrap();
+    assert!(out.contains("alpha:s1") && out.contains("working"), "{out}");
+    assert!(!out.contains("beta") && !out.contains("old"), "{out}");
+}
+
+#[test]
+fn session_names_resolve_within_the_account() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    add(&t, "gamma");
+    add_session(&t, "alpha", "s1", State::Working, None);
+    add_session(&t, "gamma", "s1", State::Working, None);
+    add_session(&t, "alpha", "fix", State::Working, None);
+    assert_eq!(t.session("fix").unwrap().0.project, "alpha");
+    assert_eq!(t.session("gamma:s1").unwrap().0.project, "gamma");
+    assert_eq!(t.session("id-alpha-s1").unwrap().0.project, "alpha");
+    let e = t.session("s1").unwrap_err();
+    assert!(e.contains("alpha:s1") && e.contains("gamma:s1"), "{e}");
+}
+
+#[test]
+fn another_accounts_session_is_unknown() {
+    let t = scoped("work", None);
+    add_in(&t, "alpha", true);
+    add_in(&t, "beta", false);
+    add_session(&t, "alpha", "s1", State::Working, None);
+    add_session(&t, "beta", "secret", State::Working, None);
+    let hidden = t.session("secret").unwrap_err();
+    let missing = t.session("nope").unwrap_err();
+    assert_eq!(hidden.replace("secret", "X"), missing.replace("nope", "X"));
+    assert!(t.session("beta:secret").is_err());
+    assert!(t.session("id-beta-secret").is_err());
+    // A bare name shared with another account's session isn't ambiguous.
+    add_session(&t, "beta", "s1", State::Working, None);
+    assert_eq!(t.session("s1").unwrap().0.project, "alpha");
+}
+
+#[test]
+fn read_session_shows_the_screen() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let session = t.cfg.tmux_session.clone();
+    t.tmux
+        .new_session_detached(
+            &session,
+            "w",
+            t.dir.path(),
+            &[
+                "sh".into(),
+                "-c".into(),
+                "printf 'hello\\nfrom alpha\\n'; sleep 30".into(),
+            ],
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
+    add_session(&t, "alpha", "s1", State::YourTurn, Some(&window));
+    let out = t.do_read_session("s1".into(), None);
+    add_session(&t, "alpha", "s2", State::YourTurn, None);
+    let no_window = t.do_read_session("s2".into(), None);
+    t.tmux.kill_server();
+    let gone = t.do_read_session("s1".into(), None);
+    let out = out.unwrap();
+    assert!(out.contains("hello") && out.contains("from alpha"), "{out}");
+    assert!(!out.ends_with('\n'), "{out:?}");
+    assert!(no_window.unwrap_err().contains("window"));
+    assert!(gone.unwrap_err().contains("gone"));
 }

@@ -59,6 +59,8 @@ fn mcp_lists_its_tools_and_answers_a_call() {
             "get_project",
             "get_todos",
             "list_projects",
+            "list_sessions",
+            "read_session",
             "update_project"
         ]
     );

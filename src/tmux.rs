@@ -208,6 +208,13 @@ impl Tmux {
         (out.status.success() && !v.is_empty()).then_some(v)
     }
 
+    /// The last `lines` lines of a pane's screen and scrollback, with
+    /// wrapped lines joined.
+    pub fn capture(&self, target: &str, lines: usize) -> Result<String> {
+        let start = format!("-{lines}");
+        self.run(&["capture-pane", "-p", "-J", "-t", target, "-S", &start])
+    }
+
     pub fn send_keys(&self, target: &str, keys: &[&str]) -> Result<()> {
         let mut args = vec!["send-keys", "-t", target];
         args.extend_from_slice(keys);

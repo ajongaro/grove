@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::mcp_overview;
-use crate::model::Project;
+use crate::model::{Project, Session};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
@@ -20,7 +20,6 @@ pub struct GroveMcp {
     pub store: Store,
     pub cfg: Config,
     /// Grove's own tmux server, for sessions.
-    #[allow(dead_code)] // read by the session tools (plan tasks 5 and 6)
     pub tmux: Tmux,
     /// The account every tool is limited to, or the error each one returns.
     pub scope: Result<String, String>,
@@ -182,6 +181,105 @@ impl GroveMcp {
         Ok(out)
     }
 
+    /// Live sessions of this account's projects (all, or one project's),
+    /// most recently active first.
+    fn sessions(&self, project: Option<&Project>) -> Result<Vec<(Session, Project)>, String> {
+        let projects = match project {
+            Some(p) => vec![p.clone()],
+            None => self.projects()?,
+        };
+        let mut out: Vec<(Session, Project)> = projects
+            .into_iter()
+            .flat_map(|p| {
+                mcp_overview::live(self.store.list_sessions(Some(&p.slug())))
+                    .into_iter()
+                    .map(move |s| (s, p.clone()))
+            })
+            .collect();
+        out.sort_by_key(|(s, _)| std::cmp::Reverse(s.updated_at));
+        Ok(out)
+    }
+
+    /// A live session of this account by id, `project:name`, or a name
+    /// unique within the account.
+    fn session(&self, key: &str) -> Result<(Session, Project), String> {
+        let all = self.sessions(None)?;
+        let handle = |s: &Session, p: &Project| format!("{}:{}", p.slug(), s.name);
+        let key = key.trim();
+        if let Some(hit) = all.iter().find(|(s, p)| s.id == key || handle(s, p) == key) {
+            return Ok(hit.clone());
+        }
+        let named: Vec<_> = all.iter().filter(|(s, _)| s.name == key).collect();
+        match named.as_slice() {
+            [one] => Ok((*one).clone()),
+            [] => {
+                let names: Vec<String> = all.iter().map(|(s, p)| handle(s, p)).collect();
+                Err(format!(
+                    "no live session \"{key}\"; sessions: {}",
+                    if names.is_empty() {
+                        "(none)".into()
+                    } else {
+                        names.join(", ")
+                    }
+                ))
+            }
+            many => Err(format!(
+                "\"{key}\" is more than one session: {}; use one of those",
+                many.iter()
+                    .map(|(s, p)| handle(s, p))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+
+    pub fn do_list_sessions(&self, project: Option<String>) -> Result<String, String> {
+        let p = match project.filter(|p| !p.trim().is_empty()) {
+            Some(name) => Some(self.project(Some(name))?),
+            None => None,
+        };
+        let now = chrono::Utc::now();
+        let lines: Vec<String> = self
+            .sessions(p.as_ref())?
+            .iter()
+            .map(|(s, p)| {
+                let msg = s
+                    .message
+                    .as_deref()
+                    .map(|m| format!(" — {m}"))
+                    .unwrap_or_default();
+                format!(
+                    "- {}:{} — {} — {}{msg}",
+                    p.slug(),
+                    s.name,
+                    s.state.label(),
+                    mcp_overview::ago(s.updated_at, now)
+                )
+            })
+            .collect();
+        Ok(if lines.is_empty() {
+            "No live sessions.".into()
+        } else {
+            lines.join("\n")
+        })
+    }
+
+    pub fn do_read_session(&self, session: String, lines: Option<usize>) -> Result<String, String> {
+        let (s, p) = self.session(&session)?;
+        let n = lines.unwrap_or(60).clamp(1, 500);
+        let handle = format!("{}:{}", p.slug(), s.name);
+        let window = s
+            .tmux_window
+            .as_deref()
+            .ok_or_else(|| format!("{handle} has no window yet (it may still be starting)"))?;
+        let screen = self
+            .tmux
+            .capture(window, n)
+            .map_err(|_| format!("{handle}'s window is gone"))?;
+        let kept: Vec<&str> = screen.trim_end().lines().collect();
+        Ok(kept[kept.len().saturating_sub(n)..].join("\n"))
+    }
+
     pub fn do_get_todos(&self, project: Option<String>) -> Result<String, String> {
         let p = self.project(project)?;
         Ok(numbered(&crate::todo::parse(
@@ -314,6 +412,20 @@ impl TodoOpArg {
     }
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListSessionsArgs {
+    /// Only this project's sessions (name or slug). All of them if left out.
+    pub project: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ReadSessionArgs {
+    /// The session: project:name as list_sessions shows it, a name, or an id.
+    pub session: String,
+    /// How many lines from the bottom of its screen (default 60, max 500).
+    pub lines: Option<usize>,
+}
+
 fn result(r: Result<String, String>) -> CallToolResult {
     match r {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -331,6 +443,18 @@ impl GroveMcp {
     #[tool(description = "Show a Grove project's details.")]
     fn get_project(&self, Parameters(a): Parameters<ProjectArg>) -> CallToolResult {
         result(self.do_get_project(a.project))
+    }
+
+    #[tool(
+        description = "Live Claude sessions in Grove projects: state (working, needs you, your turn) and when each last moved."
+    )]
+    fn list_sessions(&self, Parameters(a): Parameters<ListSessionsArgs>) -> CallToolResult {
+        result(self.do_list_sessions(a.project))
+    }
+
+    #[tool(description = "The bottom of a Grove session's screen: what it's doing or asking.")]
+    fn read_session(&self, Parameters(a): Parameters<ReadSessionArgs>) -> CallToolResult {
+        result(self.do_read_session(a.session, a.lines))
     }
 
     #[tool(description = "A Grove project's to-do list, numbered.")]
