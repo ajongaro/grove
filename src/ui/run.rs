@@ -45,7 +45,7 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             let project = store.get_project(&slug)?;
             // Re-read so config.toml edits apply without restarting the dashboard.
             let cfg = load_config(&store.paths)?;
-            let s = launch::start(&ctx.tmux, store, &cfg, &project, name)?;
+            let s = launch::start(&ctx.tmux, store, &cfg, &project, name, None)?;
             if let Some(w) = &s.tmux_window {
                 ctx.tmux.select_window(w)?;
             }

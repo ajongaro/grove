@@ -526,3 +526,96 @@ fn read_session_shows_the_screen() {
     assert!(no_window.unwrap_err().contains("window"));
     assert!(gone.unwrap_err().contains("gone"));
 }
+
+#[test]
+fn start_session_needs_grove_running() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let e = t
+        .do_start_session(Some("alpha".into()), None, None)
+        .unwrap_err();
+    assert!(e.contains("Grove isn't running"), "{e}");
+}
+
+#[test]
+fn start_session_of_another_account_is_refused() {
+    let t = scoped("work", None);
+    add_in(&t, "beta", false);
+    let e = t
+        .do_start_session(Some("beta".into()), None, None)
+        .unwrap_err();
+    assert!(e.contains("no project"), "{e}");
+}
+
+#[test]
+fn start_session_opens_a_window_with_the_prompt() {
+    let t = scoped("work", None);
+    add_in(&t, "alpha", true);
+    std::fs::create_dir_all(t.dir.path().join("claude-work")).unwrap();
+    let session = t.cfg.tmux_session.clone();
+    t.tmux
+        .new_session_detached(
+            &session,
+            "dash",
+            t.dir.path(),
+            &["sleep".into(), "30".into()],
+        )
+        .unwrap();
+    let args_file = t.dir.path().join("args");
+    let stub = t.dir.path().join("fake-claude");
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 30\n",
+            args_file.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let out = t.do_start_session_with_bin(
+        Some("alpha".into()),
+        Some("look at the tests".into()),
+        Some("tests".into()),
+        stub.to_str().unwrap(),
+    );
+    for _ in 0..100 {
+        if args_file.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    t.tmux.kill_server();
+    let out = out.unwrap();
+    assert!(out.contains("alpha:tests") && out.contains("work"), "{out}");
+    let args = std::fs::read_to_string(&args_file).unwrap();
+    assert_eq!(args.lines().last(), Some("look at the tests"), "{args}");
+}
+
+#[test]
+fn send_prompt_types_into_a_waiting_session_only() {
+    let mut t = mcp(None);
+    add(&t, "alpha");
+    let session = t.cfg.tmux_session.clone();
+    // `cat` echoes what's typed, standing in for Claude's input box.
+    t.tmux
+        .new_session_detached(&session, "w", t.dir.path(), &["cat".into()])
+        .unwrap();
+    let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    add_session(&t, "alpha", "busy", State::Working, Some(&window));
+    add_session(&t, "alpha", "ask", State::NeedsYou, Some(&window));
+    let me = add_session(&t, "alpha", "me", State::YourTurn, Some(&window));
+    let sent = t.do_send_prompt("wait".into(), "hello there".into());
+    let busy = t.do_send_prompt("busy".into(), "x".into());
+    let ask = t.do_send_prompt("ask".into(), "x".into());
+    t.m.own_session = Some(me.id.clone());
+    let own = t.do_send_prompt("me".into(), "x".into());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let screen = t.tmux.capture(&window, 20).unwrap();
+    t.tmux.kill_server();
+    sent.unwrap();
+    assert!(screen.contains("hello there"), "{screen}");
+    assert!(busy.unwrap_err().contains("working"));
+    assert!(ask.unwrap_err().contains("needs you"));
+    assert!(own.unwrap_err().contains("own"));
+}

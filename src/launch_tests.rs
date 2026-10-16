@@ -57,6 +57,7 @@ fn build_sets_account_project_and_session_env() {
         &project(&e),
         "uuid-1",
         "s1",
+        None,
         "/usr/local/bin/claude",
     )
     .unwrap();
@@ -84,6 +85,7 @@ fn build_passes_session_hooks_and_mcp_flags() {
         &project(&e),
         "uuid-1",
         "s1",
+        None,
         "/usr/local/bin/claude",
     )
     .unwrap();
@@ -119,7 +121,7 @@ fn build_refuses_missing_claude_dir() {
         claude_config_dir: "/no/such/claude".into(),
         ..Config::default()
     };
-    let err = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", "claude")
+    let err = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", None, "claude")
         .unwrap_err()
         .to_string();
     assert!(err.contains("/no/such/claude"), "{err}");
@@ -130,7 +132,7 @@ fn build_refuses_missing_project_dir() {
     let e = env();
     let mut p = project(&e);
     p.path = "/no/such/project".into();
-    let err = build_with_bin(&cfg(&e), &e.paths, &p, "u", "s1", "claude")
+    let err = build_with_bin(&cfg(&e), &e.paths, &p, "u", "s1", None, "claude")
         .unwrap_err()
         .to_string();
     assert!(err.contains("/no/such/project"), "{err}");
@@ -191,14 +193,23 @@ fn work_project(e: &Env) -> Project {
 fn build_picks_the_account_from_the_project_folder() {
     let e = env();
     let (c, work) = cfg_with_work(&e);
-    let spec = build_with_bin(&c, &e.paths, &work_project(&e), "u", "s1", "/b/claude").unwrap();
+    let spec = build_with_bin(
+        &c,
+        &e.paths,
+        &work_project(&e),
+        "u",
+        "s1",
+        None,
+        "/b/claude",
+    )
+    .unwrap();
     assert_eq!(
         env_val(&spec, "CLAUDE_CONFIG_DIR"),
         Some(work.to_str().unwrap())
     );
     assert_eq!(spec.account.name, "work");
     // Outside the work folder: the default.
-    let spec = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", "/b/claude").unwrap();
+    let spec = build_with_bin(&c, &e.paths, &project(&e), "u", "s1", None, "/b/claude").unwrap();
     assert_eq!(
         env_val(&spec, "CLAUDE_CONFIG_DIR"),
         Some(e.claude_dir.to_str().unwrap())
@@ -210,9 +221,17 @@ fn build_refuses_a_missing_account_dir() {
     let e = env();
     let (mut c, _) = cfg_with_work(&e);
     c.accounts.get_mut("work").unwrap().dir = "/definitely/not/here".into();
-    let err = build_with_bin(&c, &e.paths, &work_project(&e), "u", "s1", "/b/claude")
-        .unwrap_err()
-        .to_string();
+    let err = build_with_bin(
+        &c,
+        &e.paths,
+        &work_project(&e),
+        "u",
+        "s1",
+        None,
+        "/b/claude",
+    )
+    .unwrap_err()
+    .to_string();
     assert!(err.contains("/definitely/not/here"), "{err}");
 }
 
@@ -225,7 +244,15 @@ fn start_opens_window_and_records_session() {
         .unwrap();
     // Stand-in for `claude` (ignores claude's flags) so no real session starts.
     let stub = e.proj_dir.join("fake claude");
-    std::fs::write(&stub, "#!/bin/sh\nsleep 30\n").unwrap();
+    let args_file = e.proj_dir.join("args");
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 30\n",
+            args_file.display()
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let s = start_with_bin(
         &tmux,
@@ -233,9 +260,17 @@ fn start_opens_window_and_records_session() {
         &cfg(&e),
         &project(&e),
         None,
+        Some("fix the build".into()),
         stub.to_str().unwrap(),
     )
     .unwrap();
+    for _ in 0..100 {
+        if args_file.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let args = std::fs::read_to_string(&args_file).unwrap_or_default();
     let windows = tmux.list_windows("grove").unwrap();
     let w = s.tmux_window.clone().unwrap();
     let account = tmux.window_option(&w, "@grove_account");
@@ -249,6 +284,7 @@ fn start_opens_window_and_records_session() {
     assert_eq!(s.host, "local");
     assert!(windows.contains(s.tmux_window.as_ref().unwrap()));
     assert_eq!(store.get_session(&s.id).unwrap(), s);
+    assert_eq!(args.lines().last(), Some("fix the build"), "{args}");
 }
 
 #[test]
@@ -258,7 +294,7 @@ fn start_with_missing_project_dir_creates_nothing() {
     let tmux = Tmux::new(format!("grove-test-{}-nodir", std::process::id()));
     let mut p = project(&e);
     p.path = "/no/such/project".into();
-    assert!(start(&tmux, &store, &cfg(&e), &p, None).is_err());
+    assert!(start(&tmux, &store, &cfg(&e), &p, None, None).is_err());
     assert!(store.list_sessions(None).is_empty());
 }
 

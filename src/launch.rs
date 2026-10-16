@@ -37,6 +37,7 @@ fn build_with_bin(
     project: &Project,
     session_id: &str,
     name: &str,
+    prompt: Option<&str>,
     bin: &str,
 ) -> Result<LaunchSpec> {
     let account = cfg.account_for(&project.path);
@@ -62,6 +63,10 @@ fn build_with_bin(
         window_name.clone(),
     ];
     argv.extend(cfg.claude_args.iter().cloned());
+    // Claude's first message.
+    if let Some(p) = prompt.filter(|p| !p.trim().is_empty()) {
+        argv.push(p.to_string());
+    }
     let account_name = account.name.clone();
     Ok(LaunchSpec {
         window_name,
@@ -99,8 +104,9 @@ pub fn start(
     cfg: &Config,
     project: &Project,
     name: Option<String>,
+    prompt: Option<String>,
 ) -> Result<Session> {
-    start_with_bin(tmux, store, cfg, project, name, &claude_bin())
+    start_with_bin(tmux, store, cfg, project, name, prompt, &claude_bin())
 }
 
 /// `start` with the program to run swapped out (tests use a stand-in).
@@ -110,6 +116,7 @@ pub fn start_with_bin(
     cfg: &Config,
     project: &Project,
     name: Option<String>,
+    prompt: Option<String>,
     bin: &str,
 ) -> Result<Session> {
     let slug = project.slug();
@@ -119,7 +126,15 @@ pub fn start_with_bin(
     let name = name.unwrap_or_else(|| next_session_name(store, &slug));
     let id = uuid::Uuid::new_v4().to_string();
     // Validate everything before touching disk or tmux.
-    let spec = build_with_bin(cfg, &store.paths, project, &id, &name, bin)?;
+    let spec = build_with_bin(
+        cfg,
+        &store.paths,
+        project,
+        &id,
+        &name,
+        prompt.as_deref(),
+        bin,
+    )?;
 
     let now = chrono::Utc::now();
     let mut session = Session {

@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::mcp_overview;
-use crate::model::{Project, Session};
+use crate::model::{Project, Session, State};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
@@ -26,7 +26,6 @@ pub struct GroveMcp {
     /// From `$GROVE_PROJECT`, set on every Grove session's window.
     pub default_project: Option<String>,
     /// From `$GROVE_SESSION`: this Claude's own session.
-    #[allow(dead_code)] // read by send_prompt (plan task 6)
     pub own_session: Option<String>,
 }
 
@@ -280,6 +279,85 @@ impl GroveMcp {
         Ok(kept[kept.len().saturating_sub(n)..].join("\n"))
     }
 
+    pub fn do_start_session(
+        &self,
+        project: Option<String>,
+        prompt: Option<String>,
+        name: Option<String>,
+    ) -> Result<String, String> {
+        self.do_start_session_with_bin(project, prompt, name, &crate::launch::claude_bin())
+    }
+
+    /// `do_start_session` with the program to run swapped out (tests).
+    pub fn do_start_session_with_bin(
+        &self,
+        project: Option<String>,
+        prompt: Option<String>,
+        name: Option<String>,
+        bin: &str,
+    ) -> Result<String, String> {
+        let p = self.project(project)?;
+        if !self.tmux.has_session(&self.cfg.tmux_session) {
+            return Err("Grove isn't running: start it with `grove` in a terminal".into());
+        }
+        let s = crate::launch::start_with_bin(
+            &self.tmux,
+            &self.store,
+            &self.cfg,
+            &p,
+            name,
+            prompt,
+            bin,
+        )
+        .map_err(|e| format!("{e:#}"))?;
+        Ok(format!(
+            "Started {}:{} on the {} account.",
+            p.slug(),
+            s.name,
+            self.cfg.account_for(&p.path).name
+        ))
+    }
+
+    /// Types `text` into a session that's waiting for its next message.
+    pub fn do_send_prompt(&self, session: String, text: String) -> Result<String, String> {
+        let (s, p) = self.session(&session)?;
+        let handle = format!("{}:{}", p.slug(), s.name);
+        if self.own_session.as_deref() == Some(s.id.as_str()) {
+            return Err("that's this session's own window; just answer here".into());
+        }
+        match s.state {
+            State::YourTurn => {}
+            State::NeedsYou => {
+                return Err(format!(
+                    "{handle} needs you: answer its prompt on the dashboard first"
+                ));
+            }
+            other => {
+                return Err(format!(
+                    "{handle} is {}; wait until it's your turn",
+                    other.label()
+                ));
+            }
+        }
+        if text.trim().is_empty() {
+            return Err("nothing to send".into());
+        }
+        let window = s
+            .tmux_window
+            .as_deref()
+            .ok_or_else(|| format!("{handle} has no window"))?;
+        self.tmux
+            .paste_text(window, &text)
+            .map_err(|_| format!("{handle}'s window is gone"))?;
+        // Claude's input may need a beat after a paste before Enter (spec:
+        // settled by trial).
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        self.tmux
+            .send_keys(window, &["Enter"])
+            .map_err(|e| format!("{e:#}"))?;
+        Ok(format!("Sent to {handle}."))
+    }
+
     pub fn do_get_todos(&self, project: Option<String>) -> Result<String, String> {
         let p = self.project(project)?;
         Ok(numbered(&crate::todo::parse(
@@ -426,6 +504,24 @@ pub struct ReadSessionArgs {
     pub lines: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StartSessionArgs {
+    /// Project name or slug. Defaults to the current Grove session's project.
+    pub project: Option<String>,
+    /// The new session's first message.
+    pub prompt: Option<String>,
+    /// A short name for it (default s1, s2, …).
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SendPromptArgs {
+    /// The session: project:name as list_sessions shows it, a name, or an id.
+    pub session: String,
+    /// What to type into it. It must be waiting for you ("your turn").
+    pub text: String,
+}
+
 fn result(r: Result<String, String>) -> CallToolResult {
     match r {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -455,6 +551,20 @@ impl GroveMcp {
     #[tool(description = "The bottom of a Grove session's screen: what it's doing or asking.")]
     fn read_session(&self, Parameters(a): Parameters<ReadSessionArgs>) -> CallToolResult {
         result(self.do_read_session(a.session, a.lines))
+    }
+
+    #[tool(
+        description = "Start a new Claude session in a Grove project, on that project's account, optionally with a first prompt. It appears on the Grove dashboard."
+    )]
+    fn start_session(&self, Parameters(a): Parameters<StartSessionArgs>) -> CallToolResult {
+        result(self.do_start_session(a.project, a.prompt, a.name))
+    }
+
+    #[tool(
+        description = "Send a prompt to a Grove session that's waiting for its next message (state: your turn). Refused while it's working or needs you."
+    )]
+    fn send_prompt(&self, Parameters(a): Parameters<SendPromptArgs>) -> CallToolResult {
+        result(self.do_send_prompt(a.session, a.text))
     }
 
     #[tool(description = "A Grove project's to-do list, numbered.")]
