@@ -45,14 +45,13 @@ fn scoped(account: &str, default: Option<&str>) -> T {
         ..two_accounts(dir.path())
     };
     let store = Store::new(Paths::new(dir.path().join("home")));
-    let m = GroveMcp {
+    let m = GroveMcp::fixed(
         store,
         cfg,
-        tmux: crate::tmux::Tmux::new(socket),
-        scope: Ok(account.to_string()),
-        default_project: default.map(str::to_string),
-        own_session: None,
-    };
+        crate::tmux::Tmux::new(socket),
+        Ok(account.to_string()),
+        default.map(str::to_string),
+    );
     T { dir, m }
 }
 
@@ -127,9 +126,9 @@ fn scope_refuses_another_accounts_claude_config() {
 
 #[test]
 fn scope_error_is_returned_by_every_tool() {
-    let mut t = mcp(None);
+    let t = mcp(None);
     add(&t, "alpha");
-    t.m.scope = Err("no account".into());
+    t.set_scope(Err("no account".into()));
     assert_eq!(t.do_list_projects(), Err("no account".into()));
     assert_eq!(
         t.do_get_project(Some("alpha".into())),
@@ -334,7 +333,7 @@ fn new_reads_account_project_and_session_from_env() {
         _ => None,
     };
     let m = GroveMcp::new(Store::new(paths), crate::tmux::Tmux::new("x"), None, &env);
-    assert_eq!(m.scope, Ok("default".into()));
+    assert_eq!(m.scope(), Ok("default".into()));
     assert_eq!(m.default_project.as_deref(), Some("alpha"));
     assert_eq!(m.own_session.as_deref(), Some("sid"));
 }
@@ -447,6 +446,12 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         updated_at: now,
     };
     t.store.save_session(&s).unwrap();
+    // Grove marks each session's window with its id (launch.rs).
+    if let Some(w) = window {
+        t.tmux
+            .set_window_option(w, "@grove_session", &s.id)
+            .unwrap();
+    }
     s
 }
 
@@ -499,7 +504,7 @@ fn another_accounts_session_is_unknown() {
 fn read_session_shows_the_screen() {
     let t = mcp(None);
     add(&t, "alpha");
-    let session = t.cfg.tmux_session.clone();
+    let session = t.cfg().tmux_session;
     t.tmux
         .new_session_detached(
             &session,
@@ -552,7 +557,7 @@ fn start_session_opens_a_window_with_the_prompt() {
     let t = scoped("work", None);
     add_in(&t, "alpha", true);
     std::fs::create_dir_all(t.dir.path().join("claude-work")).unwrap();
-    let session = t.cfg.tmux_session.clone();
+    let session = t.cfg().tmux_session;
     t.tmux
         .new_session_detached(
             &session,
@@ -595,16 +600,17 @@ fn start_session_opens_a_window_with_the_prompt() {
 fn send_prompt_types_into_a_waiting_session_only() {
     let mut t = mcp(None);
     add(&t, "alpha");
-    let session = t.cfg.tmux_session.clone();
+    let session = t.cfg().tmux_session;
     // `cat` echoes what's typed, standing in for Claude's input box.
     t.tmux
         .new_session_detached(&session, "w", t.dir.path(), &["cat".into()])
         .unwrap();
     let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
-    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
     add_session(&t, "alpha", "busy", State::Working, Some(&window));
     add_session(&t, "alpha", "ask", State::NeedsYou, Some(&window));
     let me = add_session(&t, "alpha", "me", State::YourTurn, Some(&window));
+    // Last, so the window is marked as this one's (the others never reach it).
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
     let sent = t.do_send_prompt("wait".into(), "hello there".into());
     let busy = t.do_send_prompt("busy".into(), "x".into());
     let ask = t.do_send_prompt("ask".into(), "x".into());
@@ -624,7 +630,7 @@ fn send_prompt_types_into_a_waiting_session_only() {
 fn send_prompt_strips_control_characters() {
     let t = mcp(None);
     add(&t, "alpha");
-    let session = t.cfg.tmux_session.clone();
+    let session = t.cfg().tmux_session;
     let out = t.dir.path().join("typed");
     // Records exactly what arrives on the pane's input.
     t.tmux
@@ -652,4 +658,141 @@ fn send_prompt_strips_control_characters() {
     let text = String::from_utf8_lossy(&got);
     assert!(text.contains("hi[201~1there"), "{text:?}");
     assert_eq!(text.matches('\u{1b}').count(), 0, "{text:?}");
+}
+
+/// A window running a recorder that writes what it's sent to `<tmp>/typed`.
+fn recorder(t: &T) -> (String, std::path::PathBuf) {
+    let session = t.cfg().tmux_session;
+    let out = t.dir.path().join("typed");
+    t.tmux
+        .new_session_detached(
+            &session,
+            "w",
+            t.dir.path(),
+            &[
+                "sh".into(),
+                "-c".into(),
+                format!("stty raw -echo; cat > '{}'", out.display()),
+            ],
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
+    (window, out)
+}
+
+#[test]
+fn send_prompt_leaves_other_paste_buffers_alone() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let (window, _) = recorder(&t);
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    t.tmux
+        .cmd()
+        .args(["set-buffer", "-b", "grove-paste", "keep"])
+        .status()
+        .unwrap();
+    let sent = t.do_send_prompt("wait".into(), "hello there".into());
+    let kept = t
+        .tmux
+        .cmd()
+        .args(["show-buffer", "-b", "grove-paste"])
+        .output()
+        .unwrap();
+    t.tmux.kill_server();
+    sent.unwrap();
+    assert_eq!(String::from_utf8_lossy(&kept.stdout), "keep");
+}
+
+#[test]
+fn send_prompt_handles_long_text() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let (window, out) = recorder(&t);
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    let text = format!("{} END", "word ".repeat(5000));
+    let sent = t.do_send_prompt("wait".into(), text);
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    t.tmux.kill_server();
+    sent.unwrap();
+    let got = std::fs::read_to_string(&out).unwrap_or_default();
+    assert!(got.contains("END"), "got {} bytes", got.len());
+}
+
+#[test]
+fn a_window_that_isnt_the_sessions_is_refused() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let (window, out) = recorder(&t);
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    // A new tmux server reused the id for someone else's window.
+    t.tmux
+        .set_window_option(&window, "@grove_session", "another-session")
+        .unwrap();
+    let sent = t.do_send_prompt("wait".into(), "hello there".into());
+    let read = t.do_read_session("wait".into(), None);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    t.tmux.kill_server();
+    assert!(sent.unwrap_err().contains("gone"));
+    assert!(read.unwrap_err().contains("gone"));
+    assert_eq!(std::fs::read_to_string(&out).unwrap_or_default(), "");
+}
+
+#[test]
+fn send_prompt_refuses_shell_and_slash_commands() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let (window, out) = recorder(&t);
+    add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
+    let bang = t.do_send_prompt("wait".into(), "  !rm -rf ~".into());
+    let slash = t.do_send_prompt("wait".into(), "/permissions".into());
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    t.tmux.kill_server();
+    assert!(bang.unwrap_err().contains('!'));
+    assert!(slash.unwrap_err().contains('/'));
+    assert_eq!(std::fs::read_to_string(&out).unwrap_or_default(), "");
+}
+
+#[test]
+fn a_full_handle_naming_two_sessions_is_ambiguous() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    add_session(&t, "alpha", "s1", State::Working, None);
+    let mut dup = add_session(&t, "alpha", "s1", State::Working, None);
+    dup.id = "id-other".into();
+    t.store.save_session(&dup).unwrap();
+    let e = t.session("alpha:s1").unwrap_err();
+    assert!(e.contains("id-alpha-s1") && e.contains("id-other"), "{e}");
+}
+
+#[test]
+fn scope_follows_config_edits_without_a_restart() {
+    let d = tempfile::tempdir().unwrap();
+    let paths = Paths::new(d.path().join("home"));
+    paths.ensure().unwrap();
+    let work = d.path().join("work");
+    std::fs::create_dir_all(work.join("alpha")).unwrap();
+    let store = Store::new(paths.clone());
+    store
+        .add_project(&Project {
+            name: "alpha".into(),
+            path: work.join("alpha"),
+            color: None,
+            summary: None,
+        })
+        .unwrap();
+    let env = |k: &str| (k == "GROVE_ACCOUNT").then(|| "default".to_string());
+    let m = GroveMcp::new(store, crate::tmux::Tmux::new("x"), None, &env);
+    assert!(m.do_list_projects().unwrap().contains("alpha"));
+    std::fs::write(
+        paths.config_file(),
+        format!(
+            "[accounts.work]\ndir = \"{}\"\nfolder = \"{}\"\n",
+            d.path().join("claude-work").display(),
+            work.display()
+        ),
+    )
+    .unwrap();
+    let after = m.do_list_projects().unwrap();
+    assert!(!after.contains("alpha"), "{after}");
 }

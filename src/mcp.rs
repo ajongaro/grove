@@ -1,6 +1,7 @@
 //! `grove mcp`: stdio MCP server exposing Grove's projects.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -13,16 +14,20 @@ use crate::model::{Project, Session, State};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
+/// Config plus the account (or the error every tool returns).
+type Scope = (Config, Result<String, String>);
+
 /// Tool logic, separate from the rmcp wrappers so tests can call it directly.
 /// `Err` text is returned to Claude as a tool error.
 #[derive(Clone)]
 pub struct GroveMcp {
     pub store: Store,
-    pub cfg: Config,
     /// Grove's own tmux server, for sessions.
     pub tmux: Tmux,
-    /// The account every tool is limited to, or the error each one returns.
-    pub scope: Result<String, String>,
+    state: Arc<RwLock<Scope>>,
+    /// Re-reads config.toml before each tool call, so an account folder
+    /// added while Claude runs takes effect at once (None in tests).
+    reload: Option<Arc<dyn Fn() -> Scope + Send + Sync>>,
     /// From `$GROVE_PROJECT`, set on every Grove session's window.
     pub default_project: Option<String>,
     /// From `$GROVE_SESSION`: this Claude's own session.
@@ -64,13 +69,49 @@ pub fn scope_for(
 }
 
 impl GroveMcp {
-    fn account(&self) -> Result<&str, String> {
-        self.scope.as_deref().map_err(Clone::clone)
+    /// A server with fixed config and account (tests).
+    #[cfg(test)]
+    pub fn fixed(
+        store: Store,
+        cfg: Config,
+        tmux: Tmux,
+        scope: Result<String, String>,
+        default_project: Option<String>,
+    ) -> Self {
+        Self {
+            store,
+            tmux,
+            state: Arc::new(RwLock::new((cfg, scope))),
+            reload: None,
+            default_project,
+            own_session: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_scope(&self, scope: Result<String, String>) {
+        self.state.write().unwrap().1 = scope;
+    }
+
+    pub fn cfg(&self) -> Config {
+        self.state.read().unwrap().0.clone()
+    }
+
+    pub fn scope(&self) -> Result<String, String> {
+        self.state.read().unwrap().1.clone()
+    }
+
+    /// The account, after re-reading config. Every tool starts here.
+    fn account(&self) -> Result<String, String> {
+        if let Some(reload) = &self.reload {
+            *self.state.write().unwrap() = reload();
+        }
+        self.scope()
     }
 
     fn in_scope(&self, p: &Project) -> bool {
-        self.account()
-            .is_ok_and(|a| self.cfg.account_for(&p.path).name == a)
+        self.scope()
+            .is_ok_and(|a| self.cfg().account_for(&p.path).name == a)
     }
 
     /// This account's projects (unreadable project files are skipped).
@@ -153,7 +194,7 @@ impl GroveMcp {
             "Name: {}\nPath: {}\nAccount: {}\nColor: {}\nSummary: {}\n\nSessions: {}\n",
             p.name,
             p.path.display(),
-            self.cfg.account_for(&p.path).name,
+            self.cfg().account_for(&p.path).name,
             p.color.as_deref().unwrap_or("(none)"),
             p.summary.as_deref().unwrap_or("(none)"),
             mcp_overview::counts(&sessions),
@@ -205,8 +246,22 @@ impl GroveMcp {
         let all = self.sessions(None)?;
         let handle = |s: &Session, p: &Project| format!("{}:{}", p.slug(), s.name);
         let key = key.trim();
-        if let Some(hit) = all.iter().find(|(s, p)| s.id == key || handle(s, p) == key) {
+        if let Some(hit) = all.iter().find(|(s, _)| s.id == key) {
             return Ok(hit.clone());
+        }
+        let exact: Vec<_> = all.iter().filter(|(s, p)| handle(s, p) == key).collect();
+        match exact.as_slice() {
+            [one] => return Ok((*one).clone()),
+            [] => {}
+            many => {
+                return Err(format!(
+                    "\"{key}\" is more than one session; use an id: {}",
+                    many.iter()
+                        .map(|(s, _)| s.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
         }
         let named: Vec<_> = all.iter().filter(|(s, _)| s.name == key).collect();
         match named.as_slice() {
@@ -229,6 +284,29 @@ impl GroveMcp {
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+        }
+    }
+
+    /// The session's tmux window, if it's still that session's. Window ids
+    /// restart on a new tmux server, so a stale record could name someone
+    /// else's window: Grove marks each window with its session's id.
+    fn window(&self, s: &Session, p: &Project, handle: &str) -> Result<String, String> {
+        let w = s
+            .tmux_window
+            .clone()
+            .ok_or_else(|| format!("{handle} has no window yet (it may still be starting)"))?;
+        let ours = match self.tmux.window_option(&w, "@grove_session") {
+            Some(id) => id == s.id,
+            // Windows from before Grove marked them: at least the account.
+            None => {
+                self.tmux.window_option(&w, "@grove_account").as_deref()
+                    == Some(self.cfg().account_for(&p.path).name.as_str())
+            }
+        };
+        if ours {
+            Ok(w)
+        } else {
+            Err(format!("{handle}'s window is gone"))
         }
     }
 
@@ -267,13 +345,10 @@ impl GroveMcp {
         let (s, p) = self.session(&session)?;
         let n = lines.unwrap_or(60).clamp(1, 500);
         let handle = format!("{}:{}", p.slug(), s.name);
-        let window = s
-            .tmux_window
-            .as_deref()
-            .ok_or_else(|| format!("{handle} has no window yet (it may still be starting)"))?;
+        let window = self.window(&s, &p, &handle)?;
         let screen = self
             .tmux
-            .capture(window, n)
+            .capture(&window, n)
             .map_err(|_| format!("{handle}'s window is gone"))?;
         let kept: Vec<&str> = screen.trim_end().lines().collect();
         Ok(kept[kept.len().saturating_sub(n)..].join("\n"))
@@ -297,13 +372,13 @@ impl GroveMcp {
         bin: &str,
     ) -> Result<String, String> {
         let p = self.project(project)?;
-        if !self.tmux.has_session(&self.cfg.tmux_session) {
+        if !self.tmux.has_session(&self.cfg().tmux_session) {
             return Err("Grove isn't running: start it with `grove` in a terminal".into());
         }
         let s = crate::launch::start_with_bin(
             &self.tmux,
             &self.store,
-            &self.cfg,
+            &self.cfg(),
             &p,
             name,
             prompt,
@@ -314,7 +389,7 @@ impl GroveMcp {
             "Started {}:{} on the {} account.",
             p.slug(),
             s.name,
-            self.cfg.account_for(&p.path).name
+            self.cfg().account_for(&p.path).name
         ))
     }
 
@@ -346,21 +421,31 @@ impl GroveMcp {
             .chars()
             .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
             .collect();
-        if text.trim().is_empty() {
+        let start = text.trim_start();
+        if start.is_empty() {
             return Err("nothing to send".into());
         }
-        let window = s
-            .tmux_window
-            .as_deref()
-            .ok_or_else(|| format!("{handle} has no window"))?;
+        // `!` runs a shell command and `/` a slash command in Claude's input,
+        // neither through that session's permission prompts.
+        if start.starts_with('!') {
+            return Err(
+                "text starting with \"!\" would run a shell command there; rephrase it".into(),
+            );
+        }
+        if start.starts_with('/') {
+            return Err(
+                "text starting with \"/\" would run a slash command there; rephrase it".into(),
+            );
+        }
+        let window = self.window(&s, &p, &handle)?;
         self.tmux
-            .paste_text(window, &text)
-            .map_err(|_| format!("{handle}'s window is gone"))?;
+            .paste_text(&window, &text)
+            .map_err(|e| format!("couldn't type into {handle}: {e:#}"))?;
         // Claude's input may need a beat after a paste before Enter (spec:
         // settled by trial).
         std::thread::sleep(std::time::Duration::from_millis(150));
         self.tmux
-            .send_keys(window, &["Enter"])
+            .send_keys(&window, &["Enter"])
             .map_err(|e| format!("{e:#}"))?;
         Ok(format!("Sent to {handle}."))
     }
@@ -601,26 +686,30 @@ impl GroveMcp {
         env: &dyn Fn(&str) -> Option<String>,
     ) -> Self {
         let env = |k: &str| env(k).filter(|v| !v.is_empty());
-        let (cfg, scope) = match crate::config::load_config(&store.paths) {
-            Ok(cfg) => {
-                let scope = scope_for(
-                    &cfg,
-                    account_flag.as_deref(),
-                    env("GROVE_ACCOUNT").as_deref(),
-                    env("CLAUDE_CONFIG_DIR").as_deref(),
-                );
-                (cfg, scope)
+        let paths = store.paths.clone();
+        let (grove_account, claude_dir) = (env("GROVE_ACCOUNT"), env("CLAUDE_CONFIG_DIR"));
+        let reload = move || -> Scope {
+            match crate::config::load_config(&paths) {
+                Ok(cfg) => {
+                    let scope = scope_for(
+                        &cfg,
+                        account_flag.as_deref(),
+                        grove_account.as_deref(),
+                        claude_dir.as_deref(),
+                    );
+                    (cfg, scope)
+                }
+                Err(e) => (
+                    Config::default(),
+                    Err(format!("Grove's config.toml: {e:#}")),
+                ),
             }
-            Err(e) => (
-                Config::default(),
-                Err(format!("Grove's config.toml: {e:#}")),
-            ),
         };
         Self {
             store,
-            cfg,
             tmux,
-            scope,
+            state: Arc::new(RwLock::new(reload())),
+            reload: Some(Arc::new(reload)),
             default_project: env("GROVE_PROJECT"),
             own_session: env("GROVE_SESSION"),
         }

@@ -47,13 +47,18 @@ pub fn ago(t: DateTime<Utc>, now: DateTime<Utc>) -> String {
     }
 }
 
+/// `git -C dir <args>`, never taking optional locks: a status that runs past
+/// the timeout is killed, and a killed git would leave `index.lock` behind.
+fn git_cmd(dir: &Path, args: &[&str]) -> std::process::Command {
+    let mut c = std::process::Command::new("git");
+    c.arg("--no-optional-locks").arg("-C").arg(dir).args(args);
+    c
+}
+
 /// `git -C dir <args>`'s stdout, or None on failure or after 2 seconds.
 fn git_out(dir: &Path, args: &[&str]) -> Option<String> {
-    use std::process::{Command, Stdio};
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
+    use std::process::Stdio;
+    let mut child = git_cmd(dir, args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -82,14 +87,17 @@ pub fn git(dir: &Path) -> String {
     let Some(branch) = git_out(dir, &["rev-parse", "--abbrev-ref", "HEAD"]) else {
         return "git: none".into();
     };
-    let changed = git_out(dir, &["status", "--porcelain"])
-        .map(|s| s.lines().count())
-        .unwrap_or(0);
+    let changed = match git_out(dir, &["status", "--porcelain"]) {
+        Some(s) => {
+            let n = s.lines().count();
+            format!("{n} file{}", if n == 1 { "" } else { "s" })
+        }
+        None => "unknown".into(),
+    };
     let log = git_out(dir, &["log", "-5", "--format=  %h %s (%cr)"]).unwrap_or_default();
     format!(
-        "branch: {}\nuncommitted: {changed} file{}\nrecent commits:\n{}",
+        "branch: {}\nuncommitted: {changed}\nrecent commits:\n{}",
         branch.trim(),
-        if changed == 1 { "" } else { "s" },
         log.trim_end()
     )
 }
@@ -204,5 +212,15 @@ mod tests {
         assert!(e.contains("line 40") && !e.contains("line 41"), "{e}");
         assert!(e.ends_with("(10 more lines)"), "{e}");
         assert_eq!(excerpt(&d.path().join("nope.md"), 40), None);
+    }
+
+    #[test]
+    fn git_never_takes_optional_locks() {
+        let c = git_cmd(Path::new("/x"), &["status", "--porcelain"]);
+        let args: Vec<_> = c
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args[0], "--no-optional-locks", "{args:?}");
     }
 }

@@ -272,6 +272,8 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
         let t = t.trim();
         if t.is_empty() {
             Err("a to-do needs some text".into())
+        } else if t.contains(['\n', '\r']) {
+            Err("a to-do is one line; add each one separately".into())
         } else {
             Ok(t.to_string())
         }

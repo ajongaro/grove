@@ -344,3 +344,10 @@ fn serialize_items_matches_the_dashboard_format() {
     assert_eq!(serialize_items(&it), "- [ ] a\n- [x] b\n");
     assert_eq!(parse(&serialize_items(&it)), it);
 }
+
+#[test]
+fn text_with_a_line_break_is_refused() {
+    let start = items(&[("a", false)]);
+    assert!(apply_ops(&start, &[Op::Add("x\n- [x] y".into())]).is_err());
+    assert!(apply_ops(&start, &[Op::Reword(1, "x\ry".into())]).is_err());
+}

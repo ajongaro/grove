@@ -221,19 +221,29 @@ impl Tmux {
         self.run(&args).map(|_| ())
     }
 
-    /// Pastes `text` into `target` as a paste (bracketed if the program asked).
+    /// Pastes `text` into `target` as a paste (bracketed if the program
+    /// asked). The text goes in on stdin, so tmux's command size doesn't
+    /// limit it, through a buffer of its own, so pastes running at the same
+    /// time can't swap texts.
     pub fn paste_text(&self, target: &str, text: &str) -> Result<()> {
-        self.run(&["set-buffer", "-b", "grove-paste", "--", text])?;
-        self.run(&[
-            "paste-buffer",
-            "-p",
-            "-d",
-            "-b",
-            "grove-paste",
-            "-t",
-            target,
-        ])
-        .map(|_| ())
+        use std::io::Write;
+        let buf = format!("grove-paste-{}", uuid::Uuid::new_v4());
+        let mut child = self
+            .cmd()
+            .args(["load-buffer", "-b", &buf, "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("running tmux")?;
+        child
+            .stdin
+            .take()
+            .context("tmux stdin")?
+            .write_all(text.as_bytes())?;
+        check(&child.wait_with_output()?, &["load-buffer"])?;
+        self.run(&["paste-buffer", "-p", "-d", "-b", &buf, "-t", target])
+            .map(|_| ())
     }
 
     pub fn display_message(&self, target: &str, msg: &str) {

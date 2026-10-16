@@ -399,7 +399,16 @@ fn build_stamp_changes_when_the_binary_is_replaced() {
 #[test]
 fn a_prompt_that_could_be_read_as_an_option_or_command_is_refused() {
     let e = env();
-    for bad in ["--dangerously-skip-permissions", "-p", "  --x y", "update"] {
+    let long = "word ".repeat(2000);
+    for bad in [
+        "--dangerously-skip-permissions",
+        "-p",
+        "  --x y",
+        "update",
+        "!ls -la ~",
+        "/review this please",
+        long.as_str(),
+    ] {
         let err = build_with_bin(
             &cfg(&e),
             &e.paths,
@@ -423,4 +432,35 @@ fn a_prompt_that_could_be_read_as_an_option_or_command_is_refused() {
     )
     .unwrap();
     assert_eq!(ok.argv.last().map(String::as_str), Some("fix the - flag"));
+}
+
+#[test]
+fn start_refuses_a_name_a_live_session_has() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-dupname", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    let stub = e.proj_dir.join("fake claude");
+    std::fs::write(&stub, "#!/bin/sh\nsleep 30\n").unwrap();
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let start = |name: &str| {
+        start_with_bin(
+            &tmux,
+            &store,
+            &cfg(&e),
+            &project(&e),
+            Some(name.into()),
+            None,
+            stub.to_str().unwrap(),
+        )
+    };
+    let first = start("fix");
+    let second = start("fix");
+    let window = first.as_ref().ok().and_then(|s| s.tmux_window.clone());
+    let marked = window.and_then(|w| tmux.window_option(&w, "@grove_session"));
+    tmux.kill_server();
+    let first = first.unwrap();
+    assert!(format!("{:#}", second.unwrap_err()).contains("fix"));
+    assert_eq!(marked.as_deref(), Some(first.id.as_str()));
 }

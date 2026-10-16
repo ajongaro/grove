@@ -20,6 +20,9 @@ pub struct LaunchSpec {
 
 /// `claude` resolved to an absolute path via PATH, else plain "claude".
 /// Resolving here means the window doesn't depend on the tmux server's PATH.
+/// A first prompt rides on the tmux command line, which tmux caps.
+pub const MAX_PROMPT: usize = 4000;
+
 pub fn claude_bin() -> String {
     std::env::var_os("PATH")
         .and_then(|p| {
@@ -70,6 +73,16 @@ fn build_with_bin(
     if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
         if p.starts_with('-') {
             bail!("a first prompt can't start with \"-\"");
+        }
+        // Shell and slash commands would skip that session's permission prompts.
+        if p.starts_with('!') || p.starts_with('/') {
+            bail!("a first prompt can't start with \"!\" or \"/\"");
+        }
+        if p.len() > MAX_PROMPT {
+            bail!(
+                "a first prompt can be at most {MAX_PROMPT} bytes (this one is {}); start the session, then send the rest",
+                p.len()
+            );
         }
         if !p.contains(char::is_whitespace) {
             bail!("a first prompt needs more than one word");
@@ -133,6 +146,13 @@ pub fn start_with_bin(
         .map(|n| n.trim().replace([':', '.'], "-"))
         .filter(|n| !n.is_empty());
     let name = name.unwrap_or_else(|| next_session_name(store, &slug));
+    if store
+        .list_sessions(Some(&slug))
+        .iter()
+        .any(|s| s.state != State::Ended && s.name == name)
+    {
+        bail!("{slug} already has a session called {name}");
+    }
     let id = uuid::Uuid::new_v4().to_string();
     // Validate everything before touching disk or tmux.
     let spec = build_with_bin(
@@ -175,6 +195,8 @@ pub fn start_with_bin(
     if let Some(color) = &project.color {
         let _ = tmux.set_window_option(&window, "window-status-style", &format!("fg={color}"));
     }
+    // Which session this window is, for the MCP tools (mcp.rs `window`).
+    let _ = tmux.set_window_option(&window, "@grove_session", &session.id);
     // Read by @grove_account_tag in the status bar (runfiles.rs).
     let _ = tmux.set_window_option(&window, "@grove_account", &spec.account.name);
     let _ = tmux.set_window_option(
