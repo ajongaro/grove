@@ -100,6 +100,14 @@ impl Config {
             .unwrap_or_else(|| self.default_account())
     }
 
+    /// Every account: the default first, then the named ones.
+    pub fn all_accounts(&self) -> Vec<Account> {
+        std::iter::once(None)
+            .chain(self.accounts.keys().map(|k| Some(k.as_str())))
+            .filter_map(|n| self.account(n).ok())
+            .collect()
+    }
+
     /// An account by name, or the default for `None`.
     pub fn account(&self, name: Option<&str>) -> Result<Account> {
         let default = self.default_account();
