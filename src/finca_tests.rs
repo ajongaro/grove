@@ -999,7 +999,7 @@ fn facts_script_reports_the_machine() {
         f.grove,
         Some((
             home.join(".local/bin/grove").to_string_lossy().into(),
-            "grove 0.1.0".into()
+            format!("grove {}", env!("CARGO_PKG_VERSION"))
         ))
     );
 }
@@ -1071,7 +1071,7 @@ fn same_platform_install_copies_this_binary_via_a_swap() {
         )
     })
     .unwrap();
-    assert_eq!(v, "grove 0.1.0");
+    assert_eq!(v, format!("grove {}", env!("CARGO_PKG_VERSION")));
     assert_eq!(std::fs::read(&bin).unwrap(), std::fs::read(&exe).unwrap());
     assert!(
         !home.join(".local/bin/grove.new").exists(),
@@ -1121,7 +1121,7 @@ fn other_platform_ships_source_without_target_or_git() {
         r
     })
     .unwrap();
-    assert_eq!(v, "grove 0.1.0");
+    assert_eq!(v, format!("grove {}", env!("CARGO_PKG_VERSION")));
     let shipped = home.join("src/grove");
     assert!(shipped.join("src/main.rs").exists());
     assert_eq!(

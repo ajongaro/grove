@@ -892,11 +892,13 @@ pub mod testing {
         p
     }
 
-    /// A fake grove that answers --version and `status --json` with `json`.
+    /// A fake grove that answers --version (as this version) and
+    /// `status --json` with `json`.
     pub fn fake_grove(dir: &Path, json: &str) -> PathBuf {
         let p = dir.join("grove");
         let body = format!(
-            "#!/bin/sh\ncase \"$1\" in --version) echo 'grove 0.1.0';; status) cat <<'JSON'\n{json}\nJSON\n;; *) exit 2;; esac\n"
+            "#!/bin/sh\ncase \"$1\" in --version) echo 'grove {}';; status) cat <<'JSON'\n{json}\nJSON\n;; *) exit 2;; esac\n",
+            env!("CARGO_PKG_VERSION")
         );
         std::fs::write(&p, body).unwrap();
         std::fs::set_permissions(&p, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
