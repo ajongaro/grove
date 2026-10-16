@@ -259,7 +259,7 @@ fn blank() -> Item {
 
 /// Checklist lines (`-` or `*`, `[ ]`/`[x]`/`[X]`) become items; any other
 /// non-blank line becomes an open item with that text.
-fn parse(text: &str) -> Vec<Item> {
+pub fn parse(text: &str) -> Vec<Item> {
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())

@@ -6,6 +6,7 @@ mod hook;
 mod launch;
 mod log;
 mod mcp;
+mod mcp_overview;
 mod model;
 mod runfiles;
 mod setup;

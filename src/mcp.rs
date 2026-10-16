@@ -8,6 +8,7 @@ use rmcp::{ServiceExt, schemars, tool, tool_router};
 use serde::Deserialize;
 
 use crate::config::Config;
+use crate::mcp_overview;
 use crate::model::Project;
 use crate::store::Store;
 use crate::tmux::Tmux;
@@ -127,7 +128,15 @@ impl GroveMcp {
             .into_iter()
             .map(|p| {
                 let summary = p.summary.as_deref().unwrap_or("(no summary)");
-                format!("- {} — {} — {summary}", p.name, p.path.display())
+                let sessions = mcp_overview::live(self.store.list_sessions(Some(&p.slug())));
+                let open = crate::todo::open_count(&self.store.read_todos(&p.slug()));
+                format!(
+                    "- {} — {} — {summary}\n  sessions: {}; {open} open to-do{}",
+                    p.name,
+                    p.path.display(),
+                    mcp_overview::counts(&sessions),
+                    if open == 1 { "" } else { "s" }
+                )
             })
             .collect();
         Ok(if lines.is_empty() {
@@ -139,13 +148,38 @@ impl GroveMcp {
 
     pub fn do_get_project(&self, project: Option<String>) -> Result<String, String> {
         let p = self.project(project)?;
-        Ok(format!(
-            "Name: {}\nPath: {}\nColor: {}\nSummary: {}",
+        let slug = p.slug();
+        let now = chrono::Utc::now();
+        let sessions = mcp_overview::live(self.store.list_sessions(Some(&slug)));
+        let mut out = format!(
+            "Name: {}\nPath: {}\nAccount: {}\nColor: {}\nSummary: {}\n\nSessions: {}\n",
             p.name,
             p.path.display(),
+            self.cfg.account_for(&p.path).name,
             p.color.as_deref().unwrap_or("(none)"),
             p.summary.as_deref().unwrap_or("(none)"),
-        ))
+            mcp_overview::counts(&sessions),
+        );
+        for s in &sessions {
+            out.push_str(&format!(
+                "  {slug}:{} — {} — {}\n",
+                s.name,
+                s.state.label(),
+                mcp_overview::ago(s.updated_at, now)
+            ));
+        }
+        let todos = crate::todo::parse(&self.store.read_todos(&slug));
+        out.push_str(&format!(
+            "\nTo-dos:\n{}\n\n{}\n",
+            numbered(&todos),
+            mcp_overview::git(&p.path)
+        ));
+        for doc in ["README.md", "CLAUDE.md"] {
+            if let Some(e) = mcp_overview::excerpt(&p.path.join(doc), 40) {
+                out.push_str(&format!("\n--- {doc} ---\n{e}\n"));
+            }
+        }
+        Ok(out)
     }
 
     pub fn do_update_project(
@@ -175,6 +209,26 @@ impl GroveMcp {
         self.store.save_project(&p).map_err(|e| e.to_string())?;
         self.do_get_project(Some(p.name))
     }
+}
+
+/// `1. [ ] text` lines, or `(no to-dos)`.
+fn numbered(items: &[crate::todo::Item]) -> String {
+    if items.is_empty() {
+        return "(no to-dos)".into();
+    }
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            format!(
+                "{}. [{}] {}",
+                i + 1,
+                if it.done { 'x' } else { ' ' },
+                it.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]

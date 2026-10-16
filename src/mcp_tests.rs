@@ -331,3 +331,40 @@ fn new_reads_account_project_and_session_from_env() {
     assert_eq!(m.default_project.as_deref(), Some("alpha"));
     assert_eq!(m.own_session.as_deref(), Some("sid"));
 }
+
+#[test]
+fn get_project_shows_readme_sessions_and_todos() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let dir = t.dir.path().join("code/alpha");
+    std::fs::write(dir.join("README.md"), "# Alpha\nDoes alpha things.\n").unwrap();
+    std::fs::write(dir.join("CLAUDE.md"), "Use tabs.\n").unwrap();
+    t.store
+        .write_todos("alpha", "- [ ] ship it\n- [x] start\n")
+        .unwrap();
+    let out = t.do_get_project(Some("alpha".into())).unwrap();
+    for want in [
+        "Does alpha things.",
+        "Use tabs.",
+        "git: none",
+        "1. [ ] ship it",
+        "2. [x] start",
+        "no sessions",
+    ] {
+        assert!(out.contains(want), "missing {want:?} in:\n{out}");
+    }
+}
+
+#[test]
+fn list_projects_shows_counts_and_open_todos() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    t.store
+        .write_todos("alpha", "- [ ] a\n- [ ] b\n- [x] c\n")
+        .unwrap();
+    let out = t.do_list_projects().unwrap();
+    assert!(
+        out.contains("no sessions") && out.contains("2 open to-dos"),
+        "{out}"
+    );
+}
