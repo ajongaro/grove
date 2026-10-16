@@ -65,6 +65,7 @@ fn build_sets_account_project_and_session_env() {
         Some(e.claude_dir.to_str().unwrap())
     );
     assert_eq!(env_val(&spec, "GROVE_PROJECT"), Some("my-proj"));
+    assert_eq!(env_val(&spec, "GROVE_ACCOUNT"), Some("claude play"));
     assert_eq!(env_val(&spec, "GROVE_SESSION"), Some("uuid-1"));
     assert_eq!(
         env_val(&spec, "GROVE_HOME"),

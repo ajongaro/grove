@@ -18,6 +18,9 @@ fn mcp_lists_five_tools_and_answers_a_call() {
         .arg("mcp")
         .env("GROVE_HOME", &home)
         .env("GROVE_PROJECT", "demo")
+        // Tools serve one account; a fresh GROVE_HOME has only the default.
+        .env("GROVE_ACCOUNT", "default")
+        .env_remove("CLAUDE_CONFIG_DIR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

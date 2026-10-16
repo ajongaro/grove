@@ -96,9 +96,21 @@ enum Cmd {
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
-    /// Internal: stdio MCP server for Grove's projects.
-    #[command(hide = true)]
-    Mcp,
+    /// MCP server giving Claude Grove's projects, sessions and to-dos.
+    /// `grove mcp setup` prints how to add it to each Claude account.
+    Mcp {
+        /// The Claude account these tools are for (a name from config.toml).
+        #[arg(long)]
+        account: Option<String>,
+        #[command(subcommand)]
+        cmd: Option<McpCmd>,
+    },
+}
+
+#[derive(Subcommand)]
+enum McpCmd {
+    /// Print the command that adds Grove's tools to each Claude account.
+    Setup,
 }
 
 #[derive(Subcommand)]
@@ -137,12 +149,17 @@ fn main() {
     let paths = Paths::from_env();
     match cli.cmd {
         Some(Cmd::Hook) => run_hook(paths),
-        Some(Cmd::Mcp) => {
+        Some(Cmd::Mcp {
+            cmd: Some(McpCmd::Setup),
+            ..
+        }) => exit_on_err(mcp_setup(&paths)),
+        Some(Cmd::Mcp { account, cmd: None }) => {
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
-            if let Err(e) = rt.block_on(mcp::serve(Store::new(paths.clone()))) {
+            let tmux = grove_tmux(&paths);
+            if let Err(e) = rt.block_on(mcp::serve(Store::new(paths.clone()), tmux, account)) {
                 log::error(&paths, "mcp", &format!("{e:#}"));
                 std::process::exit(1);
             }
@@ -161,6 +178,17 @@ fn main() {
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),
     }
+}
+
+/// `grove mcp setup`.
+fn mcp_setup(paths: &Paths) -> Result<()> {
+    let cfg = load_config(paths)?;
+    let home = PathBuf::from(std::env::var("HOME").context("HOME isn't set")?);
+    print!(
+        "{}",
+        mcp::setup_commands(&cfg, &runfiles::grove_exe()?, &home)
+    );
+    Ok(())
 }
 
 fn exit_on_err(r: Result<()>) {

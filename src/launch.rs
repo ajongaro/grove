@@ -62,6 +62,7 @@ fn build_with_bin(
         window_name.clone(),
     ];
     argv.extend(cfg.claude_args.iter().cloned());
+    let account_name = account.name.clone();
     Ok(LaunchSpec {
         window_name,
         account,
@@ -70,6 +71,7 @@ fn build_with_bin(
             ("CLAUDE_CONFIG_DIR".into(), lossy(account_path)),
             ("GROVE_HOME".into(), lossy(paths.home.clone())),
             ("GROVE_PROJECT".into(), slug),
+            ("GROVE_ACCOUNT".into(), account_name),
             ("GROVE_SESSION".into(), session_id.into()),
         ],
         argv,

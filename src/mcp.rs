@@ -1,5 +1,7 @@
 //! `grove mcp`: stdio MCP server exposing Grove's projects.
 
+use std::path::{Path, PathBuf};
+
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{ServiceExt, schemars, tool, tool_router};
@@ -17,12 +19,14 @@ pub struct GroveMcp {
     pub store: Store,
     pub cfg: Config,
     /// Grove's own tmux server, for sessions.
+    #[allow(dead_code)] // read by the session tools (plan tasks 5 and 6)
     pub tmux: Tmux,
     /// The account every tool is limited to, or the error each one returns.
     pub scope: Result<String, String>,
     /// From `$GROVE_PROJECT`, set on every Grove session's window.
     pub default_project: Option<String>,
     /// From `$GROVE_SESSION`: this Claude's own session.
+    #[allow(dead_code)] // read by send_prompt (plan task 6)
     pub own_session: Option<String>,
 }
 
@@ -214,27 +218,83 @@ impl GroveMcp {
     }
 }
 
-pub async fn serve(store: Store) -> anyhow::Result<()> {
-    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    let cfg = crate::config::load_config(&store.paths).unwrap_or_default();
-    let scope = scope_for(
-        &cfg,
-        None,
-        env("GROVE_ACCOUNT").as_deref(),
-        env("CLAUDE_CONFIG_DIR").as_deref(),
-    );
-    let service = GroveMcp {
-        store,
-        cfg,
-        tmux: Tmux::new("grove"),
-        scope,
-        default_project: env("GROVE_PROJECT"),
-        own_session: env("GROVE_SESSION"),
+impl GroveMcp {
+    /// `env` reads environment variables (tests pass their own).
+    pub fn new(
+        store: Store,
+        tmux: Tmux,
+        account_flag: Option<String>,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Self {
+        let env = |k: &str| env(k).filter(|v| !v.is_empty());
+        let (cfg, scope) = match crate::config::load_config(&store.paths) {
+            Ok(cfg) => {
+                let scope = scope_for(
+                    &cfg,
+                    account_flag.as_deref(),
+                    env("GROVE_ACCOUNT").as_deref(),
+                    env("CLAUDE_CONFIG_DIR").as_deref(),
+                );
+                (cfg, scope)
+            }
+            Err(e) => (
+                Config::default(),
+                Err(format!("Grove's config.toml: {e:#}")),
+            ),
+        };
+        Self {
+            store,
+            cfg,
+            tmux,
+            scope,
+            default_project: env("GROVE_PROJECT"),
+            own_session: env("GROVE_SESSION"),
+        }
     }
-    .serve(rmcp::transport::stdio())
-    .await?;
+}
+
+pub async fn serve(store: Store, tmux: Tmux, account_flag: Option<String>) -> anyhow::Result<()> {
+    let service = GroveMcp::new(store, tmux, account_flag, &|k| std::env::var(k).ok())
+        .serve(rmcp::transport::stdio())
+        .await?;
     service.waiting().await?;
     Ok(())
+}
+
+/// Where Claude keeps user-scope MCP servers for the account in `dir`:
+/// `~/.claude.json` for the default `~/.claude` (used without
+/// CLAUDE_CONFIG_DIR), else `<dir>/.claude.json`.
+#[allow(dead_code)] // read by grove doctor (plan task 7)
+pub fn claude_json(dir: &Path, home: &Path) -> PathBuf {
+    if dir == home.join(".claude") {
+        home.join(".claude.json")
+    } else {
+        dir.join(".claude.json")
+    }
+}
+
+/// `grove mcp setup`: one `claude mcp add` per account, to paste.
+pub fn setup_commands(cfg: &Config, exe: &Path, home: &Path) -> String {
+    let q = |s: &str| format!("'{}'", s.replace('\'', r"'\''"));
+    let mut out = String::from(
+        "Give Claude Grove's tools in every session, not only Grove's own.\nRun each line once (Grove doesn't change Claude's settings itself):\n",
+    );
+    for a in cfg.all_accounts() {
+        let prefix = if a.dir == home.join(".claude") {
+            String::new()
+        } else {
+            format!("CLAUDE_CONFIG_DIR={} ", q(&a.dir.to_string_lossy()))
+        };
+        out.push_str(&format!(
+            "\n# {} ({})\n{prefix}claude mcp add --scope user grove -- {} mcp --account {}\n",
+            a.name,
+            a.dir.display(),
+            q(&exe.to_string_lossy()),
+            q(&a.name),
+        ));
+    }
+    out.push_str("\nCheck with: grove doctor\n");
+    out
 }
 
 #[cfg(test)]

@@ -250,3 +250,84 @@ fn update_project_with_nothing_to_change_errors() {
     add(&m, "alpha");
     assert!(m.do_update_project(None, None, None).is_err());
 }
+
+#[test]
+fn setup_prints_one_command_per_account() {
+    let d = tempfile::tempdir().unwrap();
+    let cfg = two_accounts(d.path());
+    let out = setup_commands(
+        &cfg,
+        std::path::Path::new("/opt/homebrew/opt/grove/bin/grove"),
+        d.path(),
+    );
+    let work = d.path().join("claude-work");
+    assert!(
+        out.contains(&format!(
+            "CLAUDE_CONFIG_DIR='{}' claude mcp add --scope user grove -- '/opt/homebrew/opt/grove/bin/grove' mcp --account 'work'",
+            work.display()
+        )),
+        "{out}"
+    );
+    assert!(out.contains("--account 'play'"), "{out}");
+}
+
+#[test]
+fn setup_for_the_default_claude_dir_has_no_prefix() {
+    let d = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        claude_config_dir: d.path().join(".claude").to_string_lossy().into(),
+        ..Config::default()
+    };
+    let out = setup_commands(&cfg, std::path::Path::new("/b/grove"), d.path());
+    assert!(
+        out.contains("\nclaude mcp add --scope user grove -- '/b/grove' mcp --account 'default'"),
+        "{out}"
+    );
+    assert!(!out.contains("CLAUDE_CONFIG_DIR="), "{out}");
+}
+
+#[test]
+fn claude_json_location() {
+    let home = std::path::Path::new("/home/me");
+    assert_eq!(
+        claude_json(&home.join(".claude"), home),
+        home.join(".claude.json")
+    );
+    assert_eq!(
+        claude_json(&home.join(".claude-work"), home),
+        home.join(".claude-work/.claude.json")
+    );
+}
+
+#[test]
+fn a_config_error_reaches_every_tool() {
+    let d = tempfile::tempdir().unwrap();
+    let paths = Paths::new(d.path().join("home"));
+    paths.ensure().unwrap();
+    std::fs::write(paths.config_file(), "this is = = not toml").unwrap();
+    let m = GroveMcp::new(
+        Store::new(paths),
+        crate::tmux::Tmux::new("x"),
+        Some("work".into()),
+        &|_| None,
+    );
+    let e = m.do_list_projects().unwrap_err();
+    assert!(e.contains("config"), "{e}");
+}
+
+#[test]
+fn new_reads_account_project_and_session_from_env() {
+    let d = tempfile::tempdir().unwrap();
+    let paths = Paths::new(d.path().join("home"));
+    paths.ensure().unwrap();
+    let env = |k: &str| match k {
+        "GROVE_ACCOUNT" => Some("default".to_string()),
+        "GROVE_PROJECT" => Some("alpha".to_string()),
+        "GROVE_SESSION" => Some("sid".to_string()),
+        _ => None,
+    };
+    let m = GroveMcp::new(Store::new(paths), crate::tmux::Tmux::new("x"), None, &env);
+    assert_eq!(m.scope, Ok("default".into()));
+    assert_eq!(m.default_project.as_deref(), Some("alpha"));
+    assert_eq!(m.own_session.as_deref(), Some("sid"));
+}
