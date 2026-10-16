@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 #[test]
-fn mcp_lists_five_tools_and_answers_a_call() {
+fn mcp_lists_its_tools_and_answers_a_call() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join("projects")).unwrap();
@@ -52,7 +52,16 @@ fn mcp_lists_five_tools_and_answers_a_call() {
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     names.sort();
-    assert_eq!(names, ["get_project", "list_projects", "update_project"]);
+    assert_eq!(
+        names,
+        [
+            "edit_todos",
+            "get_project",
+            "get_todos",
+            "list_projects",
+            "update_project"
+        ]
+    );
 
     send(
         serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project","arguments":{}}}),

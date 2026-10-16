@@ -368,3 +368,60 @@ fn list_projects_shows_counts_and_open_todos() {
         "{out}"
     );
 }
+
+fn op(op: &str, n: Option<usize>, text: Option<&str>) -> TodoOpArg {
+    TodoOpArg {
+        op: op.into(),
+        n,
+        text: text.map(str::to_string),
+    }
+}
+
+#[test]
+fn edit_todos_saves_and_returns_the_list() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    t.store.write_todos("alpha", "- [ ] a\n").unwrap();
+    let out = t
+        .do_edit_todos(
+            Some("alpha".into()),
+            vec![op("check", Some(1), None), op("add", None, Some("b"))],
+        )
+        .unwrap();
+    assert!(
+        out.contains("1. [x] a") && out.contains("2. [ ] b"),
+        "{out}"
+    );
+    assert_eq!(t.store.read_todos("alpha"), "- [x] a\n- [ ] b\n");
+}
+
+#[test]
+fn a_bad_op_saves_nothing() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    t.store.write_todos("alpha", "- [ ] a\n").unwrap();
+    for bad in [
+        op("check", Some(5), None),
+        op("frob", Some(1), None),
+        op("reword", Some(1), None),
+    ] {
+        assert!(
+            t.do_edit_todos(Some("alpha".into()), vec![op("add", None, Some("x")), bad])
+                .is_err()
+        );
+    }
+    assert_eq!(t.store.read_todos("alpha"), "- [ ] a\n");
+}
+
+#[test]
+fn todos_of_another_account_are_hidden() {
+    let t = scoped("work", None);
+    add_in(&t, "beta", false);
+    t.store.write_todos("beta", "- [ ] secret\n").unwrap();
+    assert!(t.do_get_todos(Some("beta".into())).is_err());
+    assert!(
+        t.do_edit_todos(Some("beta".into()), vec![op("add", None, Some("x"))])
+            .is_err()
+    );
+    assert_eq!(t.store.read_todos("beta"), "- [ ] secret\n");
+}

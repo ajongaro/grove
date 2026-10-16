@@ -289,3 +289,58 @@ fn at_top_only_on_the_first_item_with_nothing_half_typed() {
     assert!(!t.at_top());
     assert!(loaded("").at_top());
 }
+
+fn items(spec: &[(&str, bool)]) -> Vec<Item> {
+    spec.iter()
+        .map(|(t, d)| Item {
+            text: t.to_string(),
+            done: *d,
+        })
+        .collect()
+}
+
+#[test]
+fn ops_number_the_original_list() {
+    let start = items(&[("a", false), ("b", false), ("c", false)]);
+    let out = apply_ops(
+        &start,
+        &[
+            Op::Remove(1),
+            Op::Check(3),
+            Op::Reword(2, "B".into()),
+            Op::Add("d".into()),
+        ],
+    )
+    .unwrap();
+    assert_eq!(out, items(&[("B", false), ("c", true), ("d", false)]));
+}
+
+#[test]
+fn uncheck_and_out_of_range() {
+    let start = items(&[("a", true)]);
+    assert_eq!(
+        apply_ops(&start, &[Op::Uncheck(1)]).unwrap(),
+        items(&[("a", false)])
+    );
+    let e = apply_ops(&start, &[Op::Check(2)]).unwrap_err();
+    assert!(e.contains('2') && e.contains("1 item"), "{e}");
+    assert!(apply_ops(&start, &[Op::Check(0)]).is_err());
+}
+
+#[test]
+fn an_op_on_a_removed_item_is_an_error() {
+    let start = items(&[("a", false)]);
+    assert!(apply_ops(&start, &[Op::Remove(1), Op::Check(1)]).is_err());
+}
+
+#[test]
+fn empty_text_is_refused() {
+    assert!(apply_ops(&[], &[Op::Add("  ".into())]).is_err());
+}
+
+#[test]
+fn serialize_items_matches_the_dashboard_format() {
+    let it = items(&[("a", false), ("b", true)]);
+    assert_eq!(serialize_items(&it), "- [ ] a\n- [x] b\n");
+    assert_eq!(parse(&serialize_items(&it)), it);
+}

@@ -68,10 +68,7 @@ impl Todos {
     }
 
     pub fn serialize(&self) -> String {
-        self.items
-            .iter()
-            .map(|i| format!("- [{}] {}\n", if i.done { 'x' } else { ' ' }, i.text))
-            .collect()
+        serialize_items(&self.items)
     }
 
     /// On the first item (or an empty list) with no half-typed command, so
@@ -243,6 +240,77 @@ impl Todos {
     fn clamp(&mut self) {
         self.idx = self.idx.min(self.items.len().saturating_sub(1));
     }
+}
+
+/// One edit to a list from outside the dashboard (the MCP tools).
+/// Numbers are 1-based positions in the list before any edit.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Op {
+    Add(String),
+    Check(usize),
+    Uncheck(usize),
+    Reword(usize, String),
+    Remove(usize),
+}
+
+/// Applies `ops` in order; any bad op fails the whole batch.
+pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
+    let mut slots: Vec<Option<Item>> = items.iter().cloned().map(Some).collect();
+    let mut added = Vec::new();
+    let len = items.len();
+    let at = |n: usize| -> Result<usize, String> {
+        if n == 0 || n > len {
+            Err(format!(
+                "there's no item {n}; the list has {len} item{}",
+                if len == 1 { "" } else { "s" }
+            ))
+        } else {
+            Ok(n - 1)
+        }
+    };
+    let text_ok = |t: &str| -> Result<String, String> {
+        let t = t.trim();
+        if t.is_empty() {
+            Err("a to-do needs some text".into())
+        } else {
+            Ok(t.to_string())
+        }
+    };
+    for op in ops {
+        match op {
+            Op::Add(t) => added.push(Item {
+                text: text_ok(t)?,
+                done: false,
+            }),
+            Op::Remove(n) => {
+                let i = at(*n)?;
+                slots[i]
+                    .take()
+                    .ok_or_else(|| format!("item {n} was already removed"))?;
+            }
+            Op::Check(n) | Op::Uncheck(n) | Op::Reword(n, _) => {
+                let i = at(*n)?;
+                let item = slots[i]
+                    .as_mut()
+                    .ok_or_else(|| format!("item {n} was removed"))?;
+                match op {
+                    Op::Check(_) => item.done = true,
+                    Op::Uncheck(_) => item.done = false,
+                    Op::Reword(_, t) => item.text = text_ok(t)?,
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+    Ok(slots.into_iter().flatten().chain(added).collect())
+}
+
+/// The stored Markdown checklist for `items`.
+pub fn serialize_items(items: &[Item]) -> String {
+    items
+        .iter()
+        .map(|i| format!("- [{}] {}\n", if i.done { 'x' } else { ' ' }, i.text))
+        .collect()
 }
 
 /// Unchecked items in a to-do file's text.

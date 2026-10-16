@@ -182,6 +182,31 @@ impl GroveMcp {
         Ok(out)
     }
 
+    pub fn do_get_todos(&self, project: Option<String>) -> Result<String, String> {
+        let p = self.project(project)?;
+        Ok(numbered(&crate::todo::parse(
+            &self.store.read_todos(&p.slug()),
+        )))
+    }
+
+    pub fn do_edit_todos(
+        &self,
+        project: Option<String>,
+        ops: Vec<TodoOpArg>,
+    ) -> Result<String, String> {
+        let p = self.project(project)?;
+        let ops = ops
+            .iter()
+            .map(TodoOpArg::to_op)
+            .collect::<Result<Vec<_>, _>>()?;
+        let items = crate::todo::parse(&self.store.read_todos(&p.slug()));
+        let new = crate::todo::apply_ops(&items, &ops)?;
+        self.store
+            .write_todos(&p.slug(), &crate::todo::serialize_items(&new))
+            .map_err(|e| e.to_string())?;
+        Ok(numbered(&new))
+    }
+
     pub fn do_update_project(
         &self,
         project: Option<String>,
@@ -247,6 +272,48 @@ pub struct UpdateProjectArgs {
     pub color: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct TodoOpArg {
+    /// add, check, uncheck, reword or remove.
+    pub op: String,
+    /// The item's number as get_todos shows it (before this call's edits). Not for add.
+    pub n: Option<usize>,
+    /// The text, for add and reword.
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EditTodosArgs {
+    /// Project name or slug. Defaults to the current Grove session's project.
+    pub project: Option<String>,
+    /// Edits, applied in order and saved together; one bad edit saves nothing.
+    pub ops: Vec<TodoOpArg>,
+}
+
+impl TodoOpArg {
+    fn to_op(&self) -> Result<crate::todo::Op, String> {
+        use crate::todo::Op;
+        let n = || self.n.ok_or_else(|| format!("{} needs `n`", self.op));
+        let text = || {
+            self.text
+                .clone()
+                .ok_or_else(|| format!("{} needs `text`", self.op))
+        };
+        Ok(match self.op.as_str() {
+            "add" => Op::Add(text()?),
+            "check" => Op::Check(n()?),
+            "uncheck" => Op::Uncheck(n()?),
+            "reword" => Op::Reword(n()?, text()?),
+            "remove" => Op::Remove(n()?),
+            other => {
+                return Err(format!(
+                    "unknown op \"{other}\"; use add, check, uncheck, reword or remove"
+                ));
+            }
+        })
+    }
+}
+
 fn result(r: Result<String, String>) -> CallToolResult {
     match r {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -264,6 +331,18 @@ impl GroveMcp {
     #[tool(description = "Show a Grove project's details.")]
     fn get_project(&self, Parameters(a): Parameters<ProjectArg>) -> CallToolResult {
         result(self.do_get_project(a.project))
+    }
+
+    #[tool(description = "A Grove project's to-do list, numbered.")]
+    fn get_todos(&self, Parameters(a): Parameters<ProjectArg>) -> CallToolResult {
+        result(self.do_get_todos(a.project))
+    }
+
+    #[tool(
+        description = "Edit a Grove project's to-do list: add, check, uncheck, reword or remove items by number. Returns the new list."
+    )]
+    fn edit_todos(&self, Parameters(a): Parameters<EditTodosArgs>) -> CallToolResult {
+        result(self.do_edit_todos(a.project, a.ops))
     }
 
     #[tool(description = "Update a Grove project's summary and/or color (#RRGGBB).")]
