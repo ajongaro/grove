@@ -393,15 +393,164 @@ pub fn source_dir() -> Option<std::path::PathBuf> {
     p.join("Cargo.toml").exists().then_some(p)
 }
 
+/// Whether this grove is a release build (the release workflow sets
+/// GROVE_RELEASE_BUILD when it compiles one).
+pub const RELEASE_BUILD: bool = option_env!("GROVE_RELEASE_BUILD").is_some();
+
+/// How Grove gets onto a finca.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Plan {
+    /// Same OS and CPU as here: copy this grove.
+    Copy,
+    /// Download the release of this version built for the finca.
+    Download,
+    /// Build this grove's source there (needs cargo there).
+    Build,
+}
+
+/// A finca like this machine gets a copy. Otherwise a source build builds
+/// its checkout there, so the finca runs the same code; a release build,
+/// or one whose checkout is gone, downloads the matching release.
+pub fn install_plan(
+    facts: &crate::setup::Facts,
+    release_build: bool,
+    source: Option<&std::path::Path>,
+) -> Plan {
+    if facts.same_platform_as_here() {
+        Plan::Copy
+    } else if !release_build && source.is_some_and(|s| s.join("Cargo.toml").exists()) {
+        Plan::Build
+    } else {
+        Plan::Download
+    }
+}
+
+/// The release asset's target for a finca's OS and CPU (`Facts` form).
+pub fn release_target(os: &str, arch: &str) -> Result<String> {
+    let os = match os {
+        "macos" => "apple-darwin",
+        "linux" => "unknown-linux-musl",
+        other => bail!("Grove has no release for {other}; install it there from source"),
+    };
+    match arch {
+        "aarch64" | "x86_64" => Ok(format!("{arch}-{os}")),
+        other => bail!("Grove has no release for {other} CPUs; install it there from source"),
+    }
+}
+
+/// Where this version's release assets are: `$GROVE_DOWNLOAD_URL`, else
+/// its GitHub release.
+pub fn release_url(version: &str) -> String {
+    std::env::var("GROVE_DOWNLOAD_URL")
+        .ok()
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| {
+            format!("https://github.com/ajongaro/grove/releases/download/v{version}")
+        })
+}
+
+/// Downloads grove `version` for `target` from `base`, checks it against
+/// the release's SHA256SUMS, and keeps it under `run_dir`. Returns its path;
+/// a second call uses the kept copy.
+pub fn fetch_release(
+    run_dir: &std::path::Path,
+    base: &str,
+    version: &str,
+    target: &str,
+) -> Result<std::path::PathBuf> {
+    use std::process::Command;
+    let dir = run_dir
+        .join("releases")
+        .join(format!("v{version}"))
+        .join(target);
+    let kept = dir.join("grove");
+    if kept.is_file() {
+        return Ok(kept);
+    }
+    let tmp = dir.with_extension(format!("part-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp)?;
+    let result = (|| -> Result<()> {
+        let asset = format!("grove-{target}.tar.gz");
+        let get = |name: &str| -> Result<()> {
+            let out = Command::new("curl")
+                .args(["-fsSL", "-o"])
+                .arg(tmp.join(name))
+                .arg(format!("{base}/{name}"))
+                .output()
+                .context("running curl")?;
+            if !out.status.success() {
+                bail!(
+                    "couldn't download Grove {version} for {target} ({base}/{name}): {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+            Ok(())
+        };
+        get(&asset)?;
+        get("SHA256SUMS")?;
+        let sums = std::fs::read_to_string(tmp.join("SHA256SUMS"))?;
+        let want = sums
+            .lines()
+            .filter_map(|l| l.split_once(char::is_whitespace))
+            .find(|(_, name)| name.trim().trim_start_matches('*') == asset)
+            .map(|(sum, _)| sum.to_string())
+            .with_context(|| format!("Grove {version}'s SHA256SUMS has no {asset}"))?;
+        let got = sha256(&tmp.join(&asset))?;
+        if got != want {
+            bail!("checksum mismatch for Grove {version} ({asset}); not installing it");
+        }
+        let st = Command::new("tar")
+            .arg("-xzf")
+            .arg(tmp.join(&asset))
+            .arg("-C")
+            .arg(&tmp)
+            .arg("grove")
+            .status()
+            .context("running tar")?;
+        if !st.success() {
+            bail!("couldn't unpack {asset}");
+        }
+        std::fs::create_dir_all(&dir)?;
+        std::fs::rename(tmp.join("grove"), &kept)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_dir_all(&tmp);
+    result.map(|()| kept)
+}
+
+/// A file's SHA-256, by `shasum` (macOS) or `sha256sum` (Linux).
+fn sha256(path: &std::path::Path) -> Result<String> {
+    for (prog, args) in [("shasum", &["-a", "256"][..]), ("sha256sum", &[][..])] {
+        if let Ok(out) = std::process::Command::new(prog)
+            .args(args)
+            .arg(path)
+            .output()
+            && out.status.success()
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            if let Some(sum) = text.split_whitespace().next() {
+                return Ok(sum.to_string());
+            }
+        }
+    }
+    bail!("needs shasum or sha256sum to check the download")
+}
+
+/// What `install_grove` puts on the finca.
+pub enum How<'a> {
+    /// This binary, which runs there.
+    Copy(&'a std::path::Path),
+    /// Grove's source folder, built there.
+    Build(&'a std::path::Path),
+}
+
 /// Puts grove at `bin` on the finca and returns its `--version` line.
-/// Same OS and CPU: copies `exe`. Otherwise builds `source` there (needs
-/// cargo there). `wrap` runs the build under the login shell.
+/// `wrap` runs a build under the login shell.
 pub fn install_grove(
     dest: &str,
     facts: &crate::setup::Facts,
     bin: &str,
-    exe: &std::path::Path,
-    source: Option<&std::path::Path>,
+    how: How,
     wrap: fn(&str) -> String,
 ) -> Result<String> {
     let b = sh_quote(bin);
@@ -412,33 +561,35 @@ pub fn install_grove(
         "if {new} --version >/dev/null 2>&1; then mv -f {new} {b} && {b} --version; else rm -f {new}; echo 'the new grove does not run there' >&2; exit 1; fi"
     );
     let mkdir = format!("mkdir -p \"$(dirname {b})\"");
-    let out = if facts.same_platform_as_here() {
-        let file =
-            std::fs::File::open(exe).with_context(|| format!("reading {}", exe.display()))?;
-        remote_stdin(
-            dest,
-            &format!("set -e; {mkdir}; cat > {new}; chmod 755 {new}; {swap}"),
-            file.into(),
-        )?
-    } else {
-        let Some(src) = source.filter(|s| s.join("Cargo.toml").exists()) else {
-            bail!(
-                "{} is {} {}, unlike this machine, so Grove must be built there, but this grove's source folder is gone; install Grove there by hand",
-                facts.host,
-                facts.os,
-                facts.arch
-            );
-        };
-        if !facts.has("cargo") {
-            bail!("{} has no cargo to build Grove with", facts.host);
+    let out = match how {
+        How::Copy(file) => {
+            let f =
+                std::fs::File::open(file).with_context(|| format!("reading {}", file.display()))?;
+            remote_stdin(
+                dest,
+                &format!("set -e; {mkdir}; cat > {new}; chmod 755 {new}; {swap}"),
+                f.into(),
+            )?
         }
-        ship_source(dest, src)?;
-        run_remote(
-            dest,
-            &wrap(&format!(
-                "set -e; [ -f ~/.cargo/env ] && . ~/.cargo/env; cd ~/src/grove; cargo build --release --quiet; {mkdir}; install -m 755 target/release/grove {new}; {swap}"
-            )),
-        )?
+        How::Build(src) => {
+            if !src.join("Cargo.toml").exists() {
+                bail!(
+                    "Grove's source isn't at {} any more, so it can't be built on {}",
+                    src.display(),
+                    facts.host
+                );
+            }
+            if !facts.has("cargo") {
+                bail!("{} has no cargo to build Grove with", facts.host);
+            }
+            ship_source(dest, src)?;
+            run_remote(
+                dest,
+                &wrap(&format!(
+                    "set -e; [ -f ~/.cargo/env ] && . ~/.cargo/env; cd ~/src/grove; cargo build --release --quiet; {mkdir}; install -m 755 target/release/grove {new}; {swap}"
+                )),
+            )?
+        }
     };
     if !out.status.success() {
         bail!(

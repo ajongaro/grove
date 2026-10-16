@@ -1066,8 +1066,7 @@ fn same_platform_install_copies_this_binary_via_a_swap() {
             "me@box",
             &facts_for(&home, true),
             &bin.to_string_lossy(),
-            &exe,
-            None,
+            How::Copy(&exe),
             plain,
         )
     })
@@ -1115,8 +1114,7 @@ fn other_platform_ships_source_without_target_or_git() {
             "me@box",
             &facts_for(&home, false),
             &bin.to_string_lossy(),
-            &grove,
-            Some(&src),
+            How::Build(&src),
             plain,
         );
         unsafe { std::env::remove_var("FAKE_PATH") };
@@ -1146,28 +1144,11 @@ fn source_build_without_source_folder_fails_clearly() {
         "me@box",
         &facts_for(d.path(), false),
         "/x/grove",
-        d.path(),
-        Some(&gone),
+        How::Build(&gone),
         plain,
     )
     .unwrap_err();
-    assert!(
-        format!("{err:#}").contains("install Grove there by hand"),
-        "{err:#}"
-    );
-    let err = install_grove(
-        "me@box",
-        &facts_for(d.path(), false),
-        "/x/grove",
-        d.path(),
-        None,
-        plain,
-    )
-    .unwrap_err();
-    assert!(
-        format!("{err:#}").contains("install Grove there by hand"),
-        "{err:#}"
-    );
+    assert!(format!("{err:#}").contains("source"), "{err:#}");
 }
 
 #[test]
@@ -1176,7 +1157,7 @@ fn source_build_needs_cargo_there() {
     std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
     let mut f = facts_for(d.path(), false);
     f.tools.clear();
-    let err = install_grove("me@box", &f, "/x/grove", d.path(), Some(d.path()), plain).unwrap_err();
+    let err = install_grove("me@box", &f, "/x/grove", How::Build(d.path()), plain).unwrap_err();
     assert!(format!("{err:#}").contains("cargo"), "{err:#}");
 }
 
@@ -1194,8 +1175,7 @@ fn a_copy_that_wont_run_there_keeps_the_working_grove() {
             "me@box",
             &facts_for(&home, true),
             &bin.to_string_lossy(),
-            &broken,
-            None,
+            How::Copy(&broken),
             plain,
         )
     });
@@ -1238,4 +1218,162 @@ fn shipped_source_has_no_macos_metadata_files() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(names, ["Cargo.toml"]);
+}
+
+fn platform_facts(os: &str, arch: &str) -> crate::setup::Facts {
+    crate::setup::Facts {
+        os: os.into(),
+        arch: arch.into(),
+        host: "pi".into(),
+        home: "/home/me".into(),
+        tools: Default::default(),
+        grove: None,
+    }
+}
+
+/// Another platform than this machine's.
+fn elsewhere() -> crate::setup::Facts {
+    if std::env::consts::OS == "linux" {
+        platform_facts("macos", "aarch64")
+    } else {
+        platform_facts("linux", "aarch64")
+    }
+}
+
+#[test]
+fn install_plan_copies_downloads_or_builds() {
+    let here = platform_facts(std::env::consts::OS, std::env::consts::ARCH);
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
+    let src = Some(d.path());
+    assert_eq!(install_plan(&here, true, src), Plan::Copy);
+    assert_eq!(install_plan(&here, false, None), Plan::Copy);
+    // A release build fetches the matching release, checkout or not.
+    assert_eq!(install_plan(&elsewhere(), true, src), Plan::Download);
+    // A source build builds there, so the finca gets the same code...
+    assert_eq!(install_plan(&elsewhere(), false, src), Plan::Build);
+    // ...unless its checkout is gone.
+    assert_eq!(install_plan(&elsewhere(), false, None), Plan::Download);
+    let empty = tempfile::tempdir().unwrap();
+    assert_eq!(
+        install_plan(&elsewhere(), false, Some(empty.path())),
+        Plan::Download
+    );
+}
+
+#[test]
+fn release_targets_per_platform() {
+    assert_eq!(
+        release_target("linux", "aarch64").unwrap(),
+        "aarch64-unknown-linux-musl"
+    );
+    assert_eq!(
+        release_target("linux", "x86_64").unwrap(),
+        "x86_64-unknown-linux-musl"
+    );
+    assert_eq!(
+        release_target("macos", "aarch64").unwrap(),
+        "aarch64-apple-darwin"
+    );
+    assert_eq!(
+        release_target("macos", "x86_64").unwrap(),
+        "x86_64-apple-darwin"
+    );
+    assert!(release_target("freebsd", "x86_64").is_err());
+    assert!(release_target("linux", "armv7l").is_err());
+}
+
+/// A release folder with a grove for `target` and its SHA256SUMS.
+pub(crate) fn fake_release(dir: &std::path::Path, target: &str, checksum_ok: bool) {
+    let stage = dir.join("stage");
+    std::fs::create_dir_all(&stage).unwrap();
+    script(&stage, "grove", "echo 'grove 0.1.0'");
+    let asset = format!("grove-{target}.tar.gz");
+    assert!(
+        std::process::Command::new("tar")
+            .arg("-czf")
+            .arg(dir.join(&asset))
+            .arg("-C")
+            .arg(&stage)
+            .arg("grove")
+            .status()
+            .unwrap()
+            .success()
+    );
+    let sum = std::process::Command::new("shasum")
+        .args(["-a", "256", &asset])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    let mut line = String::from_utf8(sum.stdout).unwrap();
+    if !checksum_ok {
+        line.replace_range(0..8, "00000000");
+    }
+    std::fs::write(dir.join("SHA256SUMS"), line).unwrap();
+}
+
+#[test]
+fn fetch_release_downloads_checks_and_caches() {
+    let d = tempfile::tempdir().unwrap();
+    let rel = d.path().join("release");
+    std::fs::create_dir_all(&rel).unwrap();
+    fake_release(&rel, "aarch64-unknown-linux-musl", true);
+    let run = d.path().join("run");
+    let base = format!("file://{}", rel.display());
+    let got = fetch_release(&run, &base, "0.1.0", "aarch64-unknown-linux-musl").unwrap();
+    assert!(got.starts_with(&run), "{}", got.display());
+    assert!(
+        std::fs::read_to_string(&got)
+            .unwrap()
+            .contains("grove 0.1.0")
+    );
+    // Cached: works with the release gone.
+    std::fs::remove_dir_all(&rel).unwrap();
+    assert_eq!(
+        fetch_release(&run, &base, "0.1.0", "aarch64-unknown-linux-musl").unwrap(),
+        got
+    );
+}
+
+#[test]
+fn fetch_release_refuses_a_bad_checksum() {
+    let d = tempfile::tempdir().unwrap();
+    fake_release(d.path(), "aarch64-unknown-linux-musl", false);
+    let run = d.path().join("run");
+    let base = format!("file://{}", d.path().display());
+    let e = fetch_release(&run, &base, "0.1.0", "aarch64-unknown-linux-musl").unwrap_err();
+    assert!(format!("{e:#}").contains("checksum"), "{e:#}");
+    // Nothing cached, so the next try downloads again.
+    let cached: Vec<_> = walk(&run);
+    assert!(!cached.iter().any(|p| p.ends_with("grove")), "{cached:?}");
+}
+
+#[test]
+fn fetch_release_missing_names_the_version_and_target() {
+    let d = tempfile::tempdir().unwrap();
+    let base = format!("file://{}", d.path().display());
+    let e = fetch_release(
+        &d.path().join("run"),
+        &base,
+        "9.9.9",
+        "x86_64-unknown-linux-musl",
+    )
+    .unwrap_err();
+    let e = format!("{e:#}");
+    assert!(
+        e.contains("9.9.9") && e.contains("x86_64-unknown-linux-musl"),
+        "{e}"
+    );
+}
+
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    rd.flatten()
+        .flat_map(|e| {
+            let p = e.path();
+            if p.is_dir() { walk(&p) } else { vec![p] }
+        })
+        .collect()
 }

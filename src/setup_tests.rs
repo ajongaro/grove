@@ -182,11 +182,24 @@ fn plain(c: &str) -> String {
 }
 
 fn run(w: &World, io: &mut Script, dest: &str) -> anyhow::Result<crate::finca::Finca> {
+    run_with(w, io, dest, false, None)
+}
+
+/// `run`, as a release build (or not) downloading from `download`.
+fn run_with(
+    w: &World,
+    io: &mut Script,
+    dest: &str,
+    release_build: bool,
+    download: Option<String>,
+) -> anyhow::Result<crate::finca::Finca> {
     let setup = Setup {
         store: &w.store,
         ssh_dir: w.ssh_dir.clone(),
         exe: w.exe.clone(),
         source: None,
+        release_build,
+        download_url: download,
         tailscale_json: None,
         wrap: plain,
     };
@@ -418,6 +431,8 @@ fn tailscale_peer_becomes_the_backup_when_it_answers() {
         ssh_dir: w.ssh_dir.clone(),
         exe: w.exe.clone(),
         source: None,
+        release_build: false,
+        download_url: None,
         tailscale_json: Some(json),
         wrap: plain,
     };
@@ -435,4 +450,43 @@ fn tailscale_peer_becomes_the_backup_when_it_answers() {
         Some("me@box.tail.ts.net"),
         "keeps the user"
     );
+}
+
+#[test]
+fn a_finca_on_another_platform_gets_the_release_binary() {
+    let w = world(&["tmux", "claude"]);
+    // The remote says it's an arm64 Linux box (or a Mac, if this is Linux).
+    let (os, target) = if std::env::consts::OS == "linux" {
+        ("Darwin", "aarch64-apple-darwin")
+    } else {
+        ("Linux", "aarch64-unknown-linux-musl")
+    };
+    crate::finca::tests::script(
+        &w.bin,
+        "uname",
+        &format!("case \"$1\" in -s) echo {os};; -m) echo aarch64;; *) echo {os};; esac"),
+    );
+    let rel = w.home.parent().unwrap().join("release");
+    std::fs::create_dir_all(&rel).unwrap();
+    crate::finca::tests::fake_release(&rel, target, true);
+    let mut io = Script::new(&["", "y"]); // default name; install grove
+    let f = run_with(
+        &w,
+        &mut io,
+        "me@pi",
+        true,
+        Some(format!("file://{}", rel.display())),
+    )
+    .unwrap();
+    let said = io.said.join("\n");
+    assert!(!said.contains("Rust"), "{said}");
+    assert!(said.contains("Downloading Grove"), "{said}");
+    let installed = std::fs::read_to_string(w.home.join(".local/bin/grove")).unwrap();
+    assert!(installed.contains("grove 0.1.0"), "{installed}");
+    assert_ne!(
+        installed,
+        std::fs::read_to_string(&w.exe).unwrap(),
+        "copied this machine's grove instead"
+    );
+    assert_eq!(w.store.get_finca(&f.name).unwrap(), f);
 }

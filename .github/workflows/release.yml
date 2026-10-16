@@ -26,7 +26,11 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
+      # Marks a release build: it sets up fincas of another OS or CPU by
+      # downloading this release rather than building from source there.
       - run: cargo build --release --locked --target ${{ matrix.target }}
+        env:
+          GROVE_RELEASE_BUILD: "1"
       - name: Package
         run: |
           tar -czf grove-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release grove

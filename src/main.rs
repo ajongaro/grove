@@ -545,6 +545,8 @@ fn setup_finca(store: &Store, io: &mut setup::TerminalIo, dest: &str) -> Result<
         ssh_dir: home.join(".ssh"),
         exe: std::env::current_exe()?,
         source: finca::source_dir(),
+        release_build: finca::RELEASE_BUILD,
+        download_url: None,
         tailscale_json,
         wrap: finca::login_shell_cmd,
     };
@@ -560,18 +562,27 @@ fn update_one(f: &finca::Finca, exe: &std::path::Path) -> Result<String> {
     let out = finca::run_remote(dest, &finca::login_shell_cmd(&finca::facts_script()))?;
     let facts = setup::parse_facts(&String::from_utf8_lossy(&out.stdout))
         .ok_or_else(|| anyhow::anyhow!("couldn't read the machine's details"))?;
-    let how = if facts.same_platform_as_here() {
-        "copied"
-    } else {
-        "built there"
+    let source = finca::source_dir();
+    let downloaded;
+    let (how, label) = match finca::install_plan(&facts, finca::RELEASE_BUILD, source.as_deref()) {
+        finca::Plan::Copy => (finca::How::Copy(exe), "copied"),
+        finca::Plan::Download => {
+            let version = env!("CARGO_PKG_VERSION");
+            let target = finca::release_target(&facts.os, &facts.arch)?;
+            downloaded = finca::fetch_release(
+                &Paths::from_env().run,
+                &finca::release_url(version),
+                version,
+                &target,
+            )?;
+            (finca::How::Copy(&downloaded), "downloaded")
+        }
+        finca::Plan::Build => (
+            finca::How::Build(source.as_deref().expect("Build needs a source")),
+            "built there",
+        ),
     };
-    let v = finca::install_grove(
-        dest,
-        &facts,
-        &f.grove_bin,
-        exe,
-        finca::source_dir().as_deref(),
-        finca::login_shell_cmd,
-    )?;
+    let v = finca::install_grove(dest, &facts, &f.grove_bin, how, finca::login_shell_cmd)?;
+    let how = label;
     Ok(format!("{v} ({how}, via {dest})"))
 }

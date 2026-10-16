@@ -183,8 +183,12 @@ pub struct Setup<'a> {
     pub ssh_dir: std::path::PathBuf,
     /// This grove, copied to fincas of the same OS and CPU.
     pub exe: std::path::PathBuf,
-    /// Grove's source, built on fincas of another OS or CPU.
+    /// Grove's source, built on fincas of another OS or CPU by a source build.
     pub source: Option<std::path::PathBuf>,
+    /// A release build: other platforms get the matching release instead.
+    pub release_build: bool,
+    /// Where releases are downloaded from, instead of GitHub (tests).
+    pub download_url: Option<String>,
     /// `tailscale status --json` here, if tailscale is installed.
     pub tailscale_json: Option<String>,
     /// Wraps remote commands: the login shell in real use.
@@ -366,7 +370,8 @@ impl Setup<'_> {
             .map_or(format!("{}/.local/bin/grove", facts.home), |(p, _)| {
                 p.clone()
             });
-        if !facts.same_platform_as_here() && !facts.has("cargo") {
+        let plan = finca::install_plan(facts, self.release_build, self.source.as_deref());
+        if plan == finca::Plan::Build && !facts.has("cargo") {
             let cmd = install_command("cargo", facts).unwrap_or_default();
             if !io.confirm(&format!(
                 "Building Grove there needs Rust. Install it? ({cmd})"
@@ -387,17 +392,29 @@ impl Setup<'_> {
                 facts.host
             );
         }
-        if !facts.same_platform_as_here() {
-            io.say("Building Grove there (this takes a few minutes)…");
-        }
-        let v = finca::install_grove(
-            dest,
-            facts,
-            &bin,
-            &self.exe,
-            self.source.as_deref(),
-            self.wrap,
-        )?;
+        let downloaded;
+        let how = match plan {
+            finca::Plan::Copy => finca::How::Copy(&self.exe),
+            finca::Plan::Download => {
+                let version = env!("CARGO_PKG_VERSION");
+                let target = finca::release_target(&facts.os, &facts.arch)?;
+                io.say(&format!(
+                    "Downloading Grove {version} for {} {}…",
+                    facts.os, facts.arch
+                ));
+                let base = self
+                    .download_url
+                    .clone()
+                    .unwrap_or_else(|| finca::release_url(version));
+                downloaded = finca::fetch_release(&self.store.paths.run, &base, version, &target)?;
+                finca::How::Copy(&downloaded)
+            }
+            finca::Plan::Build => {
+                io.say("Building Grove there (this takes a few minutes)…");
+                finca::How::Build(self.source.as_deref().expect("Build needs a source"))
+            }
+        };
+        let v = finca::install_grove(dest, facts, &bin, how, self.wrap)?;
         io.say(&format!("✓ {v} at {bin}"));
         Ok(bin)
     }

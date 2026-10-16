@@ -292,10 +292,12 @@ Claude login, and asks before fixing each one:
   password once);
 - missing tmux or Claude Code: it shows the install command and runs it
   over SSH (sudo can prompt);
-- Grove: a machine with this one's OS and CPU gets a copy of this build;
-  any other builds it from source there (offering to install Rust first).
-  Building there needs this Grove to have been built from a source
-  checkout; otherwise install Grove on that machine yourself first;
+- Grove: a machine with this one's OS and CPU gets a copy of this build.
+  Any other gets the release of the same version built for it (downloaded
+  here, checked, and copied over SSH, so it needs nothing extra), if you
+  installed Grove with Homebrew or the install script. If you built Grove
+  from a source checkout, it builds that checkout there instead (offering
+  to install Rust first), so the finca runs the same code;
 - logged out of Claude there: it runs `claude auth login` for you;
 - if Tailscale here knows the machine, it offers its Tailscale name as the
   backup.
@@ -309,7 +311,7 @@ grove finca add homebox me@homebox.local   # non-interactive: checks SSH, finds 
 grove finca add homebox me@homebox.local --backup me@homebox.<tailnet>.ts.net
 grove finca ls
 grove finca rm homebox
-grove finca update [name...]   # put this build of grove on your fincas
+grove finca update [name...]   # put this version of grove on your fincas
 grove send homebox ~/Desktop/shot.png  # prints the path there (no file: the clipboard)
 grove status            # what this machine reports (--json is what fincas send)
 ```
