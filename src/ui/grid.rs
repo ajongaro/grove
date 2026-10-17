@@ -306,6 +306,13 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
         return;
     }
     let dim = |c: Color| if t.stale { Color::DarkGray } else { c };
+    // A session asking for permission shows its whole screen, so the
+    // question is visible.
+    let (lines, draft) = match &t.screen {
+        Some(s) if t.state != State::NeedsYou => trim_prompt(s),
+        Some(s) => (s.lines().collect(), false),
+        None => (Vec::new(), false),
+    };
     let icon = if t.state == State::NeedsYou {
         "⚑"
     } else {
@@ -319,6 +326,9 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     title.push(Span::raw(t.handle()).fg(dim(Color::White)));
     title.push(Span::raw(format!(" {icon} {}", t.state.label())).fg(dim(state_color(t.state))));
     title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).dark_gray());
+    if draft {
+        title.push(Span::raw("  ✎ draft").fg(dim(Color::Cyan)));
+    }
     if t.stale {
         title.push(Span::raw("  stale").dark_gray());
     }
@@ -343,8 +353,7 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     frame.render_widget(block, rect);
     let body: Vec<Line> = match &t.screen {
         None => vec![Line::from(t.state.label().to_string()).dark_gray()],
-        Some(s) => {
-            let lines: Vec<&str> = s.lines().collect();
+        Some(_) => {
             let keep = &lines[lines.len().saturating_sub(usize::from(inner.height))..];
             keep.iter()
                 .map(|l| Line::from(fit(l, usize::from(inner.width))))
@@ -357,6 +366,32 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
         Style::default()
     };
     frame.render_widget(Paragraph::new(body).style(style), inner);
+}
+
+/// A screen's lines without Claude's input box and whatever sits under it
+/// (status bar, mode line), and trailing blank lines. The box is a `❯`
+/// line with a rule above it and a rule closing it below; screens without
+/// one come back whole. True when the box held typed, unsent text.
+fn trim_prompt(screen: &str) -> (Vec<&str>, bool) {
+    let mut lines: Vec<&str> = screen.lines().collect();
+    let rule = |l: &str| l.trim_start().starts_with("───");
+    let mut draft = false;
+    let boxed = (1..lines.len()).rev().find(|&i| {
+        lines[i].trim_start().starts_with('❯')
+            && rule(lines[i - 1])
+            && lines[i + 1..].iter().any(|l| rule(l))
+    });
+    if let Some(i) = boxed {
+        let close = i + 1 + lines[i + 1..].iter().position(|l| rule(l)).unwrap_or(0);
+        let typed = lines[i].trim_start().trim_start_matches('❯');
+        draft =
+            !typed.trim().is_empty() || lines[i + 1..close].iter().any(|l| !l.trim().is_empty());
+        lines.truncate(i - 1);
+    }
+    while lines.last().is_some_and(|l| l.trim().is_empty()) {
+        lines.pop();
+    }
+    (lines, draft)
 }
 
 /// `s` with tabs as spaces, cut to `width` display columns.
@@ -473,5 +508,53 @@ mod tests {
         assert_eq!(next_waiting(&s, 1, false), 3);
         assert_eq!(next_waiting(&[Working, Working], 1, true), 1);
         assert_eq!(next_waiting(&[], 0, true), 0);
+    }
+
+    const RULE: &str = "────────────────────────────────────────";
+
+    #[test]
+    fn trim_prompt_cuts_the_input_box_and_status_bar() {
+        let screen = format!(
+            "  Enjoy digging into it.\n\n✻ Cogitated for 5s · done 9:51 PM\n\n{RULE}\n❯\u{a0}\n{RULE}\n    🤖 Opus 4.8 | PLAY | 📁 generic | 🌿 main\n  -- INSERT -- ⏵⏵ auto mode on\n"
+        );
+        let (lines, draft) = trim_prompt(&screen);
+        assert_eq!(
+            lines,
+            [
+                "  Enjoy digging into it.",
+                "",
+                "✻ Cogitated for 5s · done 9:51 PM"
+            ]
+        );
+        assert!(!draft);
+    }
+
+    #[test]
+    fn trim_prompt_reports_typed_text_as_a_draft() {
+        let screen = format!("done\n{RULE}\n❯ fix the\n  failing test\n{RULE}\n  status\n");
+        let (lines, draft) = trim_prompt(&screen);
+        assert_eq!(lines, ["done"]);
+        assert!(draft);
+    }
+
+    #[test]
+    fn trim_prompt_leaves_screens_without_a_box() {
+        let screen = "one\ntwo\n\nthree\n\n\n";
+        assert_eq!(
+            trim_prompt(screen),
+            (vec!["one", "two", "", "three"], false)
+        );
+    }
+
+    #[test]
+    fn trim_prompt_keeps_a_permission_prompt() {
+        // Its ❯ marks a choice, with no closing rule under it.
+        let screen = format!(
+            "{RULE}\n Bash command\n   rm -rf build\n Do you want to proceed?\n❯ 1. Yes\n  2. No\n\n Esc to cancel\n"
+        );
+        let (lines, draft) = trim_prompt(&screen);
+        assert_eq!(lines.len(), 8);
+        assert_eq!(lines[4], "❯ 1. Yes");
+        assert!(!draft);
     }
 }
