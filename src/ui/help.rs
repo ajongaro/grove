@@ -18,6 +18,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Tab h l", "switch pane"),
             ("j k", "cross Sessions ↔ To-do at the ends"),
             ("t", "to-do list"),
+            ("v", "session grid"),
             ("a", "add a project"),
             ("R", "update Grove (after upgrading)"),
             ("?", "this help"),
@@ -41,6 +42,16 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "jump to its window"),
             ("r", "rename"),
             ("x", "kill"),
+        ],
+    ),
+    (
+        "Grid",
+        &[
+            ("h j k l", "move between tiles"),
+            ("Tab", "next waiting (S-Tab back)"),
+            ("Enter", "jump to its window"),
+            ("i", "reply to a waiting session"),
+            ("v Esc", "back to the dashboard"),
         ],
     ),
     (

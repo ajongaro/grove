@@ -2344,3 +2344,13 @@ fn an_empty_grid_says_how_to_start() {
     handle_key(&mut app, ch('v'));
     assert!(screen(&app, 110, 32).contains("No live sessions"));
 }
+
+#[test]
+fn help_lists_the_grid_keys() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("Grid"), "{out}");
+    assert!(out.contains("reply to a waiting session"), "{out}");
+    assert!(out.contains("session grid"), "{out}");
+}

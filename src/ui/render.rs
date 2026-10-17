@@ -706,7 +706,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
         None => spans.push(
-            Span::raw("enter open/jump · n new · s shell · r rename · a add · t to-do · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
+            Span::raw("enter open/jump · n new · s shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

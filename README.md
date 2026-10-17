@@ -146,6 +146,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
+| `v` | dashboard | session grid: every live session's screen |
 | `R` | dashboard | restart on a new Grove, after upgrading |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
@@ -170,6 +171,17 @@ on a finca nobody sits at.
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP
 tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
+
+### Session grid
+
+`v` on the dashboard shows every live session, here and on your fincas, as
+a tile with the bottom of its screen, refreshed as it changes. `h j k l`
+move, `Tab` jumps to the next one that needs you or is waiting, `Enter`
+goes to its window (`C-g` comes back), and `i` replies to a session that's
+waiting for its next message without leaving the grid. Permission prompts
+are answered in the session itself. A finca's tiles dim and say `stale`
+when it stops answering; one running an older Grove shows states without
+screens until you `grove finca update`.
 
 ### Updating
 
@@ -375,7 +387,9 @@ Each file does one job, so new features usually touch one or two:
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
-| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `run.rs` actions + loop, `help.rs` the `?` list |
+| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
+| `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
+| `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
 
 ```sh
 cargo test     # ~370 tests, including real tmux servers on throwaway sockets
