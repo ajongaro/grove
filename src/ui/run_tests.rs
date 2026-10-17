@@ -544,3 +544,59 @@ fn update_runs_the_installed_grove_from_the_add_prompt_folder() {
         Some(std::path::Path::new("/home/me/code"))
     );
 }
+
+#[test]
+fn grid_reply_types_into_a_local_waiting_session() {
+    let t = setup("gridreply");
+    let typed = t.root.join("typed");
+    t.ctx
+        .tmux
+        .new_session_detached(
+            "grove",
+            "w",
+            &t.root,
+            &[
+                "sh".into(),
+                "-c".into(),
+                format!("stty raw -echo; cat > '{}'", typed.display()),
+            ],
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let w = t.ctx.tmux.list_windows_as("grove", "#{window_id}").unwrap()[0].clone();
+    for (id, state) in [("s1", State::YourTurn), ("s2", State::Working)] {
+        t.ctx
+            .store
+            .save_session(&sess(id, "alpha", state, Some(&w)))
+            .unwrap();
+    }
+    // The window is s1's.
+    t.ctx
+        .tmux
+        .set_window_option(&w, "@grove_session", "s1")
+        .unwrap();
+    let reply = |id: &str| {
+        perform(
+            &t.ctx,
+            Action::GridReply {
+                finca: None,
+                session_id: id.into(),
+                handle: format!("alpha:{id}"),
+                text: "hello there".into(),
+            },
+        )
+    };
+    let sent = reply("s1");
+    let busy = reply("s2");
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    match sent {
+        Ok(Outcome::Message(m)) => assert!(m.contains("sent to alpha:s1"), "{m}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(format!("{:#}", busy.unwrap_err()).contains("working"));
+    assert!(
+        std::fs::read_to_string(&typed)
+            .unwrap_or_default()
+            .contains("hello there")
+    );
+}

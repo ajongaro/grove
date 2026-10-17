@@ -76,7 +76,6 @@ pub fn local(store: &Store, tmux: &Tmux, lines: usize, host: &str) -> Screens {
 
 /// A finca's screens, or why there are none.
 #[derive(Debug)]
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub enum Fetched {
     Ok(Screens),
     /// Its Grove predates `grove screens`.
@@ -87,13 +86,11 @@ pub enum Fetched {
 }
 
 /// clap's answer to a subcommand an older Grove doesn't have.
-#[allow(dead_code)] // used by the session grid (plan task 9)
 fn unknown_command(out: &crate::finca::RemoteOut) -> bool {
     out.code == Some(2) && out.stderr.contains("unrecognized subcommand")
 }
 
 /// `grove screens --json` on the finca at `dest`.
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub fn fetch(
     f: &crate::finca::Finca,
     dest: &str,
@@ -121,7 +118,6 @@ pub fn fetch(
 
 /// `grove type-prompt <session_id>` on the finca, with `text` on stdin.
 /// Returns the session's handle.
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub fn type_prompt_remote(
     f: &crate::finca::Finca,
     dest: &str,
@@ -160,7 +156,6 @@ pub fn type_prompt_remote(
 
 /// One finca's fetch, as the grid receives it.
 #[derive(Debug)]
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub struct FetchResult {
     pub slug: String,
     pub at: DateTime<Utc>,
@@ -169,13 +164,11 @@ pub struct FetchResult {
 
 /// Fetches fincas' screens in the background while the grid is open;
 /// stops when dropped.
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub struct Fetcher {
     pub results: std::sync::mpsc::Receiver<FetchResult>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
-#[allow(dead_code)] // used by the session grid (plan task 9)
 impl Fetcher {
     /// Every `interval`, fetches each `(finca, destination)` in parallel.
     pub fn start(

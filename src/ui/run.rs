@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use ratatui::crossterm::event::{self, Event};
 
-use super::app::{Action, App, mark_missing};
+use super::app::{Action, App, Mode, mark_missing};
 use super::input::handle_key;
 use super::render::render;
 use crate::config::{Config, editor, expand_tilde, load_config};
@@ -155,8 +155,36 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             store.write_todos(&slug, &text)?;
             Outcome::Nothing
         }
-        // Sending replies comes in plan task 9.
-        Action::GridReply { .. } => Outcome::Nothing,
+        Action::GridReply {
+            finca,
+            session_id,
+            handle: _,
+            text,
+        } => {
+            let sent = match finca {
+                None => {
+                    let s = store
+                        .get_session(&session_id)
+                        .filter(|s| s.state != State::Ended)
+                        .ok_or_else(|| anyhow::anyhow!("that session has ended"))?;
+                    let cfg = load_config(&store.paths)?;
+                    let account = store
+                        .get_project(&s.project)
+                        .map(|p| cfg.account_for(&p.path).name)
+                        .unwrap_or_default();
+                    crate::prompt::type_into(&ctx.tmux, &s, &account, &text)
+                }
+                Some((slug, via)) => {
+                    let f = store.get_finca(&slug)?;
+                    let dest = via.unwrap_or_else(|| f.ssh.clone());
+                    crate::screens::type_prompt_remote(&f, &dest, &session_id, &text)
+                }
+            };
+            match sent {
+                Ok(h) => Outcome::Message(format!("sent to {h}")),
+                Err(e) => anyhow::bail!(e),
+            }
+        }
         Action::EditTodos { slug } => {
             // The editor can't save into a folder that isn't there yet.
             std::fs::create_dir_all(&store.paths.todos)?;
@@ -483,6 +511,9 @@ fn event_loop(
     let mut flagged = HashMap::new();
     let mut alerts = crate::alert::Alerts::default();
     let mut last_reconcile = Instant::now() - RECONCILE_EVERY;
+    // The grid's finca screens, fetched only while it's open.
+    let mut fetcher: Option<crate::screens::Fetcher> = None;
+    let mut last_capture = Instant::now() - Duration::from_secs(1);
     loop {
         if ctx.cfg.alerts {
             let watched = || ctx.tmux.focused_windows();
@@ -499,17 +530,25 @@ fn event_loop(
             app.reload(&ctx.store);
             last_reconcile = Instant::now();
         }
+        refresh_grid(ctx, app, &mut fetcher, &mut last_capture);
         terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
 
         if event::poll(Duration::from_millis(250))?
             && let Event::Key(key) = event::read()?
         {
             let action = handle_key(app, key);
+            let was_reply = matches!(action, Action::GridReply { .. });
             match perform(ctx, action) {
                 Ok(Outcome::Quit) => {
                     let _ = ctx.tmux.cmd().arg("detach-client").status();
                 }
-                Ok(Outcome::Message(m)) => app.footer = Some(m),
+                Ok(Outcome::Message(m)) => {
+                    // Sent: close the reply line (a failed send keeps it).
+                    if was_reply && let Mode::Grid { sel, .. } = app.mode {
+                        app.mode = Mode::Grid { sel, reply: None };
+                    }
+                    app.footer = Some(m)
+                }
                 Ok(Outcome::Nothing) => {}
                 Err(e) => app.footer = Some(format!("{e:#}")),
             }
@@ -529,6 +568,65 @@ fn event_loop(
             while rx.try_recv().is_ok() {}
             app.reload(&ctx.store);
         }
+    }
+}
+
+/// While the grid is open: local screens every 500 ms, and a fetcher for
+/// the fincas' (started on opening, dropped on closing).
+fn refresh_grid(
+    ctx: &Ctx,
+    app: &mut App,
+    fetcher: &mut Option<crate::screens::Fetcher>,
+    last_capture: &mut Instant,
+) {
+    const LINES: usize = 60;
+    let in_grid = matches!(app.mode, Mode::Grid { .. });
+    if !in_grid {
+        if fetcher.take().is_some() {
+            app.local_screens.clear();
+        }
+        return;
+    }
+    if fetcher.is_none() {
+        let targets = app
+            .fincas
+            .iter()
+            .filter_map(|r| Some((ctx.store.get_finca(&r.slug).ok()?, r.via.clone()?)))
+            .collect();
+        *fetcher = Some(crate::screens::Fetcher::start(
+            targets,
+            LINES,
+            Duration::from_secs(2),
+            Duration::from_secs(5),
+        ));
+    }
+    if let Some(f) = fetcher {
+        while let Ok(r) = f.results.try_recv() {
+            let newly_old = matches!(r.fetched, crate::screens::Fetched::TooOld)
+                && !app.too_old.contains(&r.slug);
+            let slug = r.slug.clone();
+            app.apply_screens(r);
+            if newly_old {
+                let name = app
+                    .fincas
+                    .iter()
+                    .find(|f| f.slug == slug)
+                    .map_or(slug.clone(), |f| f.name.clone());
+                app.footer = Some(format!("update Grove on {name} for live screens"));
+            }
+        }
+    }
+    if last_capture.elapsed() >= Duration::from_millis(500) {
+        for s in app.sessions.iter().filter(|s| s.state != State::Ended) {
+            let screen = s
+                .tmux_window
+                .as_deref()
+                .and_then(|w| ctx.tmux.capture(w, LINES).ok())
+                .map(|t| crate::screens::tail(&t, LINES))
+                .unwrap_or_else(|| "(window gone)".into());
+            app.local_screens.insert(s.id.clone(), screen);
+        }
+        *last_capture = Instant::now();
     }
 }
 

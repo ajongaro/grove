@@ -171,7 +171,6 @@ pub fn poll_via(f: &Finca, timeout: std::time::Duration) -> (Reach, Option<Strin
 
 /// What a remote command printed, and its exit code (None: timed out).
 #[derive(Debug)]
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub struct RemoteOut {
     pub code: Option<i32>,
     pub stdout: String,
@@ -180,7 +179,6 @@ pub struct RemoteOut {
 
 /// Runs `remote_cmd` at `dest` over the shared connection, with `input` on
 /// its stdin, killing it after `timeout`.
-#[allow(dead_code)] // used by the session grid (plan task 9)
 pub fn run_timed(
     dest: &str,
     remote_cmd: &str,

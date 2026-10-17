@@ -1,9 +1,6 @@
 //! The session grid (`v`): every live session as a tile showing the bottom
 //! of its screen. Layout and movement are pure; drawing is at the bottom.
 
-// Wired into the dashboard in plan tasks 7-9; this goes then.
-#![allow(dead_code)]
-
 use chrono::{DateTime, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout as Split, Rect};

@@ -263,7 +263,6 @@ impl App {
     }
 
     /// A finca's screens from the grid's fetcher.
-    #[allow(dead_code)] // wired up in plan tasks 7-9
     pub fn apply_screens(&mut self, r: crate::screens::FetchResult) {
         match r.fetched {
             crate::screens::Fetched::Ok(s) => {
