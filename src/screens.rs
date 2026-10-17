@@ -158,6 +158,70 @@ pub fn type_prompt_remote(
     }
 }
 
+/// One finca's fetch, as the grid receives it.
+#[derive(Debug)]
+#[allow(dead_code)] // used by the session grid (plan task 9)
+pub struct FetchResult {
+    pub slug: String,
+    pub at: DateTime<Utc>,
+    pub fetched: Fetched,
+}
+
+/// Fetches fincas' screens in the background while the grid is open;
+/// stops when dropped.
+#[allow(dead_code)] // used by the session grid (plan task 9)
+pub struct Fetcher {
+    pub results: std::sync::mpsc::Receiver<FetchResult>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[allow(dead_code)] // used by the session grid (plan task 9)
+impl Fetcher {
+    /// Every `interval`, fetches each `(finca, destination)` in parallel.
+    pub fn start(
+        targets: Vec<(crate::finca::Finca, String)>,
+        lines: usize,
+        interval: std::time::Duration,
+        timeout: std::time::Duration,
+    ) -> Self {
+        use std::sync::atomic::Ordering;
+        let (tx, results) = std::sync::mpsc::channel();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped = stop.clone();
+        std::thread::spawn(move || {
+            while !stopped.load(Ordering::Relaxed) {
+                let handles: Vec<_> = targets
+                    .iter()
+                    .cloned()
+                    .map(|(f, dest)| {
+                        let tx = tx.clone();
+                        std::thread::spawn(move || {
+                            let fetched = fetch(&f, &dest, lines, timeout);
+                            tx.send(FetchResult {
+                                slug: f.slug(),
+                                at: Utc::now(),
+                                fetched,
+                            })
+                            .is_ok()
+                        })
+                    })
+                    .collect();
+                if !handles.into_iter().all(|h| h.join().unwrap_or(false)) {
+                    return; // the grid dropped the receiver
+                }
+                std::thread::sleep(interval);
+            }
+        });
+        Self { results, stop }
+    }
+}
+
+impl Drop for Fetcher {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +399,29 @@ mod tests {
             err.contains("too old") && err.contains("grove finca update"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn fetcher_reports_each_finca_and_stops_when_dropped() {
+        let d = tempfile::tempdir().unwrap();
+        let doc = r#"{"version":1,"host":"pi","sessions":[]}"#;
+        let bin = crate::finca::tests::script(d.path(), "grove", &format!("echo '{doc}'"));
+        let ssh = crate::finca::testing::fake_ssh(d.path(), None);
+        crate::finca::tests::with_env(&ssh, d.path(), || {
+            let fetcher = Fetcher::start(
+                vec![(finca_at(&bin), "me@pi".into())],
+                40,
+                std::time::Duration::from_millis(100),
+                SECS5,
+            );
+            let r = fetcher.results.recv_timeout(SECS5).unwrap();
+            assert_eq!(r.slug, "pi");
+            assert!(matches!(r.fetched, Fetched::Ok(_)), "{:?}", r.fetched);
+            // A second round arrives on the interval.
+            assert!(fetcher.results.recv_timeout(SECS5).is_ok());
+            let stop = fetcher.stop.clone();
+            drop(fetcher);
+            assert!(stop.load(std::sync::atomic::Ordering::Relaxed));
+        });
     }
 }
