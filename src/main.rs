@@ -105,6 +105,10 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         lines: usize,
     },
+    /// Internal: type stdin into a waiting session (the session grid, from
+    /// another machine).
+    #[command(hide = true)]
+    TypePrompt { session: String },
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
@@ -180,6 +184,17 @@ fn main() {
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::TypePrompt { session }) => {
+            let mut text = String::new();
+            let _ = std::io::stdin().read_to_string(&mut text);
+            match type_prompt(&paths, &session, &text) {
+                Ok(handle) => println!("{handle}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Some(Cmd::Screens { lines, .. }) => {
             let st = screens::local(
                 &Store::new(paths.clone()),
@@ -385,6 +400,21 @@ fn start(paths: &Paths) -> Result<()> {
         .env_remove("TMUX")
         .exec();
     Err(err).context("attaching to the grove tmux session")
+}
+
+/// `grove type-prompt`: the reply checks of `prompt::type_into`, by id.
+fn type_prompt(paths: &Paths, id: &str, text: &str) -> std::result::Result<String, String> {
+    let store = Store::new(paths.clone());
+    let s = store
+        .get_session(id)
+        .filter(|s| s.state != model::State::Ended)
+        .ok_or_else(|| format!("no live session {id}"))?;
+    let cfg = load_config(paths).map_err(|e| format!("{e:#}"))?;
+    let account = store
+        .get_project(&s.project)
+        .map(|p| cfg.account_for(&p.path).name)
+        .unwrap_or_default();
+    prompt::type_into(&grove_tmux(paths), &s, &account, text)
 }
 
 fn print_status(paths: &Paths, json: bool) {

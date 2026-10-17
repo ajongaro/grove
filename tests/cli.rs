@@ -617,3 +617,21 @@ fn screens_prints_json_with_no_sessions() {
     assert_eq!(v["version"], 1);
     assert_eq!(v["sessions"], serde_json::json!([]));
 }
+
+#[test]
+fn type_prompt_unknown_session_exits_1_with_a_message() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = grove(&dir.path().join("home"))
+        .args(["type-prompt", "nope"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"hello").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("no live session"), "{err}");
+}

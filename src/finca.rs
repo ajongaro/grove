@@ -169,6 +169,90 @@ pub fn poll_via(f: &Finca, timeout: std::time::Duration) -> (Reach, Option<Strin
     (Reach::Unreachable { error }, None)
 }
 
+/// What a remote command printed, and its exit code (None: timed out).
+#[derive(Debug)]
+#[allow(dead_code)] // used by the session grid (plan task 9)
+pub struct RemoteOut {
+    pub code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Runs `remote_cmd` at `dest` over the shared connection, with `input` on
+/// its stdin, killing it after `timeout`.
+#[allow(dead_code)] // used by the session grid (plan task 9)
+pub fn run_timed(
+    dest: &str,
+    remote_cmd: &str,
+    input: Option<Vec<u8>>,
+    timeout: std::time::Duration,
+) -> RemoteOut {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+    let failed = |e: String| RemoteOut {
+        code: Some(255),
+        stdout: String::new(),
+        stderr: e,
+    };
+    let mut child = match Command::new(ssh_program())
+        .args(SSH_BATCH_OPTS)
+        .args(share_opts())
+        .arg(dest)
+        .arg(remote_cmd)
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return failed(format!("can't run {}: {e}", ssh_program())),
+    };
+    if let (Some(bytes), Some(mut stdin)) = (input, child.stdin.take()) {
+        // Dropping stdin when done closes it, so the remote sees EOF.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&bytes);
+        });
+    }
+    // Drain both pipes on threads so a chatty child can't block on a full pipe.
+    let drain = |mut r: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut s = String::new();
+            let _ = r.read_to_string(&mut s);
+            s
+        })
+    };
+    let out = drain(Box::new(child.stdout.take().expect("piped")));
+    let err = drain(Box::new(child.stderr.take().expect("piped")));
+    let deadline = std::time::Instant::now() + timeout;
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s.code(),
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                // Not joining the drains: a killed ssh's descendants may
+                // still hold the pipes.
+                return RemoteOut {
+                    code: None,
+                    stdout: String::new(),
+                    stderr: format!("timed out after {}s", timeout.as_secs_f32()),
+                };
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => return failed(e.to_string()),
+        }
+    };
+    RemoteOut {
+        code,
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+    }
+}
+
 /// Runs `grove status --json` at `dest`, killing it after `timeout`.
 fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
     use std::io::Read;
