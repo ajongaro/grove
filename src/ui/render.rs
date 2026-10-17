@@ -130,7 +130,8 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 area,
             );
         }
-        Mode::Normal => {}
+        // Drawn by grid::render_grid instead (plan task 8).
+        Mode::Normal | Mode::Grid { .. } => {}
     }
 }
 

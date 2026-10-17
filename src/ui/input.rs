@@ -45,6 +45,11 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         Mode::Normal => normal_key(app, key),
+        // Grid keys come in plan task 7.
+        Mode::Grid { .. } => {
+            app.mode = Mode::Normal;
+            Action::None
+        }
     }
 }
 

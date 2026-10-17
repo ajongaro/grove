@@ -2009,3 +2009,105 @@ fn header_is_dropped_in_a_short_window() {
     assert!(!out.contains("█▀▀▀"), "{out}");
     assert!(out.lines().next().unwrap().contains("alpha"), "{out}");
 }
+
+fn screens_doc(sessions: &[(&str, &str, &str, State)]) -> crate::screens::Screens {
+    crate::screens::Screens {
+        version: 1,
+        host: "pi".into(),
+        sessions: sessions
+            .iter()
+            .map(|(id, project, name, state)| crate::screens::ScreenSession {
+                id: id.to_string(),
+                project: project.to_string(),
+                name: name.to_string(),
+                state: *state,
+                updated_at: t0(),
+                window: Some("@1".into()),
+                screen: format!("screen of {name}"),
+            })
+            .collect(),
+    }
+}
+
+fn screens_at(app: &mut App, slug: &str, at: chrono::DateTime<Utc>, doc: crate::screens::Screens) {
+    app.apply_screens(crate::screens::FetchResult {
+        slug: slug.into(),
+        at,
+        fetched: crate::screens::Fetched::Ok(doc),
+    });
+}
+
+#[test]
+fn tiles_list_local_then_finca_sessions() {
+    let (_d, _s, mut app) = with_fincas(
+        &["alpha", "beta"],
+        &[
+            session("b1", "beta", "s1", State::Working, Some("@2")),
+            session("a1", "alpha", "s1", State::YourTurn, Some("@1")),
+            session("a2", "alpha", "old", State::Ended, None),
+        ],
+        &["pi"],
+    );
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 0, 0)),
+        t0(),
+    );
+    app.local_screens.insert("a1".into(), "alpha screen".into());
+    screens_at(
+        &mut app,
+        "pi",
+        t0(),
+        screens_doc(&[("x", "blog", "s2", State::NeedsYou)]),
+    );
+    let tiles = super::grid::tiles(&app, t0());
+    let names: Vec<_> = tiles
+        .iter()
+        .map(|t| (t.finca.as_ref().map(|f| f.1.clone()), t.handle()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            (None, "alpha:s1".to_string()),
+            (None, "beta:s1".to_string()),
+            (Some("pi".to_string()), "blog:s2".to_string())
+        ]
+    );
+    assert_eq!(tiles[0].screen.as_deref(), Some("alpha screen"));
+    assert_eq!(tiles[2].screen.as_deref(), Some("screen of s2"));
+    assert_eq!(tiles[2].session_id.as_deref(), Some("x"));
+    assert_eq!(tiles[2].via.as_deref(), Some("me@pi"));
+    assert!(!tiles[2].stale);
+}
+
+#[test]
+fn finca_tiles_go_stale_and_fall_back_to_status() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["pi"]);
+    screens_at(
+        &mut app,
+        "pi",
+        t0(),
+        screens_doc(&[("x", "blog", "s2", State::YourTurn)]),
+    );
+    let later = t0() + Duration::seconds(super::grid::STALE_SECS + 1);
+    assert!(super::grid::tiles(&app, later)[0].stale);
+    // A Grove too old for screens: tiles from the status poll, no screen.
+    let (_d2, _s2, mut app2) = with_fincas(&["alpha"], &[], &["pi"]);
+    poll(
+        &mut app2,
+        "pi",
+        Reach::Reachable(remote_status("pi", 0, 1)),
+        t0(),
+    );
+    app2.apply_screens(crate::screens::FetchResult {
+        slug: "pi".into(),
+        at: t0(),
+        fetched: crate::screens::Fetched::TooOld,
+    });
+    let t = super::grid::tiles(&app2, t0());
+    assert_eq!(t.len(), 1, "{t:?}");
+    assert_eq!(t[0].screen, None);
+    assert_eq!(t[0].session_id, None);
+    assert!(app2.too_old.contains("pi"));
+}

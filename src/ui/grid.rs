@@ -4,7 +4,106 @@
 // Wired into the dashboard in plan tasks 7-9; this goes then.
 #![allow(dead_code)]
 
+use chrono::{DateTime, Utc};
+
+use super::app::App;
 use crate::model::State;
+
+/// Seconds without a good fetch before a finca's tiles go stale.
+pub const STALE_SECS: i64 = 6;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tile {
+    /// The finca's (slug, name), or None for this machine.
+    pub finca: Option<(String, String)>,
+    /// The finca destination that last answered.
+    pub via: Option<String>,
+    pub project: String,
+    pub name: String,
+    /// None for a finca tile from the status poll (its Grove is too old to
+    /// reply to).
+    pub session_id: Option<String>,
+    pub state: State,
+    pub updated_at: DateTime<Utc>,
+    pub window: Option<String>,
+    /// None: no live screen for this tile.
+    pub screen: Option<String>,
+    pub stale: bool,
+}
+
+impl Tile {
+    pub fn handle(&self) -> String {
+        format!("{}:{}", self.project, self.name)
+    }
+}
+
+/// Every live session: this machine's (projects in pane order, oldest
+/// first), then each finca's in the Fincas pane order.
+pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
+    let mut out = Vec::new();
+    for p in &app.projects {
+        for s in app
+            .sessions
+            .iter()
+            .filter(|s| s.project == p.slug && s.state != State::Ended)
+        {
+            out.push(Tile {
+                finca: None,
+                via: None,
+                project: s.project.clone(),
+                name: s.name.clone(),
+                session_id: Some(s.id.clone()),
+                state: s.state,
+                updated_at: s.updated_at,
+                window: s.tmux_window.clone(),
+                screen: Some(app.local_screens.get(&s.id).cloned().unwrap_or_default()),
+                stale: false,
+            });
+        }
+    }
+    for f in &app.fincas {
+        let finca = Some((f.slug.clone(), f.name.clone()));
+        let screens = app
+            .finca_screens
+            .get(&f.slug)
+            .filter(|_| !app.too_old.contains(&f.slug));
+        if let Some((at, screens)) = screens {
+            let stale = (now - *at).num_seconds() > STALE_SECS;
+            for s in &screens.sessions {
+                out.push(Tile {
+                    finca: finca.clone(),
+                    via: f.via.clone(),
+                    project: s.project.clone(),
+                    name: s.name.clone(),
+                    session_id: Some(s.id.clone()),
+                    state: s.state,
+                    updated_at: s.updated_at,
+                    window: s.window.clone(),
+                    screen: Some(s.screen.clone()),
+                    stale,
+                });
+            }
+        } else if let Some(st) = &f.last_status {
+            for p in &st.projects {
+                for s in p.sessions.iter().filter(|s| s.state != State::Ended) {
+                    out.push(Tile {
+                        finca: finca.clone(),
+                        via: f.via.clone(),
+                        project: p.slug.clone(),
+                        name: s.name.clone(),
+                        session_id: None,
+                        state: s.state,
+                        updated_at: s.updated_at,
+                        window: s.window.clone(),
+                        screen: None,
+                        stale: false,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
 
 /// The smallest tile worth drawing (border included).
 pub const MIN_W: u16 = 40;

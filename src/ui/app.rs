@@ -1,6 +1,6 @@
 //! Dashboard state. No terminal or tmux I/O here, so it's all unit-testable.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -29,6 +29,13 @@ pub enum Mode {
     Normal,
     /// The `?` key list; any key closes it.
     Help,
+    /// The session grid (`v`): `sel` indexes `grid::tiles`; `reply` is the
+    /// reply line's text while it's open.
+    #[allow(dead_code)] // wired up in plan tasks 7-9
+    Grid {
+        sel: usize,
+        reply: Option<String>,
+    },
     Prompt {
         kind: PromptKind,
         input: String,
@@ -187,6 +194,15 @@ pub struct App {
     pub finca_shells: HashMap<String, Vec<crate::finca::ShellWindow>>,
     /// ~/.ssh here, for completing finca destinations.
     pub ssh_dir: std::path::PathBuf,
+    /// Local sessions' screens by session id, while the grid is open.
+    pub local_screens: HashMap<String, String>,
+    /// Each finca's last good screens and when they came.
+    pub finca_screens: HashMap<String, (DateTime<Utc>, crate::screens::Screens)>,
+    /// Fincas whose Grove predates `grove screens`.
+    pub too_old: HashSet<String>,
+    /// The grid's column count, set when it's drawn, for hjkl.
+    #[allow(dead_code)] // wired up in plan tasks 7-9
+    pub grid_cols: std::cell::Cell<usize>,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -233,6 +249,26 @@ impl App {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default()
                 .join(".ssh"),
+            local_screens: HashMap::new(),
+            finca_screens: HashMap::new(),
+            too_old: HashSet::new(),
+            grid_cols: std::cell::Cell::new(1),
+        }
+    }
+
+    /// A finca's screens from the grid's fetcher.
+    #[allow(dead_code)] // wired up in plan tasks 7-9
+    pub fn apply_screens(&mut self, r: crate::screens::FetchResult) {
+        match r.fetched {
+            crate::screens::Fetched::Ok(s) => {
+                self.too_old.remove(&r.slug);
+                self.finca_screens.insert(r.slug, (r.at, s));
+            }
+            crate::screens::Fetched::TooOld => {
+                self.too_old.insert(r.slug);
+            }
+            // Keep the last good screens: they go stale on their own.
+            crate::screens::Fetched::Failed(_) => {}
         }
     }
 
