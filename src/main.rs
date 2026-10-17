@@ -10,6 +10,7 @@ mod mcp_overview;
 mod model;
 mod prompt;
 mod runfiles;
+mod screens;
 mod setup;
 mod state;
 mod status;
@@ -95,6 +96,15 @@ enum Cmd {
     /// Internal: the dashboard that runs in tmux window 0.
     #[command(hide = true)]
     Dashboard,
+    /// Internal: live sessions with their screens, for the session grid.
+    #[command(hide = true)]
+    Screens {
+        #[arg(long)]
+        json: bool,
+        /// Lines of each screen (most recent), at most 200.
+        #[arg(long, default_value_t = 40)]
+        lines: usize,
+    },
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
@@ -170,6 +180,15 @@ fn main() {
         Some(Cmd::Rm { project }) => exit_on_err(rm(&paths, &project)),
         Some(Cmd::Doctor) => exit_on_err(doctor(&paths)),
         Some(Cmd::Status { json }) => print_status(&paths, json),
+        Some(Cmd::Screens { lines, .. }) => {
+            let st = screens::local(
+                &Store::new(paths.clone()),
+                &grove_tmux(&paths),
+                lines.min(200),
+                &status::hostname(),
+            );
+            println!("{}", serde_json::to_string(&st).expect("screens serialize"));
+        }
         Some(Cmd::Paste { session, pane }) => {
             let _ = paths.ensure();
             transfer::paste(&paths, &grove_tmux(&paths), &session, &pane);

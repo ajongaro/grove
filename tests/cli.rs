@@ -600,3 +600,20 @@ fn paste_reports_a_failed_send_and_pastes_nothing() {
             .is_empty()
     );
 }
+
+#[test]
+fn screens_prints_json_with_no_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = grove(&dir.path().join("home"))
+        .args(["screens", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["sessions"], serde_json::json!([]));
+}
