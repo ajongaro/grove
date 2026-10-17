@@ -600,3 +600,34 @@ fn grid_reply_types_into_a_local_waiting_session() {
             .contains("hello there")
     );
 }
+
+#[test]
+fn grid_kill_closes_a_local_window_and_names_it() {
+    let t = setup("gridkill");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:a", &t.root, &[], &sleeper())
+        .unwrap();
+    t.ctx
+        .store
+        .save_session(&sess("a", "p", State::Working, Some(&w)))
+        .unwrap();
+    let kill = || {
+        perform(
+            &t.ctx,
+            Action::GridKill {
+                finca: None,
+                session_id: "a".into(),
+                handle: "p:a".into(),
+            },
+        )
+    };
+    match kill() {
+        Ok(Outcome::Message(m)) => assert_eq!(m, "Killed p:a"),
+        other => panic!("{other:?}"),
+    }
+    assert!(!tm.list_windows("grove").unwrap().contains(&w));
+    assert!(format!("{:#}", kill().unwrap_err()).contains("ended"));
+}

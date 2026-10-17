@@ -47,6 +47,48 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         Mode::Normal => normal_key(app, key),
         Mode::Grid { sel, reply } => grid_key(app, sel, reply, key),
+        Mode::GridKill {
+            sel,
+            session_id,
+            finca,
+            handle,
+        } => {
+            app.mode = Mode::Grid { sel, reply: None };
+            if !matches!(key.code, KeyCode::Char('y' | 'Y')) {
+                return Action::None;
+            }
+            // Its session, wherever its tile is now.
+            let tiles = super::grid::tiles(app, chrono::Utc::now());
+            let target = tiles.iter().position(|t| {
+                t.session_id.as_deref() == Some(session_id.as_str())
+                    && t.finca.as_ref().map(|f| &f.0) == finca.as_ref()
+            });
+            match target.map(|k| (k, &tiles[k])) {
+                None => {
+                    app.footer = Some(format!("{handle} has ended"));
+                    Action::None
+                }
+                Some((_, t)) if t.stale => {
+                    let name = t.finca.as_ref().map_or("it", |f| f.1.as_str());
+                    app.footer = Some(format!("{name} isn't answering"));
+                    Action::None
+                }
+                Some((k, t)) => {
+                    app.mode = Mode::Grid {
+                        sel: k,
+                        reply: None,
+                    };
+                    Action::GridKill {
+                        finca: t
+                            .finca
+                            .as_ref()
+                            .map(|(slug, _)| (slug.clone(), t.via.clone())),
+                        session_id,
+                        handle,
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -548,6 +590,24 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> A
                         }
                     }
                     (_, None) => app.footer = Some(format!("{} has no window yet", t.handle())),
+                }
+            }
+        }
+        KeyCode::Char('x') => {
+            if let Some(t) = tiles.get(sel) {
+                let finca = t.finca.as_ref().map_or("it", |f| f.1.as_str());
+                match &t.session_id {
+                    _ if t.stale => app.footer = Some(format!("{finca} isn't answering")),
+                    None => app.footer = Some(format!("update Grove on {finca} to kill from here")),
+                    Some(id) => {
+                        app.mode = Mode::GridKill {
+                            sel,
+                            session_id: id.clone(),
+                            finca: t.finca.as_ref().map(|f| f.0.clone()),
+                            handle: t.handle(),
+                        };
+                        return Action::None;
+                    }
                 }
             }
         }

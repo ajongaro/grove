@@ -39,12 +39,20 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     if header_h > 0 {
         render_header(frame, app, header);
     }
-    if let Mode::Grid { sel, reply } = &app.mode {
+    let grid = match &app.mode {
+        Mode::Grid { sel, reply } => Some((*sel, reply.as_ref())),
+        Mode::GridKill { sel, .. } => Some((*sel, None)),
+        _ => None,
+    };
+    if let Some((sel, reply)) = grid {
         let area = Rect {
             height: main.height + footer.height,
             ..main
         };
-        super::grid::render_grid(frame, app, *sel, reply.as_ref(), area, now);
+        super::grid::render_grid(frame, app, sel, reply, area, now);
+        if let Mode::GridKill { handle, .. } = &app.mode {
+            kill_popup(frame, handle);
+        }
         return;
     }
     let [left, right] =
@@ -99,19 +107,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             render_completions(frame, app, area);
         }
         Mode::Help => render_help(frame),
-        Mode::Confirm { label, .. } => {
-            let area = popup(frame.area(), 44, 3);
-            frame.render_widget(Clear, area);
-            frame.render_widget(
-                Paragraph::new(format!("Kill session {label}?  y / n")).block(
-                    Block::bordered()
-                        .border_type(BorderType::Rounded)
-                        .title(" Confirm ")
-                        .fg(Color::Red),
-                ),
-                area,
-            );
-        }
+        Mode::Confirm { label, .. } => kill_popup(frame, label),
         Mode::ConfirmRemove { name, .. } => {
             let area = popup(frame.area(), 60, 3);
             frame.render_widget(Clear, area);
@@ -139,7 +135,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             );
         }
         // Drawn by grid::render_grid instead (plan task 8).
-        Mode::Normal | Mode::Grid { .. } => {}
+        Mode::Normal | Mode::Grid { .. } | Mode::GridKill { .. } => {}
     }
 }
 
@@ -646,17 +642,33 @@ fn render_help(frame: &mut Frame) {
             lines
         })
         .collect();
-    // Fill the left column until it holds about half the lines.
+    // Split where the taller column is shortest.
     let total: usize = sections.iter().map(Vec::len).sum();
-    let (mut left, mut right) = (Vec::new(), Vec::new());
-    for s in sections {
-        if left.len() < total / 2 {
+    let mut acc = 0;
+    let split = (0..=sections.len())
+        .min_by_key(|&k| {
+            let l = acc;
+            acc += sections.get(k).map_or(0, Vec::len);
+            l.max(total - l)
+        })
+        .unwrap_or(0);
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for (k, s) in sections.into_iter().enumerate() {
+        if k < split {
             left.extend(s);
         } else {
             right.extend(s);
         }
     }
-    let height = left.len().max(right.len()) as u16 + 1;
+    // No spacer under a column's last section.
+    for col in [&mut left, &mut right] {
+        if col.last().is_some_and(|l| l.width() == 0) {
+            col.pop();
+        }
+    }
+    // Plus the top and bottom border.
+    let height = left.len().max(right.len()) as u16 + 2;
     let area = popup(frame.area(), 90, height);
     frame.render_widget(Clear, area);
     let block = Block::bordered()
@@ -837,4 +849,20 @@ fn popup(area: Rect, width_pct: u16, height: u16) -> Rect {
         width: w,
         height: h,
     }
+}
+
+/// "Kill session <label>?  y / n", centred.
+fn kill_popup(frame: &mut Frame, label: &str) {
+    let text = format!("Kill session {label}?  y / n");
+    let area = popup(frame.area(), 44, 3);
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(text).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .title(" Confirm ")
+                .fg(Color::Red),
+        ),
+        area,
+    );
 }

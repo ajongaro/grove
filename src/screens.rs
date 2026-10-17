@@ -124,21 +124,44 @@ pub fn type_prompt_remote(
     session_id: &str,
     text: &str,
 ) -> Result<String, String> {
+    run_on_finca(f, dest, "type-prompt", session_id, Some(text), "reply")
+}
+
+/// Kills a finca session with `grove kill-session`; its handle on success.
+pub fn kill_session_remote(
+    f: &crate::finca::Finca,
+    dest: &str,
+    session_id: &str,
+) -> Result<String, String> {
+    run_on_finca(f, dest, "kill-session", session_id, None, "kill sessions")
+}
+
+/// Runs `grove <cmd> <session_id>` on a finca, `input` on stdin. Its last
+/// line of output, or of its error. `doing` finishes "too old to … from
+/// here" for a Grove without the command.
+fn run_on_finca(
+    f: &crate::finca::Finca,
+    dest: &str,
+    cmd: &str,
+    session_id: &str,
+    input: Option<&str>,
+    doing: &str,
+) -> Result<String, String> {
     use crate::finca::{login_shell_cmd, sh_quote};
-    let cmd = login_shell_cmd(&format!(
-        "{} type-prompt {}",
+    let line = login_shell_cmd(&format!(
+        "{} {cmd} {}",
         sh_quote(&f.grove_bin),
         sh_quote(session_id)
     ));
     let out = crate::finca::run_timed(
         dest,
-        &cmd,
-        Some(text.as_bytes().to_vec()),
+        &line,
+        input.map(|t| t.as_bytes().to_vec()),
         std::time::Duration::from_secs(15),
     );
     if unknown_command(&out) {
         return Err(format!(
-            "{}'s Grove is too old to reply from here: update it (grove finca update)",
+            "{}'s Grove is too old to {doing} from here: update it (grove finca update)",
             f.name
         ));
     }
@@ -408,6 +431,34 @@ mod tests {
         );
         let err = via_fake_ssh(d.path(), || {
             type_prompt_remote(&finca_at(&bin), "me@pi", "sid", "x")
+        })
+        .unwrap_err();
+        assert!(
+            err.contains("too old") && err.contains("grove finca update"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn kill_session_remote_reports_the_handle_errors_and_old_groves() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "[ \"$1\" = kill-session ] || { echo \"error: unrecognized subcommand '$1'\" >&2; exit 2; }; if [ \"$2\" = sid ]; then echo blog:s2; else echo \"no live session $2\" >&2; exit 1; fi",
+        );
+        let f = finca_at(&bin);
+        let ok = via_fake_ssh(d.path(), || kill_session_remote(&f, "me@pi", "sid"));
+        assert_eq!(ok, Ok("blog:s2".into()));
+        let err = via_fake_ssh(d.path(), || kill_session_remote(&f, "me@pi", "zz")).unwrap_err();
+        assert!(err.contains("no live session zz"), "{err}");
+        let old = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "echo \"error: unrecognized subcommand 'kill-session'\" >&2; exit 2",
+        );
+        let err = via_fake_ssh(d.path(), || {
+            kill_session_remote(&finca_at(&old), "me@pi", "sid")
         })
         .unwrap_err();
         assert!(

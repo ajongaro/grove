@@ -635,3 +635,29 @@ fn type_prompt_unknown_session_exits_1_with_a_message() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("no live session"), "{err}");
 }
+
+#[test]
+fn kill_session_ends_a_live_session_and_refuses_unknown_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(home.join("sessions")).unwrap();
+    std::fs::write(
+        home.join("sessions/a.json"),
+        r#"{"id":"a","project":"demo","name":"s1","host":"local","tmux_window":"@999","state":"working","message":null,"created_at":"2026-10-07T10:00:00Z","updated_at":"2026-10-07T10:00:00Z"}"#,
+    )
+    .unwrap();
+    let kill = || grove(&home).args(["kill-session", "a"]).output().unwrap();
+    let out = kill();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "demo:s1");
+    let saved = std::fs::read_to_string(home.join("sessions/a.json")).unwrap();
+    assert!(saved.contains("\"ended\""), "{saved}");
+    // Already ended.
+    let again = kill();
+    assert_eq!(again.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("no live session a"));
+}

@@ -292,10 +292,9 @@ pub fn render_grid(
             frame.render_widget(Paragraph::new(lines), bottom);
         }
         None => {
-            let text = app
-                .footer
-                .clone()
-                .unwrap_or_else(|| "Enter jump · i reply · Tab next waiting · hjkl move".into());
+            let text = app.footer.clone().unwrap_or_else(|| {
+                "Enter jump · i reply · x kill · Tab next waiting · hjkl move".into()
+            });
             frame.render_widget(Paragraph::new(format!(" {text}")).dark_gray(), bottom);
         }
     }

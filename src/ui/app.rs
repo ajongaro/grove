@@ -63,6 +63,14 @@ pub enum Mode {
     ConfirmCreate {
         path: String,
     },
+    /// Kill this grid tile's session? y / n, then back to the grid.
+    GridKill {
+        sel: usize,
+        session_id: String,
+        /// The finca's slug, for a finca session.
+        finca: Option<String>,
+        handle: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,6 +186,13 @@ pub enum Action {
         session_id: String,
         handle: String,
         text: String,
+    },
+    /// Kill a session from the grid: here, or on a finca (slug, the
+    /// destination that answered).
+    GridKill {
+        finca: Option<(String, Option<String>)>,
+        session_id: String,
+        handle: String,
     },
 }
 

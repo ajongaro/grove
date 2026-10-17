@@ -2285,7 +2285,7 @@ fn grid_draws_tiles_with_titles_and_screens() {
         "pi · blog:s2 ⚑ needs you",
         "Want me to commit?",
         "screen of s2",
-        "Enter jump · i reply · Tab next waiting · hjkl move",
+        "Enter jump · i reply · x kill · Tab next waiting · hjkl move",
     ] {
         assert!(out.contains(want), "missing {want:?}:\n{out}");
     }
@@ -2460,4 +2460,112 @@ fn an_unreachable_finca_has_no_tiles() {
         t0(),
     );
     assert!(super::grid::tiles(&app, t0()).is_empty());
+}
+
+#[test]
+fn x_in_the_grid_kills_after_y_and_stays_in_the_grid() {
+    let (_d, _s, mut app) = grid_app();
+    handle_key(&mut app, ch('l')); // y1
+    assert_eq!(handle_key(&mut app, ch('x')), Action::None);
+    assert!(
+        matches!(&app.mode, Mode::GridKill { session_id, handle, .. } if session_id == "y1" && handle == "alpha:y1"),
+        "{:?}",
+        app.mode
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::GridKill {
+            finca: None,
+            session_id: "y1".into(),
+            handle: "alpha:y1".into(),
+        }
+    );
+    assert_eq!(grid_sel(&app), 1);
+}
+
+#[test]
+fn anything_but_y_cancels_a_grid_kill() {
+    let (_d, _s, mut app) = grid_app();
+    handle_key(&mut app, ch('x'));
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    assert_eq!(grid_sel(&app), 0);
+    handle_key(&mut app, ch('x'));
+    assert_eq!(handle_key(&mut app, key(KeyCode::Esc)), Action::None);
+    assert_eq!(grid_sel(&app), 0);
+}
+
+#[test]
+fn a_grid_kill_targets_its_session_even_if_tiles_move() {
+    let (_d, _s, mut app) = grid_app();
+    handle_key(&mut app, ch('l')); // y1
+    handle_key(&mut app, ch('x'));
+    // w1 ends while the popup is up: y1 is now the first tile.
+    app.sessions.retain(|s| s.id != "w1");
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::GridKill {
+            finca: None,
+            session_id: "y1".into(),
+            handle: "alpha:y1".into(),
+        }
+    );
+    // Gone by then: nothing to kill.
+    handle_key(&mut app, ch('x'));
+    app.sessions.clear();
+    assert_eq!(handle_key(&mut app, ch('y')), Action::None);
+    assert!(app.footer.as_deref().unwrap().contains("has ended"));
+}
+
+#[test]
+fn x_on_a_finca_tile_kills_it_there() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi"]);
+    screens_at(
+        &mut app,
+        "pi",
+        Utc::now(),
+        screens_doc(&[("x9", "blog", "s2", State::Working)]),
+    );
+    app.mode = Mode::Grid {
+        sel: 0,
+        reply: None,
+    };
+    handle_key(&mut app, ch('x'));
+    match handle_key(&mut app, ch('y')) {
+        Action::GridKill {
+            finca: Some((slug, _)),
+            session_id,
+            handle,
+        } => {
+            assert_eq!((slug.as_str(), session_id.as_str()), ("pi", "x9"));
+            assert_eq!(handle, "blog:s2");
+        }
+        a => panic!("{a:?}"),
+    }
+}
+
+#[test]
+fn x_refuses_stale_and_old_finca_tiles() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi"]);
+    screens_at(
+        &mut app,
+        "pi",
+        Utc::now() - Duration::seconds(60),
+        screens_doc(&[("x9", "blog", "s2", State::Working)]),
+    );
+    app.mode = Mode::Grid {
+        sel: 0,
+        reply: None,
+    };
+    assert_eq!(handle_key(&mut app, ch('x')), Action::None);
+    assert!(app.footer.as_deref().unwrap().contains("isn't answering"));
+    assert!(matches!(&app.mode, Mode::Grid { .. }));
+}
+
+#[test]
+fn the_grid_kill_popup_draws_over_the_grid() {
+    let (_d, _s, mut app) = grid_app();
+    handle_key(&mut app, ch('x'));
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("Kill session alpha:w1?"), "{out}");
+    assert!(out.contains("SESSIONS"), "{out}");
 }

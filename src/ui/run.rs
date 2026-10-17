@@ -63,18 +63,30 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             Outcome::Nothing
         }
         Action::Kill { session_id } => {
-            let Some(mut s) = store.get_session(&session_id) else {
-                return Ok(Outcome::Nothing);
-            };
-            if let Some(w) = &s.tmux_window {
-                // Already gone is fine: the goal is "not running".
-                let _ = ctx.tmux.kill_window(w);
+            let name = store.get_session(&session_id).map(|s| s.name);
+            match crate::launch::kill(&ctx.tmux, store, &session_id)? {
+                Some(_) => Outcome::Message(format!("Killed {}", name.unwrap_or_default())),
+                None => Outcome::Nothing,
             }
-            s.state = State::Ended;
-            s.message = None;
-            s.updated_at = chrono::Utc::now();
-            store.save_session(&s)?;
-            Outcome::Message(format!("Killed {}", s.name))
+        }
+        Action::GridKill {
+            finca,
+            session_id,
+            handle: _,
+        } => {
+            let killed = match finca {
+                None => crate::launch::kill(&ctx.tmux, store, &session_id)?
+                    .ok_or_else(|| "that session has ended".to_string()),
+                Some((slug, via)) => {
+                    let f = store.get_finca(&slug)?;
+                    let dest = via.unwrap_or_else(|| f.ssh.clone());
+                    crate::screens::kill_session_remote(&f, &dest, &session_id)
+                }
+            };
+            match killed {
+                Ok(h) => Outcome::Message(format!("Killed {h}")),
+                Err(e) => anyhow::bail!(e),
+            }
         }
         Action::EditProject { slug } => {
             let file = store.paths.projects.join(format!("{slug}.toml"));
@@ -538,8 +550,16 @@ fn event_loop(
         {
             let action = handle_key(app, key);
             let was_reply = matches!(action, Action::GridReply { .. });
-            if was_reply {
-                app.footer = Some("sending…".into());
+            let was_kill = matches!(action, Action::GridKill { .. });
+            if was_reply || was_kill {
+                app.footer = Some(
+                    if was_reply {
+                        "sending…"
+                    } else {
+                        "killing…"
+                    }
+                    .into(),
+                );
                 terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
             }
             match perform(ctx, action) {
@@ -558,7 +578,7 @@ fn event_loop(
             }
             // Keys typed while a send was out (a slow finca) would land on
             // whatever is selected now: a second Enter could resend or jump.
-            if was_reply {
+            if was_reply || was_kill {
                 while event::poll(Duration::ZERO)? {
                     let _ = event::read()?;
                 }

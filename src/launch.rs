@@ -119,6 +119,23 @@ pub fn next_session_name(store: &Store, slug: &str) -> String {
         .expect("unbounded range")
 }
 
+/// Closes a live session's window and marks it ended. Returns its handle,
+/// `project:name`, or None when there's no live session `id`.
+pub fn kill(tmux: &Tmux, store: &Store, id: &str) -> Result<Option<String>> {
+    let Some(mut s) = store.get_session(id).filter(|s| s.state != State::Ended) else {
+        return Ok(None);
+    };
+    if let Some(w) = &s.tmux_window {
+        // Already gone is fine: the goal is "not running".
+        let _ = tmux.kill_window(w);
+    }
+    s.state = State::Ended;
+    s.message = None;
+    s.updated_at = chrono::Utc::now();
+    store.save_session(&s)?;
+    Ok(Some(format!("{}:{}", s.project, s.name)))
+}
+
 /// Records a `starting` session, opens its window, and stores the window id.
 pub fn start(
     tmux: &Tmux,

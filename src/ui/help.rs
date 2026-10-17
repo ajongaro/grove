@@ -47,10 +47,10 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Grid",
         &[
-            ("h j k l", "move between tiles"),
-            ("Tab", "next waiting (S-Tab back)"),
+            ("hjkl Tab", "move / next waiting (S-Tab back)"),
             ("Enter", "jump to its window"),
             ("i", "reply to a waiting session"),
+            ("x", "kill it (asks first)"),
             ("v Esc", "back to the dashboard"),
         ],
     ),

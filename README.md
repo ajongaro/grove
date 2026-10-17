@@ -179,8 +179,9 @@ a tile with its latest output (Claude's input box and status bar are left
 out; `✎ draft` in the title means unsent text is typed there), refreshed as
 it changes. `h j k l`
 move, `Tab` jumps to the next one that needs you or is waiting, `Enter`
-goes to its window (`C-g` comes back), and `i` replies to a session that's
-waiting for its next message without leaving the grid. Permission prompts
+goes to its window (`C-g` comes back), `i` replies to a session that's
+waiting for its next message without leaving the grid, and `x` kills one
+(after a y/n), here or on a finca. Permission prompts
 are answered in the session itself. A finca's tiles dim and say `stale`
 when it stops answering; one running an older Grove shows states without
 screens until you `grove finca update`.

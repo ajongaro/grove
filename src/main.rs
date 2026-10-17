@@ -109,6 +109,10 @@ enum Cmd {
     /// another machine).
     #[command(hide = true)]
     TypePrompt { session: String },
+    /// Internal: kill a live session (the session grid, from another
+    /// machine).
+    #[command(hide = true)]
+    KillSession { session: String },
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
@@ -191,6 +195,20 @@ fn main() {
                 Ok(handle) => println!("{handle}"),
                 Err(e) => {
                     eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some(Cmd::KillSession { session }) => {
+            let store = Store::new(paths.clone());
+            match launch::kill(&grove_tmux(&paths), &store, &session) {
+                Ok(Some(handle)) => println!("{handle}"),
+                Ok(None) => {
+                    eprintln!("no live session {session}");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("{e:#}");
                     std::process::exit(1);
                 }
             }
