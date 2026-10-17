@@ -16,7 +16,7 @@ pub(super) const KEY_COLOR: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 /// Width of each session-state count on a project row: glyph, two digits,
 /// a space.
 const SLOT_W: usize = 4;
-const ACCENT: Color = Color::Rgb(102, 187, 106);
+pub(super) const ACCENT: Color = Color::Rgb(102, 187, 106);
 /// Each pane's title word keeps its color whatever has focus (green and
 /// red stay free for focus and needs-you). Account boxes use the account's.
 pub(super) const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
@@ -38,6 +38,14 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     .areas(frame.area());
     if header_h > 0 {
         render_header(frame, app, header);
+    }
+    if let Mode::Grid { sel, reply } = &app.mode {
+        let area = Rect {
+            height: main.height + footer.height,
+            ..main
+        };
+        super::grid::render_grid(frame, app, *sel, reply.as_deref(), area, now);
+        return;
     }
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
@@ -800,7 +808,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn state_color(s: State) -> Color {
+pub(super) fn state_color(s: State) -> Color {
     match s {
         State::NeedsYou => Color::Red,
         State::YourTurn => Color::Yellow,

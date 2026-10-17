@@ -2255,3 +2255,92 @@ fn the_selection_survives_tiles_going_away() {
         }
     );
 }
+
+#[test]
+fn grid_draws_tiles_with_titles_and_screens() {
+    let (_d, _s, mut app) = with_fincas(
+        &["alpha"],
+        &[
+            session("y1", "alpha", "fix", State::YourTurn, Some("@2")),
+            session("w1", "alpha", "s1", State::Working, Some("@1")),
+        ],
+        &["pi"],
+    );
+    app.local_screens
+        .insert("y1".into(), "Done. Tests pass.\nWant me to commit?".into());
+    screens_at(
+        &mut app,
+        "pi",
+        t0() + Duration::minutes(2),
+        screens_doc(&[("x", "blog", "s2", State::NeedsYou)]),
+    );
+    handle_key(&mut app, ch('v'));
+    let out = screen(&app, 110, 32);
+    for want in [
+        "SESSIONS · 3 live",
+        "alpha:fix ● your turn",
+        "alpha:s1 ● working",
+        "pi · blog:s2 ⚑ needs you",
+        "Want me to commit?",
+        "screen of s2",
+        "Enter jump · i reply · Tab next waiting · hjkl move",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    assert_eq!(app.grid_cols.get(), 2);
+}
+
+#[test]
+fn grid_reply_line_and_scroll_note() {
+    let sessions: Vec<_> = (0..10)
+        .map(|i| {
+            let mut s = session(
+                &format!("s{i}"),
+                "alpha",
+                &format!("s{i}"),
+                State::YourTurn,
+                Some("@1"),
+            );
+            s.created_at = t0() + Duration::minutes(i);
+            s
+        })
+        .collect();
+    let (_d, _s, mut app) = loaded(&["alpha"], &sessions);
+    app.mode = Mode::Grid {
+        sel: 9,
+        reply: Some("yes please".into()),
+    };
+    let out = screen(&app, 80, 24);
+    assert!(out.contains("showing"), "{out}");
+    assert!(out.contains("reply ▸ yes please"), "{out}");
+    assert!(
+        out.contains("alpha:s9"),
+        "selected tile scrolled into view:\n{out}"
+    );
+}
+
+#[test]
+fn grid_tiles_survive_wide_characters_and_tiny_terminals() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("y1", "alpha", "fix", State::YourTurn, Some("@2"))],
+    );
+    app.local_screens
+        .insert("y1".into(), "表示テスト🙂\ttabbed ".repeat(20));
+    handle_key(&mut app, ch('v'));
+    let out = screen(&app, 60, 20);
+    // Every body row of the tile still ends with its right border.
+    // (The selected tile's border is the thick one.)
+    let side = |c: char| c == '│' || c == '┃';
+    let body: Vec<&str> = out.lines().filter(|l| l.starts_with(side)).collect();
+    assert!(!body.is_empty(), "{out}");
+    assert!(body.iter().all(|l| l.trim_end().ends_with(side)), "{out}");
+    let _ = screen(&app, 30, 6); // no panic
+}
+
+#[test]
+fn an_empty_grid_says_how_to_start() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('v'));
+    assert!(screen(&app, 110, 32).contains("No live sessions"));
+}

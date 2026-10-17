@@ -5,8 +5,14 @@
 #![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
+use ratatui::Frame;
+use ratatui::layout::{Alignment, Constraint, Layout as Split, Rect};
+use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 
 use super::app::App;
+use super::render::{ACCENT, FINCAS_COLOR, SESSIONS_COLOR, state_color};
 use crate::model::State;
 
 /// Seconds without a good fetch before a finca's tiles go stale.
@@ -177,6 +183,188 @@ pub fn next_waiting(states: &[State], from: usize, forward: bool) -> usize {
         })
         .find(|&i| matches!(states[i], State::NeedsYou | State::YourTurn))
         .unwrap_or(from)
+}
+
+/// The grid: a top line, the tiles, and the reply line or hints, in `area`.
+pub fn render_grid(
+    frame: &mut Frame,
+    app: &App,
+    sel: usize,
+    reply: Option<&str>,
+    area: Rect,
+    now: DateTime<Utc>,
+) {
+    let tiles = tiles(app, now);
+    let [top, body, bottom] = Split::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(if reply.is_some() { 2 } else { 1 }),
+    ])
+    .areas(area);
+    let l = layout(tiles.len(), body.width, body.height);
+    app.grid_cols.set(l.cols);
+    let sel = sel.min(tiles.len().saturating_sub(1));
+    let first = first_row(sel, l.cols, l.rows);
+    let shown = (first * l.cols).min(tiles.len())..((first + l.rows) * l.cols).min(tiles.len());
+
+    // Top line: totals, what's shown, unreachable fincas, the way back.
+    let count = |f: &dyn Fn(State) -> bool| tiles.iter().filter(|t| f(t.state)).count();
+    let mut spans = vec![
+        Span::raw(" SESSIONS").fg(SESSIONS_COLOR),
+        Span::raw(format!(" · {} live", tiles.len())),
+    ];
+    if shown.len() < tiles.len() {
+        spans.push(Span::raw(format!(" · showing {}–{}", shown.start + 1, shown.end)).dark_gray());
+    }
+    for (icon, n, c) in [
+        ("⚑", count(&|s| s == State::NeedsYou), Color::Red),
+        ("●", count(&|s| s == State::YourTurn), Color::Yellow),
+        (
+            "●",
+            count(&|s| matches!(s, State::Working | State::Starting)),
+            Color::Green,
+        ),
+    ] {
+        spans.push(Span::raw(format!("  {icon}{n}")).fg(if n == 0 { Color::DarkGray } else { c }));
+    }
+    for f in &app.fincas {
+        if matches!(f.reach, Some(crate::finca::Reach::Unreachable { .. })) {
+            spans.push(Span::raw(format!(" · {} unreachable", f.name)).dark_gray());
+        }
+    }
+    frame.render_widget(Paragraph::new(Line::from(spans)), top);
+    frame.render_widget(
+        Paragraph::new("v back · ? help ")
+            .alignment(Alignment::Right)
+            .dark_gray(),
+        top,
+    );
+
+    if tiles.is_empty() {
+        frame.render_widget(
+            Paragraph::new(" No live sessions. Esc back, then Enter on a project to start one.")
+                .dark_gray(),
+            body,
+        );
+    }
+    for (k, i) in shown.clone().enumerate() {
+        let (r, c) = ((k / l.cols) as u16, (k % l.cols) as u16);
+        let (x, y) = (body.x + c * l.tile_w, body.y + r * l.tile_h);
+        // The last row and column take what division leaves over.
+        let last_col = usize::from(c) + 1 == l.cols;
+        let last_row = usize::from(r) + 1 == l.rows;
+        let rect = Rect {
+            x,
+            y,
+            width: if last_col {
+                body.right().saturating_sub(x)
+            } else {
+                l.tile_w
+            },
+            height: if last_row {
+                body.bottom().saturating_sub(y)
+            } else {
+                l.tile_h
+            },
+        }
+        .intersection(body);
+        draw_tile(frame, &tiles[i], i == sel, rect, now);
+    }
+
+    // Bottom: the reply line, or a message, or the hints.
+    match reply {
+        Some(text) => {
+            let lines = vec![
+                Line::from(vec![
+                    Span::raw(" reply ▸ ").fg(ACCENT),
+                    Span::raw(text.to_string()),
+                    Span::raw("_").dark_gray(),
+                ]),
+                Line::from(" Enter send · Esc cancel").dark_gray(),
+            ];
+            frame.render_widget(Paragraph::new(lines), bottom);
+        }
+        None => {
+            let text = app
+                .footer
+                .clone()
+                .unwrap_or_else(|| "Enter jump · i reply · Tab next waiting · hjkl move".into());
+            frame.render_widget(Paragraph::new(format!(" {text}")).dark_gray(), bottom);
+        }
+    }
+}
+
+fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateTime<Utc>) {
+    if rect.width < 3 || rect.height < 2 {
+        return;
+    }
+    let dim = |c: Color| if t.stale { Color::DarkGray } else { c };
+    let icon = if t.state == State::NeedsYou {
+        "⚑"
+    } else {
+        "●"
+    };
+    let mut title = vec![Span::raw(" ")];
+    if let Some((_, name)) = &t.finca {
+        title.push(Span::raw(name.clone()).fg(dim(FINCAS_COLOR)));
+        title.push(Span::raw(" · ").dark_gray());
+    }
+    title.push(Span::raw(t.handle()).fg(dim(Color::White)));
+    title.push(Span::raw(format!(" {icon} {}", t.state.label())).fg(dim(state_color(t.state))));
+    title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).dark_gray());
+    if t.stale {
+        title.push(Span::raw("  stale").dark_gray());
+    }
+    title.push(Span::raw(" "));
+    let border = if selected {
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    } else if t.finca.is_some() && !t.stale {
+        Style::default().fg(FINCAS_COLOR)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if selected {
+            BorderType::Thick
+        } else {
+            BorderType::Rounded
+        })
+        .border_style(border)
+        .title(Line::from(title));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+    let body: Vec<Line> = match &t.screen {
+        None => vec![Line::from(t.state.label().to_string()).dark_gray()],
+        Some(s) => {
+            let lines: Vec<&str> = s.lines().collect();
+            let keep = &lines[lines.len().saturating_sub(usize::from(inner.height))..];
+            keep.iter()
+                .map(|l| Line::from(fit(l, usize::from(inner.width))))
+                .collect()
+        }
+    };
+    let style = if t.stale {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+    frame.render_widget(Paragraph::new(body).style(style), inner);
+}
+
+/// `s` with tabs as spaces, cut to `width` display columns.
+fn fit(s: &str, width: usize) -> String {
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in s.replace('\t', "    ").chars() {
+        let w = Span::raw(ch.to_string()).width();
+        if used + w > width {
+            break;
+        }
+        used += w;
+        out.push(ch);
+    }
+    out
 }
 
 #[cfg(test)]
