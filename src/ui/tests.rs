@@ -2111,3 +2111,147 @@ fn finca_tiles_go_stale_and_fall_back_to_status() {
     assert_eq!(t[0].session_id, None);
     assert!(app2.too_old.contains("pi"));
 }
+
+fn grid_app() -> (tempfile::TempDir, Store, App) {
+    // Oldest first: w1, y1, n1.
+    let aged = |mut s: Session, mins: i64| {
+        s.created_at = t0() + Duration::minutes(mins);
+        s
+    };
+    let (d, s, mut app) = loaded(
+        &["alpha"],
+        &[
+            aged(session("w1", "alpha", "w1", State::Working, Some("@1")), 0),
+            aged(session("y1", "alpha", "y1", State::YourTurn, Some("@2")), 1),
+            aged(session("n1", "alpha", "n1", State::NeedsYou, Some("@3")), 2),
+        ],
+    );
+    app.grid_cols.set(2);
+    handle_key(&mut app, ch('v'));
+    (d, s, app)
+}
+
+fn grid_sel(app: &App) -> usize {
+    match &app.mode {
+        Mode::Grid { sel, .. } => *sel,
+        m => panic!("not in the grid: {m:?}"),
+    }
+}
+
+#[test]
+fn v_opens_the_grid_and_esc_closes_it() {
+    let (_d, _s, mut app) = grid_app();
+    assert_eq!(grid_sel(&app), 0);
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.mode, Mode::Normal);
+    handle_key(&mut app, ch('v'));
+    handle_key(&mut app, ch('v'));
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn hjkl_and_tab_move_in_the_grid() {
+    let (_d, _s, mut app) = grid_app();
+    // [w1 y1] [n1]
+    handle_key(&mut app, ch('l'));
+    assert_eq!(grid_sel(&app), 1);
+    handle_key(&mut app, ch('j'));
+    assert_eq!(grid_sel(&app), 2);
+    handle_key(&mut app, ch('k'));
+    assert_eq!(grid_sel(&app), 0);
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(grid_sel(&app), 1);
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(grid_sel(&app), 2);
+    handle_key(&mut app, key(KeyCode::BackTab));
+    assert_eq!(grid_sel(&app), 1);
+}
+
+#[test]
+fn enter_jumps_to_the_tiles_window() {
+    let (_d, _s, mut app) = grid_app();
+    handle_key(&mut app, ch('l'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@2".into()
+        }
+    );
+}
+
+#[test]
+fn i_replies_only_on_your_turn() {
+    let (_d, _s, mut app) = grid_app();
+    assert_eq!(handle_key(&mut app, ch('i')), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap().contains("is working"),
+        "{:?}",
+        app.footer
+    );
+    handle_key(&mut app, key(KeyCode::Tab)); // y1
+    handle_key(&mut app, ch('i'));
+    for c in "ok go".chars() {
+        handle_key(&mut app, ch(c));
+    }
+    let a = handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(
+        a,
+        Action::GridReply {
+            finca: None,
+            session_id: "y1".into(),
+            handle: "alpha:y1".into(),
+            text: "ok go".into()
+        }
+    );
+    // Kept until the send succeeds.
+    assert!(matches!(&app.mode, Mode::Grid { reply: Some(t), .. } if t == "ok go"));
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert!(matches!(&app.mode, Mode::Grid { reply: None, .. }));
+    handle_key(&mut app, key(KeyCode::Tab)); // n1
+    handle_key(&mut app, ch('i'));
+    assert!(
+        app.footer.as_deref().unwrap().contains("needs you"),
+        "{:?}",
+        app.footer
+    );
+}
+
+#[test]
+fn a_stale_finca_tile_refuses_replies() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi"]);
+    screens_at(
+        &mut app,
+        "pi",
+        Utc::now() - Duration::seconds(60),
+        screens_doc(&[("x", "blog", "s2", State::YourTurn)]),
+    );
+    app.mode = Mode::Grid {
+        sel: 0,
+        reply: None,
+    };
+    assert_eq!(handle_key(&mut app, ch('i')), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap().contains("isn't answering"),
+        "{:?}",
+        app.footer
+    );
+    assert!(matches!(&app.mode, Mode::Grid { reply: None, .. }));
+}
+
+#[test]
+fn the_selection_survives_tiles_going_away() {
+    let (_d, _s, mut app) = grid_app();
+    app.mode = Mode::Grid {
+        sel: 2,
+        reply: None,
+    };
+    app.sessions.retain(|s| s.id == "w1");
+    handle_key(&mut app, ch('l'));
+    assert_eq!(grid_sel(&app), 0);
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@1".into()
+        }
+    );
+}

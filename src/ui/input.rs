@@ -4,6 +4,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, state_is_live};
 use super::complete::{complete_path, complete_ssh_host};
+use crate::model::State;
 use crate::todo::Effect;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
@@ -45,11 +46,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         Mode::Normal => normal_key(app, key),
-        // Grid keys come in plan task 7.
-        Mode::Grid { .. } => {
-            app.mode = Mode::Normal;
-            Action::None
-        }
+        Mode::Grid { sel, reply } => grid_key(app, sel, reply, key),
     }
 }
 
@@ -167,6 +164,13 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         .modifiers
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
     {
+        return Action::None;
+    }
+    if key.code == KeyCode::Char('v') {
+        app.mode = Mode::Grid {
+            sel: 0,
+            reply: None,
+        };
         return Action::None;
     }
     if let Some(action) = finca_key(app, key.code) {
@@ -448,4 +452,121 @@ fn cycle_completion(app: &mut App, kind: PromptKind, step: isize) {
         kind,
         input: app.completions[next].clone(),
     };
+}
+
+/// Keys in the session grid, and in its reply line while that's open.
+fn grid_key(app: &mut App, sel: usize, reply: Option<String>, key: KeyEvent) -> Action {
+    use super::grid::{Dir, next_waiting, step, tiles};
+    let tiles = tiles(app, chrono::Utc::now());
+    // Sessions come and go under the selection.
+    let mut sel = sel.min(tiles.len().saturating_sub(1));
+    if let Some(mut text) = reply {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Esc => {
+                app.mode = Mode::Grid { sel, reply: None };
+                return Action::None;
+            }
+            KeyCode::Enter => {
+                let action = match tiles.get(sel) {
+                    Some(t) => match &t.session_id {
+                        Some(id) => Action::GridReply {
+                            finca: t
+                                .finca
+                                .as_ref()
+                                .map(|(slug, _)| (slug.clone(), t.via.clone())),
+                            session_id: id.clone(),
+                            handle: t.handle(),
+                            text: text.clone(),
+                        },
+                        None => Action::None,
+                    },
+                    None => Action::None,
+                };
+                // Kept until the send succeeds (run.rs clears it).
+                app.mode = Mode::Grid {
+                    sel,
+                    reply: Some(text),
+                };
+                return action;
+            }
+            KeyCode::Char('u') if ctrl => text.clear(),
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::Char(c) if !ctrl => text.push(c),
+            _ => {}
+        }
+        app.mode = Mode::Grid {
+            sel,
+            reply: Some(text),
+        };
+        return Action::None;
+    }
+    app.footer = None;
+    let n = tiles.len();
+    let cols = app.grid_cols.get();
+    let mut action = Action::None;
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('v') => {
+            app.mode = Mode::Normal;
+            return Action::None;
+        }
+        KeyCode::Char('?') => {
+            app.mode = Mode::Help;
+            return Action::None;
+        }
+        KeyCode::Char('q') => return Action::Quit,
+        KeyCode::Char('h') | KeyCode::Left => sel = step(sel, n, cols, Dir::Left),
+        KeyCode::Char('l') | KeyCode::Right => sel = step(sel, n, cols, Dir::Right),
+        KeyCode::Char('k') | KeyCode::Up => sel = step(sel, n, cols, Dir::Up),
+        KeyCode::Char('j') | KeyCode::Down => sel = step(sel, n, cols, Dir::Down),
+        KeyCode::Tab | KeyCode::BackTab => {
+            let states: Vec<_> = tiles.iter().map(|t| t.state).collect();
+            sel = next_waiting(&states, sel, key.code == KeyCode::Tab);
+        }
+        KeyCode::Enter => {
+            if let Some(t) = tiles.get(sel) {
+                match (&t.finca, &t.window) {
+                    (None, Some(w)) => action = Action::Jump { window: w.clone() },
+                    (Some((slug, _)), Some(w)) => {
+                        action = Action::FincaJump {
+                            slug: slug.clone(),
+                            via: t.via.clone(),
+                            window: w.clone(),
+                        }
+                    }
+                    (_, None) => app.footer = Some(format!("{} has no window yet", t.handle())),
+                }
+            }
+        }
+        KeyCode::Char('i') => {
+            if let Some(t) = tiles.get(sel) {
+                let h = t.handle();
+                let finca = t.finca.as_ref().map_or("it", |f| f.1.as_str());
+                if t.stale {
+                    app.footer = Some(format!("{finca} isn't answering"));
+                } else if t.session_id.is_none() {
+                    app.footer = Some(format!("update Grove on {finca} to reply from here"));
+                } else {
+                    match t.state {
+                        State::YourTurn => {
+                            app.mode = Mode::Grid {
+                                sel,
+                                reply: Some(String::new()),
+                            };
+                            return Action::None;
+                        }
+                        State::NeedsYou => {
+                            app.footer = Some(format!("{h} needs you: Enter to answer it there"))
+                        }
+                        _ => app.footer = Some(format!("{h} is working; wait for your turn")),
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    app.mode = Mode::Grid { sel, reply: None };
+    action
 }

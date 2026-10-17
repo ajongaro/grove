@@ -31,7 +31,6 @@ pub enum Mode {
     Help,
     /// The session grid (`v`): `sel` indexes `grid::tiles`; `reply` is the
     /// reply line's text while it's open.
-    #[allow(dead_code)] // wired up in plan tasks 7-9
     Grid {
         sel: usize,
         reply: Option<String>,
@@ -160,6 +159,14 @@ pub enum Action {
     EditTodos {
         slug: String,
     },
+    /// Type `text` into a waiting session from the grid: here, or on a
+    /// finca (slug, the destination that answered).
+    GridReply {
+        finca: Option<(String, Option<String>)>,
+        session_id: String,
+        handle: String,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -201,7 +208,6 @@ pub struct App {
     /// Fincas whose Grove predates `grove screens`.
     pub too_old: HashSet<String>,
     /// The grid's column count, set when it's drawn, for hjkl.
-    #[allow(dead_code)] // wired up in plan tasks 7-9
     pub grid_cols: std::cell::Cell<usize>,
 }
 

@@ -155,6 +155,8 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             store.write_todos(&slug, &text)?;
             Outcome::Nothing
         }
+        // Sending replies comes in plan task 9.
+        Action::GridReply { .. } => Outcome::Nothing,
         Action::EditTodos { slug } => {
             // The editor can't save into a folder that isn't there yet.
             std::fs::create_dir_all(&store.paths.todos)?;
