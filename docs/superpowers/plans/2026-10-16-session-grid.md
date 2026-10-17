@@ -231,7 +231,7 @@ Expected: `ok` (all prompt tests, plus every existing mcp test unchanged).
 - [ ] **Step 5: Commit**
 
 ```bash
-cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test 2>&1 | grep -q "FAILED" && echo FAIL || \
+cargo fmt && cargo clippy --all-targets -- -D warnings && \
 git add -A src && git commit -m "refactor: share send_prompt's checks as prompt::type_into
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
