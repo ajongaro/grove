@@ -163,49 +163,71 @@ pub struct FetchResult {
 }
 
 /// Fetches fincas' screens in the background while the grid is open;
-/// stops when dropped.
+/// stops when dropped. Each finca is fetched on its own, so a slow one
+/// doesn't hold up the rest, and the list can change while it runs.
 pub struct Fetcher {
     pub results: std::sync::mpsc::Receiver<FetchResult>,
+    targets: std::sync::Arc<std::sync::Mutex<Vec<(crate::finca::Finca, String)>>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Fetcher {
-    /// Every `interval`, fetches each `(finca, destination)` in parallel.
+    /// Every `interval`, fetches each `(finca, destination)` that isn't
+    /// still busy with its last fetch.
     pub fn start(
         targets: Vec<(crate::finca::Finca, String)>,
         lines: usize,
         interval: std::time::Duration,
         timeout: std::time::Duration,
     ) -> Self {
+        use std::collections::HashSet;
         use std::sync::atomic::Ordering;
+        use std::sync::{Arc, Mutex};
         let (tx, results) = std::sync::mpsc::channel();
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stopped = stop.clone();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let targets = Arc::new(Mutex::new(targets));
+        let (stopped, current) = (stop.clone(), targets.clone());
         std::thread::spawn(move || {
+            let busy: Arc<Mutex<HashSet<String>>> = Arc::default();
             while !stopped.load(Ordering::Relaxed) {
-                let handles: Vec<_> = targets
-                    .iter()
-                    .cloned()
-                    .map(|(f, dest)| {
-                        let tx = tx.clone();
-                        std::thread::spawn(move || {
-                            let fetched = fetch(&f, &dest, lines, timeout);
-                            tx.send(FetchResult {
-                                slug: f.slug(),
-                                at: Utc::now(),
-                                fetched,
-                            })
-                            .is_ok()
-                        })
-                    })
-                    .collect();
-                if !handles.into_iter().all(|h| h.join().unwrap_or(false)) {
-                    return; // the grid dropped the receiver
+                let round = current.lock().map(|t| t.clone()).unwrap_or_default();
+                for (f, dest) in round {
+                    let slug = f.slug();
+                    if !busy.lock().is_ok_and(|mut b| b.insert(slug.clone())) {
+                        continue; // its last fetch is still out
+                    }
+                    let (tx, busy, stopped) = (tx.clone(), busy.clone(), stopped.clone());
+                    std::thread::spawn(move || {
+                        let fetched = fetch(&f, &dest, lines, timeout);
+                        let sent = tx.send(FetchResult {
+                            slug: slug.clone(),
+                            at: Utc::now(),
+                            fetched,
+                        });
+                        if sent.is_err() {
+                            stopped.store(true, Ordering::Relaxed); // the grid is gone
+                        }
+                        if let Ok(mut b) = busy.lock() {
+                            b.remove(&slug);
+                        }
+                    });
                 }
                 std::thread::sleep(interval);
             }
         });
-        Self { results, stop }
+        Self {
+            results,
+            targets,
+            stop,
+        }
+    }
+
+    /// The fincas to fetch from now on (those reachable, at the destination
+    /// that last answered).
+    pub fn set_targets(&self, targets: Vec<(crate::finca::Finca, String)>) {
+        if let Ok(mut t) = self.targets.lock() {
+            *t = targets;
+        }
     }
 }
 
@@ -415,6 +437,44 @@ mod tests {
             let stop = fetcher.stop.clone();
             drop(fetcher);
             assert!(stop.load(std::sync::atomic::Ordering::Relaxed));
+        });
+    }
+
+    #[test]
+    fn fetcher_picks_up_targets_set_later_and_one_slow_finca_doesnt_hold_up_the_rest() {
+        let d = tempfile::tempdir().unwrap();
+        let fast = d.path().join("fast");
+        let slow = d.path().join("slow");
+        std::fs::create_dir_all(&fast).unwrap();
+        std::fs::create_dir_all(&slow).unwrap();
+        let doc = r#"{"version":1,"host":"x","sessions":[]}"#;
+        let fast_bin = crate::finca::tests::script(&fast, "grove", &format!("echo '{doc}'"));
+        let slow_bin = crate::finca::tests::script(&slow, "grove", "sleep 5");
+        let named = |name: &str, bin: &std::path::Path| crate::finca::Finca {
+            name: name.into(),
+            ..finca_at(bin)
+        };
+        let ssh = crate::finca::testing::fake_ssh(d.path(), None);
+        crate::finca::tests::with_env(&ssh, d.path(), || {
+            let fetcher =
+                Fetcher::start(Vec::new(), 40, std::time::Duration::from_millis(100), SECS5);
+            fetcher.set_targets(vec![
+                (named("slow", &slow_bin), "me@slow".into()),
+                (named("fast", &fast_bin), "me@fast".into()),
+            ]);
+            let start = std::time::Instant::now();
+            let mut fast_results = 0;
+            while fast_results < 3 && start.elapsed() < std::time::Duration::from_secs(4) {
+                if let Ok(r) = fetcher
+                    .results
+                    .recv_timeout(std::time::Duration::from_millis(500))
+                    && r.slug == "fast"
+                {
+                    fast_results += 1;
+                }
+            }
+            assert_eq!(fast_results, 3, "fast finca waited on the slow one");
+            assert!(start.elapsed() < std::time::Duration::from_secs(3));
         });
     }
 }

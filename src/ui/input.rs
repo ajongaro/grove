@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, state_is_live};
+use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, Reply, state_is_live};
 use super::complete::{complete_path, complete_ssh_host};
 use crate::model::State;
 use crate::todo::Effect;
@@ -455,51 +455,62 @@ fn cycle_completion(app: &mut App, kind: PromptKind, step: isize) {
 }
 
 /// Keys in the session grid, and in its reply line while that's open.
-fn grid_key(app: &mut App, sel: usize, reply: Option<String>, key: KeyEvent) -> Action {
+fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> Action {
     use super::grid::{Dir, next_waiting, step, tiles};
     let tiles = tiles(app, chrono::Utc::now());
     // Sessions come and go under the selection.
     let mut sel = sel.min(tiles.len().saturating_sub(1));
-    if let Some(mut text) = reply {
+    if let Some(mut r) = reply {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Esc => {
+                app.footer = None;
                 app.mode = Mode::Grid { sel, reply: None };
                 return Action::None;
             }
             KeyCode::Enter => {
-                let action = match tiles.get(sel) {
-                    Some(t) => match &t.session_id {
-                        Some(id) => Action::GridReply {
-                            finca: t
-                                .finca
-                                .as_ref()
-                                .map(|(slug, _)| (slug.clone(), t.via.clone())),
-                            session_id: id.clone(),
-                            handle: t.handle(),
-                            text: text.clone(),
-                        },
-                        None => Action::None,
+                // Its session, wherever its tile is now.
+                let target = tiles.iter().position(|t| {
+                    t.session_id.as_deref() == Some(r.session_id.as_str())
+                        && t.finca.as_ref().map(|f| &f.0) == r.finca.as_ref()
+                });
+                let action = match target.map(|k| &tiles[k]) {
+                    None => {
+                        app.footer = Some(format!("{} has ended", r.handle));
+                        Action::None
+                    }
+                    Some(t) if t.stale => {
+                        let name = t.finca.as_ref().map_or("it", |f| f.1.as_str());
+                        app.footer = Some(format!("{name} isn't answering"));
+                        Action::None
+                    }
+                    Some(t) => Action::GridReply {
+                        finca: t
+                            .finca
+                            .as_ref()
+                            .map(|(slug, _)| (slug.clone(), t.via.clone())),
+                        session_id: r.session_id.clone(),
+                        handle: r.handle.clone(),
+                        text: r.text.clone(),
                     },
-                    None => Action::None,
                 };
                 // Kept until the send succeeds (run.rs clears it).
                 app.mode = Mode::Grid {
-                    sel,
-                    reply: Some(text),
+                    sel: target.unwrap_or(sel),
+                    reply: Some(r),
                 };
                 return action;
             }
-            KeyCode::Char('u') if ctrl => text.clear(),
+            KeyCode::Char('u') if ctrl => r.text.clear(),
             KeyCode::Backspace => {
-                text.pop();
+                r.text.pop();
             }
-            KeyCode::Char(c) if !ctrl => text.push(c),
+            KeyCode::Char(c) if !ctrl => r.text.push(c),
             _ => {}
         }
         app.mode = Mode::Grid {
             sel,
-            reply: Some(text),
+            reply: Some(r),
         };
         return Action::None;
     }
@@ -553,7 +564,12 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<String>, key: KeyEvent) -> 
                         State::YourTurn => {
                             app.mode = Mode::Grid {
                                 sel,
-                                reply: Some(String::new()),
+                                reply: Some(Reply {
+                                    session_id: t.session_id.clone().unwrap_or_default(),
+                                    finca: t.finca.as_ref().map(|f| f.0.clone()),
+                                    handle: h,
+                                    text: String::new(),
+                                }),
                             };
                             return Action::None;
                         }

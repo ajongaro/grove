@@ -86,7 +86,12 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
                     stale,
                 });
             }
-        } else if let Some(st) = &f.last_status {
+        } else if let Some(st) = f
+            .last_status
+            .as_ref()
+            // Not one that stopped answering: its sessions may be long gone.
+            .filter(|_| !matches!(f.reach, Some(crate::finca::Reach::Unreachable { .. })))
+        {
             for p in &st.projects {
                 for s in p.sessions.iter().filter(|s| s.state != State::Ended) {
                     out.push(Tile {
@@ -187,7 +192,7 @@ pub fn render_grid(
     frame: &mut Frame,
     app: &App,
     sel: usize,
-    reply: Option<&str>,
+    reply: Option<&super::app::Reply>,
     area: Rect,
     now: DateTime<Utc>,
 ) {
@@ -270,14 +275,19 @@ pub fn render_grid(
 
     // Bottom: the reply line, or a message, or the hints.
     match reply {
-        Some(text) => {
+        Some(r) => {
+            // A failed send's error takes the hint's place.
+            let hint = app
+                .footer
+                .clone()
+                .unwrap_or_else(|| "Enter send · Esc cancel".into());
             let lines = vec![
                 Line::from(vec![
-                    Span::raw(" reply ▸ ").fg(ACCENT),
-                    Span::raw(text.to_string()),
+                    Span::raw(format!(" reply to {} ▸ ", r.handle)).fg(ACCENT),
+                    Span::raw(r.text.clone()),
                     Span::raw("_").dark_gray(),
                 ]),
-                Line::from(" Enter send · Esc cancel").dark_gray(),
+                Line::from(format!(" {hint}")).dark_gray(),
             ];
             frame.render_widget(Paragraph::new(lines), bottom);
         }

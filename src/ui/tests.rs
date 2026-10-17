@@ -2204,7 +2204,9 @@ fn i_replies_only_on_your_turn() {
         }
     );
     // Kept until the send succeeds.
-    assert!(matches!(&app.mode, Mode::Grid { reply: Some(t), .. } if t == "ok go"));
+    assert!(
+        matches!(&app.mode, Mode::Grid { reply: Some(r), .. } if r.text == "ok go" && r.session_id == "y1")
+    );
     handle_key(&mut app, key(KeyCode::Esc));
     assert!(matches!(&app.mode, Mode::Grid { reply: None, .. }));
     handle_key(&mut app, key(KeyCode::Tab)); // n1
@@ -2308,11 +2310,16 @@ fn grid_reply_line_and_scroll_note() {
     let (_d, _s, mut app) = loaded(&["alpha"], &sessions);
     app.mode = Mode::Grid {
         sel: 9,
-        reply: Some("yes please".into()),
+        reply: Some(Reply {
+            session_id: "s9".into(),
+            finca: None,
+            handle: "alpha:s9".into(),
+            text: "yes please".into(),
+        }),
     };
     let out = screen(&app, 80, 24);
     assert!(out.contains("showing"), "{out}");
-    assert!(out.contains("reply ▸ yes please"), "{out}");
+    assert!(out.contains("reply to alpha:s9 ▸ yes please"), "{out}");
     assert!(
         out.contains("alpha:s9"),
         "selected tile scrolled into view:\n{out}"
@@ -2353,4 +2360,104 @@ fn help_lists_the_grid_keys() {
     assert!(out.contains("Grid"), "{out}");
     assert!(out.contains("reply to a waiting session"), "{out}");
     assert!(out.contains("session grid"), "{out}");
+}
+
+/// Opens the reply line on y1 in the grid app and types `text`.
+fn reply_on_y1(app: &mut App, text: &str) {
+    handle_key(app, key(KeyCode::Tab)); // y1
+    handle_key(app, ch('i'));
+    for c in text.chars() {
+        handle_key(app, ch(c));
+    }
+}
+
+#[test]
+fn a_reply_follows_its_session_when_tiles_shift() {
+    let (_d, _s, mut app) = grid_app();
+    reply_on_y1(&mut app, "go");
+    // w1 ends while typing: y1 moves from index 1 to 0, n1 into 1.
+    app.sessions.retain(|s| s.id != "w1");
+    let a = handle_key(&mut app, key(KeyCode::Enter));
+    assert_eq!(
+        a,
+        Action::GridReply {
+            finca: None,
+            session_id: "y1".into(),
+            handle: "alpha:y1".into(),
+            text: "go".into()
+        }
+    );
+}
+
+#[test]
+fn a_reply_to_a_session_that_ended_is_refused() {
+    let (_d, _s, mut app) = grid_app();
+    reply_on_y1(&mut app, "go");
+    app.sessions.retain(|s| s.id != "y1");
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap().contains("alpha:y1"),
+        "{:?}",
+        app.footer
+    );
+    // The text is kept.
+    assert!(matches!(&app.mode, Mode::Grid { reply: Some(r), .. } if r.text == "go"));
+}
+
+#[test]
+fn a_failed_send_shows_its_error_in_the_reply_line() {
+    let (_d, _s, mut app) = grid_app();
+    reply_on_y1(&mut app, "go");
+    app.footer = Some("couldn't type into alpha:y1: boom".into());
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("reply to alpha:y1 ▸ go"), "{out}");
+    assert!(out.contains("boom"), "{out}");
+}
+
+#[test]
+fn a_finca_tile_gone_stale_while_typing_refuses_the_send() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi"]);
+    screens_at(
+        &mut app,
+        "pi",
+        Utc::now(),
+        screens_doc(&[("x", "blog", "s2", State::YourTurn)]),
+    );
+    app.mode = Mode::Grid {
+        sel: 0,
+        reply: None,
+    };
+    handle_key(&mut app, ch('i'));
+    handle_key(&mut app, ch('y'));
+    // No fetch since: the screens are a minute old by Enter.
+    let doc = screens_doc(&[("x", "blog", "s2", State::YourTurn)]);
+    app.finca_screens
+        .insert("pi".into(), (Utc::now() - Duration::seconds(60), doc));
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap().contains("isn't answering"),
+        "{:?}",
+        app.footer
+    );
+}
+
+#[test]
+fn an_unreachable_finca_has_no_tiles() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi"]);
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 0, 1)),
+        t0(),
+    );
+    assert_eq!(super::grid::tiles(&app, t0()).len(), 1);
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable {
+            error: "timed out".into(),
+        },
+        t0(),
+    );
+    assert!(super::grid::tiles(&app, t0()).is_empty());
 }

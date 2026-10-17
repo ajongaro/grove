@@ -44,7 +44,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             height: main.height + footer.height,
             ..main
         };
-        super::grid::render_grid(frame, app, *sel, reply.as_deref(), area, now);
+        super::grid::render_grid(frame, app, *sel, reply.as_ref(), area, now);
         return;
     }
     let [left, right] =

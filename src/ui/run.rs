@@ -538,6 +538,10 @@ fn event_loop(
         {
             let action = handle_key(app, key);
             let was_reply = matches!(action, Action::GridReply { .. });
+            if was_reply {
+                app.footer = Some("sending…".into());
+                terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
+            }
             match perform(ctx, action) {
                 Ok(Outcome::Quit) => {
                     let _ = ctx.tmux.cmd().arg("detach-client").status();
@@ -551,6 +555,13 @@ fn event_loop(
                 }
                 Ok(Outcome::Nothing) => {}
                 Err(e) => app.footer = Some(format!("{e:#}")),
+            }
+            // Keys typed while a send was out (a slow finca) would land on
+            // whatever is selected now: a second Enter could resend or jump.
+            if was_reply {
+                while event::poll(Duration::ZERO)? {
+                    let _ = event::read()?;
+                }
             }
             app.reload(&ctx.store);
         }
@@ -587,18 +598,24 @@ fn refresh_grid(
         }
         return;
     }
-    if fetcher.is_none() {
-        let targets = app
-            .fincas
-            .iter()
-            .filter_map(|r| Some((ctx.store.get_finca(&r.slug).ok()?, r.via.clone()?)))
-            .collect();
-        *fetcher = Some(crate::screens::Fetcher::start(
-            targets,
-            LINES,
-            Duration::from_secs(2),
-            Duration::from_secs(5),
-        ));
+    // Reachable fincas, at the destination that last answered; refreshed
+    // each pass, so one that comes back (or answers elsewhere) is picked up.
+    let targets: Vec<_> = app
+        .fincas
+        .iter()
+        .filter(|r| matches!(r.reach, Some(crate::finca::Reach::Reachable(_))))
+        .filter_map(|r| Some((ctx.store.get_finca(&r.slug).ok()?, r.via.clone()?)))
+        .collect();
+    match fetcher {
+        Some(f) => f.set_targets(targets),
+        None => {
+            *fetcher = Some(crate::screens::Fetcher::start(
+                targets,
+                LINES,
+                Duration::from_secs(2),
+                Duration::from_secs(5),
+            ))
+        }
     }
     if let Some(f) = fetcher {
         while let Ok(r) = f.results.try_recv() {

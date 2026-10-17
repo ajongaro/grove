@@ -16,6 +16,18 @@ pub enum Pane {
     Todo,
 }
 
+/// The grid's reply line: which session it's for, and the text so far. The
+/// target is kept by id, not tile position, as tiles move when sessions
+/// come and go.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    pub session_id: String,
+    /// The finca's slug, for a finca session.
+    pub finca: Option<String>,
+    pub handle: String,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptKind {
     NewSession,
@@ -33,7 +45,7 @@ pub enum Mode {
     /// reply line's text while it's open.
     Grid {
         sel: usize,
-        reply: Option<String>,
+        reply: Option<Reply>,
     },
     Prompt {
         kind: PromptKind,
