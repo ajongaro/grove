@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::mcp_overview;
-use crate::model::{Project, Session, State};
+use crate::model::{Project, Session};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
@@ -287,27 +287,8 @@ impl GroveMcp {
         }
     }
 
-    /// The session's tmux window, if it's still that session's. Window ids
-    /// restart on a new tmux server, so a stale record could name someone
-    /// else's window: Grove marks each window with its session's id.
     fn window(&self, s: &Session, p: &Project, handle: &str) -> Result<String, String> {
-        let w = s
-            .tmux_window
-            .clone()
-            .ok_or_else(|| format!("{handle} has no window yet (it may still be starting)"))?;
-        let ours = match self.tmux.window_option(&w, "@grove_session") {
-            Some(id) => id == s.id,
-            // Windows from before Grove marked them: at least the account.
-            None => {
-                self.tmux.window_option(&w, "@grove_account").as_deref()
-                    == Some(self.cfg().account_for(&p.path).name.as_str())
-            }
-        };
-        if ours {
-            Ok(w)
-        } else {
-            Err(format!("{handle}'s window is gone"))
-        }
+        crate::prompt::window(&self.tmux, s, &self.cfg().account_for(&p.path).name, handle)
     }
 
     pub fn do_list_sessions(&self, project: Option<String>) -> Result<String, String> {
@@ -396,65 +377,11 @@ impl GroveMcp {
     /// Types `text` into a session that's waiting for its next message.
     pub fn do_send_prompt(&self, session: String, text: String) -> Result<String, String> {
         let (s, p) = self.session(&session)?;
-        let handle = format!("{}:{}", p.slug(), s.name);
         if self.own_session.as_deref() == Some(s.id.as_str()) {
             return Err("that's this session's own window; just answer here".into());
         }
-        match s.state {
-            State::YourTurn => {}
-            State::NeedsYou => {
-                return Err(format!(
-                    "{handle} needs you: answer its prompt on the dashboard first"
-                ));
-            }
-            other => {
-                return Err(format!(
-                    "{handle} is {}; wait until it's your turn",
-                    other.label()
-                ));
-            }
-        }
-        // Only text: an escape sequence could end the paste early and type
-        // keys of its own (say, answering a permission prompt), and a bare
-        // carriage return would submit.
-        let text: String = text
-            .chars()
-            .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
-            .collect();
-        let start = text.trim_start();
-        if start.is_empty() {
-            return Err("nothing to send".into());
-        }
-        // `!` runs a shell command and `/` a slash command in Claude's input,
-        // neither through that session's permission prompts. Every line
-        // counts: if the input isn't taking a bracketed paste, a newline
-        // submits and the next line starts fresh.
-        // (Control characters are gone by now; Unicode line separators aren't.)
-        let starts = |c: char| {
-            text.split(['\n', '\u{2028}', '\u{2029}'])
-                .any(|l| l.trim_start().starts_with(c))
-        };
-        if starts('!') {
-            return Err(
-                "a line starting with \"!\" would run a shell command there; rephrase it".into(),
-            );
-        }
-        if starts('/') {
-            return Err(
-                "a line starting with \"/\" would run a slash command there; rephrase it".into(),
-            );
-        }
-        let window = self.window(&s, &p, &handle)?;
-        self.tmux
-            .paste_text(&window, &text)
-            .map_err(|e| format!("couldn't type into {handle}: {e:#}"))?;
-        // Claude's input may need a beat after a paste before Enter (spec:
-        // settled by trial).
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        self.tmux
-            .send_keys(&window, &["Enter"])
-            .map_err(|e| format!("{e:#}"))?;
-        Ok(format!("Sent to {handle}."))
+        let account = self.cfg().account_for(&p.path).name;
+        crate::prompt::type_into(&self.tmux, &s, &account, &text).map(|h| format!("Sent to {h}."))
     }
 
     pub fn do_get_todos(&self, project: Option<String>) -> Result<String, String> {

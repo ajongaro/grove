@@ -8,6 +8,7 @@ mod log;
 mod mcp;
 mod mcp_overview;
 mod model;
+mod prompt;
 mod runfiles;
 mod setup;
 mod state;
