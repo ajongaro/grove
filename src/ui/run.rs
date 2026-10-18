@@ -242,10 +242,15 @@ fn short_host() -> String {
         .unwrap_or_default()
 }
 
-/// Your login shell ($SHELL), or sh.
+/// Your login shell ($SHELL), or sh, for the project-shell popup. It runs
+/// without $TMUX: a popup can't hold panes, so tools that split one when
+/// they see it (fzf-tmux, often aliased as fzf) would open behind the
+/// popup, out of reach of the keyboard.
 pub(crate) fn shell_argv(shell: Option<&str>) -> Vec<String> {
     let shell = shell.filter(|s| !s.is_empty()).unwrap_or("/bin/sh");
-    vec![shell.to_string()]
+    ["env", "-u", "TMUX", "-u", "TMUX_PANE", shell]
+        .map(str::to_string)
+        .to_vec()
 }
 
 fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {

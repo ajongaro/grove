@@ -215,10 +215,30 @@ fn project_shell_for_missing_project_dir_is_an_error() {
 }
 
 #[test]
-fn project_shell_runs_your_shell() {
-    assert_eq!(shell_argv(Some("/bin/zsh")), vec!["/bin/zsh".to_string()]);
-    assert_eq!(shell_argv(Some("")), vec!["/bin/sh".to_string()]);
-    assert_eq!(shell_argv(None), vec!["/bin/sh".to_string()]);
+fn project_shell_runs_your_shell_outside_tmux() {
+    // A popup can't hold panes: tools that see $TMUX (fzf-tmux) would open
+    // in a split behind it, where no key reaches them.
+    let env = ["env", "-u", "TMUX", "-u", "TMUX_PANE"];
+    let with = |sh: &str| {
+        let mut v: Vec<String> = env.iter().map(|s| s.to_string()).collect();
+        v.push(sh.to_string());
+        v
+    };
+    assert_eq!(shell_argv(Some("/bin/zsh")), with("/bin/zsh"));
+    assert_eq!(shell_argv(Some("")), with("/bin/sh"));
+    assert_eq!(shell_argv(None), with("/bin/sh"));
+}
+
+#[test]
+fn the_project_shell_sees_no_tmux() {
+    let out = std::process::Command::new(&shell_argv(None)[0])
+        .args(&shell_argv(None)[1..])
+        .args(["-c", "echo \"[$TMUX][$TMUX_PANE]\""])
+        .env("TMUX", "/tmp/sock,1,0")
+        .env("TMUX_PANE", "%3")
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[][]");
 }
 
 #[test]
