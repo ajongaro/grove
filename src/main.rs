@@ -378,6 +378,12 @@ fn preflight(paths: &Paths) -> Result<Config> {
 
 /// `grove`: create or attach the Grove tmux session (dashboard in window 0).
 fn start(paths: &Paths) -> Result<()> {
+    // The project shell popup runs without $TMUX, so attaching from there
+    // would open Grove inside itself.
+    if std::env::var_os("GROVE_POPUP").is_some() {
+        println!("You're already in Grove: exit this shell (C-d) for the dashboard.");
+        return Ok(());
+    }
     let cfg = preflight(paths)?;
     paths.ensure()?;
     let exe = runfiles::grove_exe()?;

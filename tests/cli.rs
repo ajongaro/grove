@@ -661,3 +661,29 @@ fn kill_session_ends_a_live_session_and_refuses_unknown_ones() {
     assert_eq!(again.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&again.stderr).contains("no live session a"));
 }
+
+#[test]
+fn grove_in_a_project_shell_points_back_instead_of_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let socket = format!("grove-cli-popup-{}", std::process::id());
+    let out = grove(&home)
+        .env("GROVE_POPUP", "1")
+        .env_remove("TMUX")
+        .env("GROVE_TMUX_SOCKET", &socket)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("already in Grove"), "{said}");
+    // Nothing started.
+    let up = Command::new("tmux")
+        .args(["-L", &socket, "has-session"])
+        .output()
+        .unwrap();
+    assert!(!up.status.success());
+}

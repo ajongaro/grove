@@ -245,12 +245,21 @@ fn short_host() -> String {
 /// Your login shell ($SHELL), or sh, for the project-shell popup. It runs
 /// without $TMUX: a popup can't hold panes, so tools that split one when
 /// they see it (fzf-tmux, often aliased as fzf) would open behind the
-/// popup, out of reach of the keyboard.
+/// popup, out of reach of the keyboard. GROVE_POPUP tells `grove` there
+/// that it's already inside Grove.
 pub(crate) fn shell_argv(shell: Option<&str>) -> Vec<String> {
     let shell = shell.filter(|s| !s.is_empty()).unwrap_or("/bin/sh");
-    ["env", "-u", "TMUX", "-u", "TMUX_PANE", shell]
-        .map(str::to_string)
-        .to_vec()
+    [
+        "env",
+        "-u",
+        "TMUX",
+        "-u",
+        "TMUX_PANE",
+        "GROVE_POPUP=1",
+        shell,
+    ]
+    .map(str::to_string)
+    .to_vec()
 }
 
 fn open_in_editor(ctx: &Ctx, target: &str) -> Result<()> {
