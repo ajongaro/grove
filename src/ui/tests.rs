@@ -551,6 +551,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
     let mut sessions = Vec::new();
     for i in 0..needy {
         sessions.push(SessionStatus {
+            id: Some(format!("{host}-n{i}")),
             name: format!("n{i}"),
             state: State::NeedsYou,
             message: Some("Permission needed: Bash".into()),
@@ -560,6 +561,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
     }
     for i in 0..working {
         sessions.push(SessionStatus {
+            id: Some(format!("{host}-w{i}")),
             name: format!("w{i}"),
             state: State::Working,
             message: None,

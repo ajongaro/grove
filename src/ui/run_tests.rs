@@ -431,6 +431,7 @@ fn observe_names_local_and_finca_sessions() {
             name: "Beta".into(),
             slug: "beta".into(),
             sessions: vec![crate::status::SessionStatus {
+                id: None,
                 name: "2".into(),
                 state: State::NeedsYou,
                 message: None,

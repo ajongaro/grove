@@ -28,6 +28,10 @@ pub struct ProjectStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionStatus {
+    /// The session's id, for pinning it from another machine. Older Groves
+    /// don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub name: String,
     pub state: State,
     #[serde(default)]
@@ -66,6 +70,7 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
                             .is_some_and(|w| live_windows.contains(w))
                     })
                     .map(|s| SessionStatus {
+                        id: Some(s.id.clone()),
                         name: s.name.clone(),
                         state: s.state,
                         message: s.message.clone(),
@@ -186,6 +191,31 @@ mod tests {
         assert!(alpha.sessions.iter().all(|x| x.state != State::Ended));
         let beta = st.projects.iter().find(|p| p.slug == "beta").unwrap();
         assert!(beta.sessions.is_empty());
+    }
+
+    #[test]
+    fn status_sessions_carry_their_id_and_old_status_still_parses() {
+        let (_d, s) = store();
+        let v = serde_json::to_value(build(&s, "h", &live())).unwrap();
+        let alpha = v["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["slug"] == "alpha")
+            .unwrap();
+        let ids: Vec<&str> = alpha["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"1") && ids.contains(&"2"));
+        let old: SessionStatus = serde_json::from_str(
+            r#"{"name":"s1","state":"working","updated_at":"2026-10-07T10:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(old.id, None);
     }
 
     #[test]
