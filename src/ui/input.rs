@@ -681,7 +681,10 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> A
 fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
     let rows = app.pinned_rows();
     if app.pane == Pane::Pinned && rows.is_empty() {
+        // The box went (a poll pruned it) without the focus showing
+        // anywhere: this key only brings focus back to Sessions.
         app.pane = Pane::Sessions;
+        return Some(Action::None);
     }
     if let KeyCode::Char(c @ '1'..='9') = code {
         let n = c as usize - '0' as usize;

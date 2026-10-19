@@ -428,6 +428,10 @@ impl App {
             self.pin_idx = i;
         }
         self.pin_idx = self.pin_idx.min(self.pins.len().saturating_sub(1));
+        // The box goes with its last pin; focus can't stay on it.
+        if self.pins.is_empty() && self.pane == Pane::Pinned {
+            self.pane = Pane::Sessions;
+        }
         let visible: Vec<String> = self
             .visible_sessions()
             .iter()

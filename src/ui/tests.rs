@@ -2902,3 +2902,38 @@ fn help_lists_the_pin_keys() {
     assert!(out.contains("pin / unpin"), "{out}");
     assert!(out.contains("jump to a pin"), "{out}");
 }
+
+#[test]
+fn losing_the_last_pin_moves_focus_to_sessions() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a2")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    // It ends (killed from the Pinned pane, say).
+    s.save_session(&session("a2", "alpha", "s2", State::Ended, None))
+        .unwrap();
+    app.reload(&s);
+    assert_eq!(app.pane, Pane::Sessions);
+    // Pruned between reloads (a poll): the key that finds it gone does
+    // nothing, rather than acting on a pane that wasn't showing focus.
+    crate::pins::save(&s.paths, &[pin(Some("pi"), "pi-w0")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 0)),
+        t0(),
+    );
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    assert_eq!(app.pane, Pane::Sessions);
+}
+
+#[test]
+fn the_pinned_title_isnt_focus_green_when_unfocused() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a2")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Projects;
+    assert_ne!(fg_of(&app, 110, 32, "PINNED"), super::render::ACCENT);
+}

@@ -887,7 +887,8 @@ fn render_pinned(
     now: DateTime<Utc>,
 ) {
     let focused = app.pane == Pane::Pinned;
-    let block = pane_block(vec![Span::raw("PINNED").fg(ACCENT)], focused);
+    // Its own colour: green is the focus border's.
+    let block = pane_block(vec![Span::raw("PINNED").fg(KEY_COLOR)], focused);
     let origins: Vec<String> = rows
         .iter()
         .map(|r| match (&r.finca, &r.account) {
