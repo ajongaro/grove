@@ -652,3 +652,14 @@ fn grid_kill_closes_a_local_window_and_names_it() {
     assert!(!tm.list_windows("grove").unwrap().contains(&w));
     assert!(format!("{:#}", kill().unwrap_err()).contains("ended"));
 }
+
+#[test]
+fn save_pins_writes_the_pins_file() {
+    let t = setup("savepins");
+    let pins = vec![crate::pins::Pin {
+        finca: None,
+        id: "a".into(),
+    }];
+    perform(&t.ctx, Action::SavePins { pins: pins.clone() }).unwrap();
+    assert_eq!(crate::pins::load(&t.ctx.store.paths), pins);
+}

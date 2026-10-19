@@ -34,10 +34,26 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
-        Mode::Confirm { session_id, .. } => {
+        Mode::Confirm {
+            session_id,
+            label,
+            finca,
+        } => {
             app.mode = Mode::Normal;
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => Action::Kill { session_id },
+            match (key.code, finca) {
+                (KeyCode::Char('y' | 'Y'), None) => Action::Kill { session_id },
+                (KeyCode::Char('y' | 'Y'), Some(slug)) => {
+                    let via = app
+                        .fincas
+                        .iter()
+                        .find(|f| f.slug == slug)
+                        .and_then(|f| f.via.clone());
+                    Action::GridKill {
+                        finca: Some((slug, via)),
+                        session_id,
+                        handle: label,
+                    }
+                }
                 _ => Action::None,
             }
         }
@@ -215,6 +231,9 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         };
         return Action::None;
     }
+    if let Some(action) = pin_key(app, key.code) {
+        return action;
+    }
     if let Some(action) = finca_key(app, key.code) {
         return action;
     }
@@ -296,6 +315,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 app.mode = Mode::Confirm {
                     session_id: s.id.clone(),
                     label: s.name.clone(),
+                    finca: None,
                 };
                 Action::None
             }
@@ -386,9 +406,14 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-/// Projects → Sessions → To-do (when a project is selected) and around.
+/// Projects → Pinned (when there are pins) → Sessions → To-do (when a
+/// project is selected) and around.
 fn cycle_pane(app: &mut App, step: isize) {
-    let mut panes = vec![Pane::Projects, Pane::Sessions];
+    let mut panes = vec![Pane::Projects];
+    if !app.pinned_rows().is_empty() {
+        panes.push(Pane::Pinned);
+    }
+    panes.push(Pane::Sessions);
     if app.todo_slug.is_some() {
         panes.push(Pane::Todo);
     }
@@ -649,4 +674,166 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> A
     }
     app.mode = Mode::Grid { sel, reply: None };
     action
+}
+
+/// Pins: `p` on a session, `1`–`9` from anywhere on the dashboard, and the
+/// Pinned pane's own keys. None lets the key through to the usual handling.
+fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
+    let rows = app.pinned_rows();
+    if app.pane == Pane::Pinned && rows.is_empty() {
+        app.pane = Pane::Sessions;
+    }
+    if let KeyCode::Char(c @ '1'..='9') = code {
+        let n = c as usize - '0' as usize;
+        return Some(match rows.get(n - 1) {
+            Some(r) => jump_to_pin(app, r),
+            None => {
+                app.footer = Some(format!("no pin {n}"));
+                Action::None
+            }
+        });
+    }
+    match app.pane {
+        Pane::Pinned => {
+            let row = rows.get(app.pin_idx.min(rows.len().saturating_sub(1)));
+            Some(match code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if app.pin_idx + 1 >= rows.len() {
+                        app.pane = Pane::Sessions;
+                        app.sess_idx = 0;
+                    } else {
+                        app.pin_idx += 1;
+                    }
+                    Action::None
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    app.pin_idx = app.pin_idx.saturating_sub(1);
+                    Action::None
+                }
+                KeyCode::Enter => row.map_or(Action::None, |r| jump_to_pin(app, r)),
+                KeyCode::Char('p') => row.map_or(Action::None, |r| {
+                    let pin = r.pin.clone();
+                    toggle_pin(app, pin, &r.handle)
+                }),
+                KeyCode::Char('x') => {
+                    match row {
+                        Some(r) if r.unreachable => {
+                            let name = r.finca.as_ref().map_or("it", |f| f.1.as_str());
+                            app.footer = Some(format!("{name} isn't answering"));
+                        }
+                        Some(r) => {
+                            app.mode = Mode::Confirm {
+                                session_id: r.pin.id.clone(),
+                                label: r.handle.clone(),
+                                finca: r.pin.finca.clone(),
+                            };
+                        }
+                        None => {}
+                    }
+                    Action::None
+                }
+                // Keys that work anywhere on the dashboard pass through;
+                // session and project keys don't apply here.
+                KeyCode::Char('q' | '?' | 'R' | 'F' | 'a' | 't' | 'h' | 'l')
+                | KeyCode::Tab
+                | KeyCode::BackTab
+                | KeyCode::Left
+                | KeyCode::Right => return None,
+                _ => Action::None,
+            })
+        }
+        Pane::Sessions => match code {
+            KeyCode::Char('k') | KeyCode::Up if app.sess_idx == 0 && !rows.is_empty() => {
+                app.pane = Pane::Pinned;
+                app.pin_idx = rows.len() - 1;
+                Some(Action::None)
+            }
+            KeyCode::Char('p') => {
+                if app.selected_finca().is_some() {
+                    let f = app.selected_finca()?;
+                    let (slug, name) = (f.slug.clone(), f.name.clone());
+                    match app.selected_finca_item() {
+                        Some(FincaItem::Session { project, session }) => {
+                            let handle = format!("{project}:{}", session.name);
+                            Some(match session.id {
+                                Some(id) => toggle_pin(
+                                    app,
+                                    crate::pins::Pin {
+                                        finca: Some(slug),
+                                        id,
+                                    },
+                                    &handle,
+                                ),
+                                None => {
+                                    app.footer =
+                                        Some(format!("update Grove on {name} to pin its sessions"));
+                                    Action::None
+                                }
+                            })
+                        }
+                        _ => Some(Action::None),
+                    }
+                } else {
+                    let s = app
+                        .selected_session()
+                        .filter(|s| state_is_live(s.state))
+                        .cloned();
+                    Some(match s {
+                        Some(s) => toggle_pin(
+                            app,
+                            crate::pins::Pin {
+                                finca: None,
+                                id: s.id.clone(),
+                            },
+                            &format!("{}:{}", s.project, s.name),
+                        ),
+                        None => Action::None,
+                    })
+                }
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Pins `pin`, or unpins it if it's pinned.
+fn toggle_pin(app: &mut App, pin: crate::pins::Pin, handle: &str) -> Action {
+    match app.pins.iter().position(|p| *p == pin) {
+        Some(i) => {
+            app.pins.remove(i);
+            app.footer = Some(format!("Unpinned {handle}"));
+        }
+        None => {
+            app.pins.push(pin);
+            app.footer = Some(format!("Pinned {handle} ({})", app.pins.len()));
+        }
+    }
+    Action::SavePins {
+        pins: app.pins.clone(),
+    }
+}
+
+/// Goes to a pin's window: here, or connecting to its finca.
+fn jump_to_pin(app: &mut App, r: &super::app::PinRow) -> Action {
+    match (&r.finca, &r.window) {
+        (Some((_, name, _)), _) if r.unreachable => {
+            app.footer = Some(format!("{name} isn't answering"));
+            Action::None
+        }
+        (None, Some(w)) => Action::Jump { window: w.clone() },
+        (Some((slug, _, via)), Some(w)) => Action::FincaJump {
+            slug: slug.clone(),
+            via: via.clone(),
+            window: w.clone(),
+        },
+        (Some((slug, _, via)), None) => Action::ConnectFinca {
+            slug: slug.clone(),
+            via: via.clone(),
+        },
+        (None, None) => {
+            app.footer = Some(format!("{} has no window yet", r.handle));
+            Action::None
+        }
+    }
 }

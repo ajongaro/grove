@@ -2607,7 +2607,6 @@ fn pins_load_on_reload_and_ended_local_ones_are_pruned_and_saved() {
         Some("default")
     );
     assert!(rows[0].finca.is_none() && !rows[0].unreachable);
-    assert!(app.is_pinned(None, "a1") && !app.is_pinned(Some("pi"), "a1"));
 }
 
 #[test]
@@ -2665,4 +2664,172 @@ fn pins_of_a_removed_finca_go() {
     // Not polled yet: shown as unreachable, with a placeholder handle.
     let rows = app.pinned_rows();
     assert!(rows[0].unreachable);
+}
+
+fn pinned_app() -> (tempfile::TempDir, Store, App) {
+    // alpha: a1 (working, @1), a2 (your turn, @2); pi: pi-n0, pi-w0.
+    let (d, s, mut app) = with_fincas(
+        &["alpha"],
+        &[
+            session("a1", "alpha", "s1", State::Working, Some("@1")),
+            session("a2", "alpha", "s2", State::YourTurn, Some("@2")),
+        ],
+        &["pi"],
+    );
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 1)),
+        t0(),
+    );
+    app.reload(&s);
+    (d, s, app)
+}
+
+/// Applies a SavePins action the way perform + reload would.
+fn save_pins(s: &Store, app: &mut App, a: Action) {
+    match a {
+        Action::SavePins { pins } => crate::pins::save(&s.paths, &pins).unwrap(),
+        other => panic!("{other:?}"),
+    }
+    app.reload(s);
+}
+
+#[test]
+fn p_pins_and_unpins_a_local_session() {
+    let (_d, s, mut app) = pinned_app();
+    app.pane = Pane::Sessions;
+    app.sess_idx = 1; // a2
+    let a = handle_key(&mut app, ch('p'));
+    assert_eq!(app.footer.as_deref(), Some("Pinned alpha:s2 (1)"));
+    save_pins(&s, &mut app, a);
+    assert_eq!(app.pins, vec![pin(None, "a2")]);
+    let a = handle_key(&mut app, ch('p'));
+    assert_eq!(app.footer.as_deref(), Some("Unpinned alpha:s2"));
+    save_pins(&s, &mut app, a);
+    assert!(app.pins.is_empty());
+}
+
+#[test]
+fn p_pins_a_finca_session_and_explains_old_ones() {
+    let (_d, s, mut app) = pinned_app();
+    app.proj_idx = app.projects.len(); // pi
+    app.pane = Pane::Sessions;
+    app.sess_idx = 0; // pi-n0
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    assert_eq!(app.pins, vec![pin(Some("pi"), "pi-n0")]);
+    // A finca Grove that doesn't send ids.
+    let mut st = remote_status("pi", 1, 0);
+    st.projects[0].sessions[0].id = None;
+    poll(&mut app, "pi", Reach::Reachable(st), t0());
+    app.sess_idx = 0;
+    assert_eq!(handle_key(&mut app, ch('p')), Action::None);
+    assert_eq!(
+        app.footer.as_deref(),
+        Some("update Grove on pi to pin its sessions")
+    );
+}
+
+#[test]
+fn number_keys_jump_to_pins() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a2"), pin(Some("pi"), "pi-w0")]).unwrap();
+    app.reload(&s);
+    assert_eq!(
+        handle_key(&mut app, ch('1')),
+        Action::Jump {
+            window: "@2".into()
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('2')),
+        Action::FincaJump {
+            slug: "pi".into(),
+            via: Some("me@pi".into()),
+            window: "@20".into()
+        }
+    );
+    assert_eq!(handle_key(&mut app, ch('3')), Action::None);
+    assert_eq!(app.footer.as_deref(), Some("no pin 3"));
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable { error: "x".into() },
+        t0(),
+    );
+    assert_eq!(handle_key(&mut app, ch('2')), Action::None);
+    assert_eq!(app.footer.as_deref(), Some("pi isn't answering"));
+}
+
+#[test]
+fn number_keys_do_nothing_in_the_todo_list() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a2")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Todo;
+    assert!(!matches!(
+        handle_key(&mut app, ch('1')),
+        Action::Jump { .. }
+    ));
+}
+
+#[test]
+fn the_pinned_pane_moves_jumps_unpins_and_kills() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1"), pin(Some("pi"), "pi-n0")]).unwrap();
+    app.reload(&s);
+    // Tab: Projects → Pinned → Sessions.
+    app.pane = Pane::Projects;
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pane, Pane::Pinned);
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pin_idx, 1);
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump { .. }
+    ));
+    // x on the finca pin: confirm, then a remote kill.
+    handle_key(&mut app, ch('x'));
+    assert!(matches!(&app.mode, Mode::Confirm { finca: Some(f), .. } if f == "pi"));
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::GridKill {
+            finca: Some(("pi".into(), Some("me@pi".into()))),
+            session_id: "pi-n0".into(),
+            handle: "btt:n0".into(),
+        }
+    );
+    // j at the bottom goes down to Sessions; k at its top comes back.
+    app.pane = Pane::Pinned;
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pane, Pane::Sessions);
+    app.sess_idx = 0;
+    handle_key(&mut app, ch('k'));
+    assert_eq!(app.pane, Pane::Pinned);
+    // p unpins the selected row.
+    app.pin_idx = 0;
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    assert_eq!(app.pins, vec![pin(Some("pi"), "pi-n0")]);
+    // x on a local pin: the usual kill.
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    crate::pins::save(&s.paths, &[pin(None, "a1")]).unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('x'));
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::Kill {
+            session_id: "a1".into()
+        }
+    );
+}
+
+#[test]
+fn tab_skips_pinned_when_there_are_none() {
+    let (_d, _s, mut app) = pinned_app();
+    app.pane = Pane::Projects;
+    handle_key(&mut app, key(KeyCode::Tab));
+    assert_eq!(app.pane, Pane::Sessions);
 }

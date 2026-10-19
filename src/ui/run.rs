@@ -69,6 +69,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 None => Outcome::Nothing,
             }
         }
+        Action::SavePins { pins } => {
+            crate::pins::save(&store.paths, &pins)?;
+            Outcome::Nothing
+        }
         Action::GridKill {
             finca,
             session_id,

@@ -12,7 +12,6 @@ use crate::store::Store;
 pub enum Pane {
     Projects,
     /// Pinned sessions, at the top of the right column.
-    #[allow(dead_code)] // entered from Task 3 (pinned sessions plan)
     Pinned,
     Sessions,
     /// The selected project's to-do list, below its sessions.
@@ -57,6 +56,8 @@ pub enum Mode {
     Confirm {
         session_id: String,
         label: String,
+        /// The finca's slug, for a finca session (a pin).
+        finca: Option<String>,
     },
     ConfirmRemove {
         slug: String,
@@ -189,6 +190,10 @@ pub enum Action {
         session_id: String,
         handle: String,
         text: String,
+    },
+    /// Write the pins file (the keys already changed `App::pins`).
+    SavePins {
+        pins: Vec<crate::pins::Pin>,
     },
     /// Kill a session from the grid: here, or on a finca (slug, the
     /// destination that answered).
@@ -555,13 +560,6 @@ impl App {
 
     pub fn selected_finca_item(&self) -> Option<FincaItem> {
         self.finca_items().into_iter().nth(self.sess_idx)
-    }
-
-    #[allow(dead_code)] // used from Task 3 (pinned sessions plan)
-    pub fn is_pinned(&self, finca: Option<&str>, id: &str) -> bool {
-        self.pins
-            .iter()
-            .any(|p| p.finca.as_deref() == finca && p.id == id)
     }
 
     /// Whether a pin still names a live session. A finca pin goes only
