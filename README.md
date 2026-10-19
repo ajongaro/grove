@@ -143,6 +143,8 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `s` | dashboard | a shell in the project's folder (popup; `exit` closes it) |
 | `r` | session | rename it (tmux window too) |
 | `x` | session | kill it (asks first) |
+| `p` | session | pin / unpin it (any account, or a finca session) |
+| `1`–`9` | dashboard | jump to that pinned session |
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
@@ -171,6 +173,17 @@ on a finca nobody sits at.
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP
 tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
+
+### Pinned sessions
+
+`p` on a session pins it: a Pinned box at the top of the right column lists
+the sessions you're working in, from every project, both Claude accounts and
+your fincas, each with where it lives and its state. `1`–`9` jump straight
+to a pin from anywhere on the dashboard (except the to-do list). Tab or `k`
+from the top of Sessions moves into the box, where `Enter` jumps, `p`
+unpins and `x` kills. A pin goes away when its session ends; a finca
+that isn't answering keeps its pins, dimmed, until it does. Pins live in
+`~/.grove/pins.json`.
 
 ### Session grid
 
@@ -393,9 +406,10 @@ Each file does one job, so new features usually touch one or two:
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
+| `src/pins.rs` | pinned sessions: `~/.grove/pins.json` |
 
 ```sh
-cargo test     # ~370 tests, including real tmux servers on throwaway sockets
+cargo test     # ~500 tests, including real tmux servers on throwaway sockets
 cargo clippy --all-targets -- -D warnings
 ```
 

@@ -14,9 +14,9 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Dashboard",
         &[
-            ("j k ↑ ↓", "move"),
+            ("j k ↑ ↓", "move (crosses panes at the ends)"),
             ("Tab h l", "switch pane"),
-            ("j k", "cross Sessions ↔ To-do at the ends"),
+            ("1–9", "jump to a pin"),
             ("t", "to-do list"),
             ("v", "session grid"),
             ("a", "add a project"),
@@ -42,6 +42,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "jump to its window"),
             ("r", "rename"),
             ("x", "kill"),
+            ("p", "pin / unpin (any account or finca)"),
         ],
     ),
     (
@@ -72,9 +73,8 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Fincas",
         &[
-            ("Enter", "connect to its Grove"),
             ("s", "open a shell there"),
-            ("l Enter", "jump into a session or shell"),
+            ("Enter", "connect, or jump into a session"),
             ("F", "add a finca (or a on a finca)"),
         ],
     ),

@@ -69,6 +69,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         boxes.truncate(groups);
     }
     render_project_boxes(frame, app, &boxes);
+    let pins = app.pinned_rows();
+    let right = if pins.is_empty() {
+        right
+    } else {
+        let h = pins.len().min(9) as u16 + 2;
+        let [top, rest] =
+            Layout::vertical([Constraint::Length(h), Constraint::Fill(1)]).areas(right);
+        render_pinned(frame, app, &pins, top, now);
+        rest
+    };
     match app.selected_finca() {
         Some(f) => render_finca_detail(frame, app, f, right, now),
         None if app.todo_slug.is_some() => {
@@ -865,4 +875,79 @@ fn kill_popup(frame: &mut Frame, label: &str) {
         ),
         area,
     );
+}
+
+/// The Pinned pane: one row per pin, numbered for 1–9, each saying where
+/// its session lives (account or finca).
+fn render_pinned(
+    frame: &mut Frame,
+    app: &App,
+    rows: &[super::app::PinRow],
+    area: Rect,
+    now: DateTime<Utc>,
+) {
+    let focused = app.pane == Pane::Pinned;
+    let block = pane_block(vec![Span::raw("PINNED").fg(ACCENT)], focused);
+    let origins: Vec<String> = rows
+        .iter()
+        .map(|r| match (&r.finca, &r.account) {
+            (Some((_, name, _)), _) => name.clone(),
+            (None, Some(a)) => a.name.clone(),
+            (None, None) => String::new(),
+        })
+        .collect();
+    let handle_w = rows
+        .iter()
+        .zip(&origins)
+        .map(|(r, o)| o.chars().count() + 3 + r.handle.chars().count())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    let items: Vec<ListItem> = rows
+        .iter()
+        .zip(&origins)
+        .enumerate()
+        .map(|(i, (r, origin))| {
+            let num = if i < 9 {
+                format!("{}  ", i + 1)
+            } else {
+                "   ".into()
+            };
+            let (color, label) = if r.unreachable {
+                (Color::DarkGray, "unreachable")
+            } else {
+                (state_color(r.state), r.state.label())
+            };
+            let icon = if r.state == State::NeedsYou {
+                "⚑"
+            } else {
+                "●"
+            };
+            let origin_color = match (&r.finca, &r.account) {
+                _ if r.unreachable => Color::DarkGray,
+                (Some(_), _) => FINCAS_COLOR,
+                (None, Some(a)) => parse_hex(a.color.as_deref()).unwrap_or(Color::Gray),
+                (None, None) => Color::Gray,
+            };
+            let pad = handle_w - (origin.chars().count() + 3 + r.handle.chars().count());
+            let mut spans = vec![
+                Span::raw(num).dark_gray(),
+                Span::styled(format!("{icon} "), Style::new().fg(color)),
+                Span::styled(origin.clone(), Style::new().fg(origin_color)),
+                Span::raw(" · ").dark_gray(),
+                Span::raw(format!("{}{}", r.handle, " ".repeat(pad))).bold(),
+                Span::styled(format!("{label:<12}"), Style::new().fg(color)),
+                Span::raw(format!("{:<5}", format_age(r.updated_at, now))).dark_gray(),
+            ];
+            if let Some(m) = r.message.as_deref().filter(|_| !r.unreachable) {
+                spans.push(Span::styled(m.to_string(), Style::new().fg(color)));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(focused.then_some(app.pin_idx));
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(highlight(focused));
+    frame.render_stateful_widget(list, area, &mut state);
 }

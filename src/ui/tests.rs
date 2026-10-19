@@ -2833,3 +2833,72 @@ fn tab_skips_pinned_when_there_are_none() {
     handle_key(&mut app, key(KeyCode::Tab));
     assert_eq!(app.pane, Pane::Sessions);
 }
+
+#[test]
+fn the_pinned_box_shows_each_pins_origin_and_number() {
+    use ratatui::style::Color::Rgb;
+    let (_d, s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    app.cfg.account_color = Some("#7aa2f7".into());
+    app.cfg.accounts.get_mut("work").unwrap().color = Some("#e8a33d".into());
+    s.save_session(&session("b1", "beta", "fix", State::YourTurn, Some("@1")))
+        .unwrap();
+    s.save_session(&session("w1", "acme", "api", State::Working, Some("@2")))
+        .unwrap();
+    s.add_finca(&Finca {
+        name: "pi".into(),
+        ssh: "me@pi".into(),
+        grove_bin: "/g".into(),
+        color: None,
+        backup: None,
+    })
+    .unwrap();
+    crate::pins::save(
+        &s.paths,
+        &[pin(None, "b1"), pin(None, "w1"), pin(Some("pi"), "pi-n0")],
+    )
+    .unwrap();
+    app.reload(&s);
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 0)),
+        t0(),
+    );
+    let out = screen(&app, 110, 32);
+    for want in [
+        "PINNED",
+        "1  ● play · beta:fix",
+        "2  ● work · acme:api",
+        "3  ⚑ pi · btt:n0",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    // Above the sessions.
+    assert!(row_of(&out, "PINNED") < row_of(&out, "SESSIONS"));
+    assert_eq!(fg_of(&app, 110, 32, "work · "), Rgb(0xe8, 0xa3, 0x3d));
+    // A finca that stops answering: dimmed and marked.
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable { error: "x".into() },
+        t0(),
+    );
+    let out = screen(&app, 110, 32);
+    let line = out.lines().find(|l| l.contains("btt:n0")).unwrap();
+    assert!(line.contains("unreachable"), "{line}");
+}
+
+#[test]
+fn no_pins_no_box() {
+    let (_d, _s, app) = pinned_app();
+    assert!(!screen(&app, 110, 32).contains("PINNED"));
+}
+
+#[test]
+fn help_lists_the_pin_keys() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    handle_key(&mut app, ch('?'));
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("pin / unpin"), "{out}");
+    assert!(out.contains("jump to a pin"), "{out}");
+}
