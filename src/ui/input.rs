@@ -57,6 +57,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
+        Mode::ConfirmShell { window, label } => {
+            app.mode = Mode::Normal;
+            match key.code {
+                KeyCode::Char('y' | 'Y') => Action::CloseShell { window, label },
+                _ => Action::None,
+            }
+        }
         Mode::Help => {
             app.mode = Mode::Normal;
             Action::None
@@ -249,8 +256,8 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            // Off the bottom of the sessions: down into the to-do list.
-            let last = app.visible_sessions().len().saturating_sub(1);
+            // Off the bottom of the sessions and shells: down into the to-do list.
+            let last = app.session_rows().saturating_sub(1);
             if app.pane == Pane::Sessions && app.todo_slug.is_some() && app.sess_idx >= last {
                 app.pane = Pane::Todo;
             } else {
@@ -287,6 +294,21 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 kind: PromptKind::AddProject,
                 input: app.cwd.clone(),
             };
+            Action::None
+        }
+        KeyCode::Enter if app.pane == Pane::Sessions && app.selected_shell().is_some() => {
+            let window = app.selected_shell().map(|s| s.id.clone());
+            Action::Jump {
+                window: window.unwrap_or_default(),
+            }
+        }
+        KeyCode::Char('x') if app.pane == Pane::Sessions && app.selected_shell().is_some() => {
+            if let Some(s) = app.selected_shell() {
+                app.mode = Mode::ConfirmShell {
+                    window: s.id.clone(),
+                    label: format!("{}:{}", s.project, s.name),
+                };
+            }
             Action::None
         }
         KeyCode::Enter if app.pane == Pane::Sessions => match app.selected_session() {
@@ -336,6 +358,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 }
                 KeyCode::Char('e') => Action::EditProject { slug },
                 KeyCode::Char('s') => Action::ProjectShell { slug },
+                KeyCode::Char('S') => Action::NewShell { slug },
                 KeyCode::Char('c') => Action::ClearEnded { slug },
                 KeyCode::Char('d') if app.pane == Pane::Projects => {
                     let name = app.selected_project().map(|p| p.name.clone());
@@ -430,7 +453,7 @@ fn move_selection(app: &mut App, delta: isize) {
         Pane::Sessions => {
             let len = match app.selected_finca() {
                 Some(_) => app.finca_items().len(),
-                None => app.visible_sessions().len(),
+                None => app.session_rows(),
             };
             (&mut app.sess_idx, len)
         }

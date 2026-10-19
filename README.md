@@ -140,9 +140,10 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
-| `s` | dashboard | a shell in the project's folder (popup; `exit` closes it) |
+| `s` | dashboard | a quick shell in the project's folder (popup; `exit` closes it) |
+| `S` | dashboard | a shell in the project's folder that stays open (see [Shells](#shells)) |
 | `r` | session | rename it (tmux window too) |
-| `x` | session | kill it (asks first) |
+| `x` | session | kill it, or close a shell (asks first) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
 | `1`–`9` | dashboard | jump to that pinned session |
 | `c` | dashboard | clear ended sessions for the project |
@@ -184,6 +185,18 @@ from the top of Sessions moves into the box, where `Enter` jumps, `p`
 unpins and `x` kills. A pin goes away when its session ends; a finca
 that isn't answering keeps its pins, dimmed, until it does. Pins live in
 `~/.grove/pins.json`.
+
+### Shells
+
+`s` opens a quick shell in a popup over the dashboard: handy for one
+command, gone when you `exit`, and with no scrollback. `S` opens one that
+stays: a full window in the project's folder, so the mouse wheel (or
+prefix `[`) scrolls back through it. `C-g` comes back to the dashboard, and
+the shell is listed in the project's Sessions pane below its sessions
+(`$ sh1`, with what's running in it), where `Enter` goes back to it and
+`x` closes it. A shell lasts until you `exit` it or Grove's tmux server
+stops (a reboot); restarting the dashboard doesn't touch it. Shells aren't
+in the grid or the pins.
 
 ### Session grid
 
@@ -406,6 +419,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
+| `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |
 | `src/pins.rs` | pinned sessions: `~/.grove/pins.json` |
 
 ```sh

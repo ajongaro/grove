@@ -22,6 +22,8 @@ pub(super) const ACCENT: Color = Color::Rgb(102, 187, 106);
 pub(super) const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
 pub(super) const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
 pub(super) const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
+/// A shell's row in Sessions: apart from the session-state colours.
+const SHELL_COLOR: Color = Color::Rgb(0x7a, 0xa2, 0xf7);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     // The header gives its rows back to the lists in a short window.
@@ -118,6 +120,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         Mode::Help => render_help(frame),
         Mode::Confirm { label, .. } => kill_popup(frame, label),
+        Mode::ConfirmShell { label, .. } => {
+            confirm_popup(frame, &format!("Close shell {label}?  y / n"))
+        }
         Mode::ConfirmRemove { name, .. } => {
             let area = popup(frame.area(), 60, 3);
             frame.render_widget(Clear, area);
@@ -533,7 +538,8 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
     }
     let block = pane_block(title, app.pane == Pane::Sessions);
     let sessions = app.visible_sessions();
-    if sessions.is_empty() {
+    let shells = app.visible_shells();
+    if sessions.is_empty() && shells.is_empty() {
         let hint = if app.selected_project().is_some() {
             "No sessions — press Enter to start one, n to name it."
         } else {
@@ -545,7 +551,16 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         );
         return;
     }
-    let name_w = name_width(sessions.iter().map(|s| s.name.as_str()));
+    let names = sessions.iter().map(|s| s.name.as_str());
+    let name_w = name_width(names.chain(shells.iter().map(|s| s.name.as_str())));
+    let shell_rows = shells.iter().map(|s| {
+        ListItem::new(Line::from(vec![
+            Span::raw("$ ").fg(SHELL_COLOR),
+            Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
+            Span::raw(format!("{:<10}", "shell")).fg(SHELL_COLOR),
+            Span::raw(format!(" · {}", s.command)).dark_gray(),
+        ]))
+    });
     let items: Vec<ListItem> = sessions
         .iter()
         .map(|s| {
@@ -566,6 +581,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
             }
             ListItem::new(lines)
         })
+        .chain(shell_rows)
         .collect();
     let mut state = ListState::default().with_selected(Some(app.sess_idx));
     let list = List::new(items)
@@ -728,7 +744,7 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
         None => spans.push(
-            Span::raw("enter open/jump · n new · s shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
+            Span::raw("enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
         ),
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -863,11 +879,14 @@ fn popup(area: Rect, width_pct: u16, height: u16) -> Rect {
 
 /// "Kill session <label>?  y / n", centred.
 fn kill_popup(frame: &mut Frame, label: &str) {
-    let text = format!("Kill session {label}?  y / n");
+    confirm_popup(frame, &format!("Kill session {label}?  y / n"));
+}
+
+fn confirm_popup(frame: &mut Frame, text: &str) {
     let area = popup(frame.area(), 44, 3);
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new(text).block(
+        Paragraph::new(text.to_string()).block(
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .title(" Confirm ")

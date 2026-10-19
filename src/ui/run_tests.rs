@@ -663,3 +663,95 @@ fn save_pins_writes_the_pins_file() {
     perform(&t.ctx, Action::SavePins { pins: pins.clone() }).unwrap();
     assert_eq!(crate::pins::load(&t.ctx.store.paths), pins);
 }
+
+#[test]
+fn new_shell_opens_and_shows_a_window_in_the_project_folder() {
+    let t = setup("newshell");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    add_project_at(s, &t.root.to_string_lossy()).unwrap();
+    let slug = s.list_projects()[0].as_ref().unwrap().slug();
+    perform(&t.ctx, Action::NewShell { slug: slug.clone() }).unwrap();
+    let shells = crate::shells::list(tm, "grove");
+    assert_eq!(shells.len(), 1);
+    assert_eq!(
+        (shells[0].project.as_str(), shells[0].name.as_str()),
+        (slug.as_str(), "sh1")
+    );
+    let current = tm
+        .cmd()
+        .args(["display", "-p", "-t", "=grove:", "#{window_id}"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&current.stdout).trim(),
+        shells[0].id
+    );
+}
+
+#[test]
+fn new_shell_for_missing_project_dir_is_an_error() {
+    let t = setup("newshellerr");
+    t.ctx
+        .store
+        .add_project(&Project {
+            name: "gone".into(),
+            path: "/no/such".into(),
+            color: None,
+            summary: None,
+        })
+        .unwrap();
+    let err = perform(
+        &t.ctx,
+        Action::NewShell {
+            slug: "gone".into(),
+        },
+    )
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("/no/such"), "{err:#}");
+}
+
+#[test]
+fn close_shell_closes_its_window() {
+    let t = setup("closeshell");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:sh1", &t.root, &[], &sleeper())
+        .unwrap();
+    let close = || {
+        perform(
+            &t.ctx,
+            Action::CloseShell {
+                window: w.clone(),
+                label: "p:sh1".into(),
+            },
+        )
+    };
+    match close() {
+        Ok(Outcome::Message(m)) => assert_eq!(m, "Closed p:sh1"),
+        other => panic!("{other:?}"),
+    }
+    assert!(!tm.list_windows("grove").unwrap().contains(&w));
+    // Already gone (exited meanwhile) is fine.
+    assert!(close().is_ok());
+}
+
+#[test]
+fn remove_project_waits_for_open_shells() {
+    let t = setup("rmshell");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    add_project_at(s, &t.root.to_string_lossy()).unwrap();
+    let p = s.list_projects()[0].as_ref().unwrap().clone();
+    let sh = crate::shells::open(tm, "grove", &p, &sleeper()).unwrap();
+    let err = remove_project(s, tm, "grove", &p.slug()).unwrap_err();
+    assert!(format!("{err}").contains("1 open shell"), "{err}");
+    tm.kill_window(&sh.id).unwrap();
+    remove_project(s, tm, "grove", &p.slug()).unwrap();
+}

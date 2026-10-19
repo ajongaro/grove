@@ -1328,7 +1328,7 @@ fn footer_mentions_help() {
 #[test]
 fn footer_mentions_the_project_shell() {
     let (_d, _s, app) = loaded(&["alpha"], &[]);
-    assert!(screen(&app, 160, 12).contains("s shell"));
+    assert!(screen(&app, 160, 12).contains("s/S shell"));
 }
 
 #[test]
@@ -1377,7 +1377,7 @@ fn help_fits_a_laptop_sized_window() {
     for k in [
         "C-g",
         "open a shell there",
-        "shell in its folder",
+        "shell: quick popup / stays open",
         "open in your editor",
         "rename",
     ] {
@@ -2936,4 +2936,135 @@ fn the_pinned_title_isnt_focus_green_when_unfocused() {
     app.reload(&s);
     app.pane = Pane::Projects;
     assert_ne!(fg_of(&app, 110, 32, "PINNED"), super::render::ACCENT);
+}
+
+// ---------- shells that stay open ----------
+
+fn shell(project: &str, name: &str, id: &str) -> crate::shells::Shell {
+    crate::shells::Shell {
+        id: id.into(),
+        project: project.into(),
+        name: name.into(),
+        command: "zsh".into(),
+    }
+}
+
+/// alpha with one session and one shell (beta has a shell too), on the
+/// Sessions pane.
+fn shell_app() -> (tempfile::TempDir, Store, App) {
+    let (d, s, mut app) = loaded(
+        &["alpha", "beta"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    app.shells = vec![shell("alpha", "sh1", "@5"), shell("beta", "sh1", "@6")];
+    app.reload(&s);
+    app.pane = Pane::Sessions;
+    (d, s, app)
+}
+
+#[test]
+fn shift_s_opens_a_shell_that_stays() {
+    let (_d, _s, mut app) = shell_app();
+    assert_eq!(
+        handle_key(&mut app, ch('S')),
+        Action::NewShell {
+            slug: "alpha".into()
+        }
+    );
+    app.pane = Pane::Projects;
+    assert_eq!(
+        handle_key(&mut app, ch('S')),
+        Action::NewShell {
+            slug: "alpha".into()
+        }
+    );
+}
+
+#[test]
+fn a_projects_shells_list_under_its_sessions() {
+    let (_d, _s, app) = shell_app();
+    assert_eq!(app.visible_shells(), vec![&shell("alpha", "sh1", "@5")]);
+    let out = screen(&app, 110, 32);
+    let s1 = out.lines().position(|l| l.contains("s1 ")).unwrap();
+    let sh1 = out.lines().position(|l| l.contains("sh1")).unwrap();
+    assert!(sh1 > s1, "{out}");
+    assert!(out.lines().nth(sh1).unwrap().contains("zsh"), "{out}");
+}
+
+#[test]
+fn only_shells_isnt_no_sessions() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    app.shells = vec![shell("alpha", "sh1", "@5")];
+    app.reload(&s);
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("sh1"), "{out}");
+    assert!(!out.contains("No sessions"), "{out}");
+}
+
+#[test]
+fn enter_on_a_shell_goes_back_to_it() {
+    let (_d, _s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.selected_shell(), Some(&shell("alpha", "sh1", "@5")));
+    assert_eq!(app.selected_session(), None);
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@5".into()
+        }
+    );
+}
+
+#[test]
+fn x_on_a_shell_asks_then_closes_it() {
+    let (_d, _s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    assert_eq!(handle_key(&mut app, ch('x')), Action::None);
+    assert!(
+        screen(&app, 110, 32).contains("Close shell alpha:sh1?"),
+        "{}",
+        screen(&app, 110, 32)
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('y')),
+        Action::CloseShell {
+            window: "@5".into(),
+            label: "alpha:sh1".into()
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+    handle_key(&mut app, ch('x'));
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn session_keys_leave_a_shell_alone() {
+    let (_d, _s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    for c in ['p', 'r'] {
+        assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
+        assert_eq!(app.mode, Mode::Normal, "{c}");
+    }
+    assert!(app.pins.is_empty());
+}
+
+#[test]
+fn j_runs_through_the_shells_then_into_the_to_do_list() {
+    let (_d, _s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 1));
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pane, Pane::Todo);
+}
+
+#[test]
+fn reload_keeps_a_selected_shell() {
+    let (_d, s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    app.reload(&s);
+    assert_eq!(app.sess_idx, 1);
+    app.shells.clear();
+    app.reload(&s);
+    assert_eq!(app.sess_idx, 0);
 }

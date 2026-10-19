@@ -13,6 +13,7 @@ mod prompt;
 mod runfiles;
 mod screens;
 mod setup;
+mod shells;
 mod state;
 mod status;
 mod store;

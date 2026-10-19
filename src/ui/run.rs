@@ -107,6 +107,24 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 .display_popup(&project.path, Some(&project.name), &argv)?;
             Outcome::Nothing
         }
+        Action::NewShell { slug } => {
+            let project = store.get_project(&slug)?;
+            if !project.path.is_dir() {
+                bail!("{} doesn't exist", project.path.display());
+            }
+            let shell = std::env::var("SHELL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "/bin/sh".into());
+            let sh = crate::shells::open(&ctx.tmux, &ctx.cfg.tmux_session, &project, &[shell])?;
+            ctx.tmux.select_window(&sh.id)?;
+            Outcome::Nothing
+        }
+        Action::CloseShell { window, label } => {
+            // Already gone (it exited meanwhile) is fine.
+            let _ = ctx.tmux.kill_window(&window);
+            Outcome::Message(format!("Closed {label}"))
+        }
         Action::ConnectFinca { slug, via } => {
             let f = store.get_finca(&slug)?;
             // A stale via (backup since removed from the file) falls back to ssh.
@@ -354,6 +372,16 @@ pub fn remove_project(store: &Store, tmux: &Tmux, session: &str, project: &str) 
             p.name
         );
     }
+    let shells = crate::shells::list(tmux, session)
+        .into_iter()
+        .filter(|s| s.project == slug)
+        .count();
+    if shells > 0 {
+        bail!(
+            "{} has {shells} open shell(s); close them first (x)",
+            p.name
+        );
+    }
     for s in &sessions {
         store.delete_session(&s.id)?;
     }
@@ -465,8 +493,9 @@ pub fn observe(app: &App) -> Vec<crate::alert::Observed> {
 
 /// Updates the add-project default from the `GROVE_CWD` that `grove` sets on
 /// the tmux session each time it attaches.
-/// Each finca's open shell windows, for its pane.
+/// Open shells: the projects' (`S`) and each finca's, for their panes.
 pub fn refresh_shells(ctx: &Ctx, app: &mut App) {
+    app.shells = crate::shells::list(&ctx.tmux, &ctx.cfg.tmux_session);
     app.finca_shells = app
         .fincas
         .iter()
@@ -569,6 +598,7 @@ fn event_loop(
             let action = handle_key(app, key);
             let was_reply = matches!(action, Action::GridReply { .. });
             let was_kill = matches!(action, Action::GridKill { .. });
+            let was_shell = matches!(action, Action::NewShell { .. } | Action::CloseShell { .. });
             if was_reply || was_kill {
                 app.footer = Some(
                     if was_reply {
@@ -600,6 +630,9 @@ fn event_loop(
                 while event::poll(Duration::ZERO)? {
                     let _ = event::read()?;
                 }
+            }
+            if was_shell {
+                refresh_shells(ctx, app);
             }
             app.reload(&ctx.store);
         }

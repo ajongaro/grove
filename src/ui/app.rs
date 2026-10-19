@@ -67,6 +67,12 @@ pub enum Mode {
     ConfirmCreate {
         path: String,
     },
+    /// Close this shell (`x` on it in Sessions)? y / n.
+    ConfirmShell {
+        window: String,
+        /// `project:name`.
+        label: String,
+    },
     /// Kill this grid tile's session? y / n, then back to the grid.
     GridKill {
         sel: usize,
@@ -138,6 +144,16 @@ pub enum Action {
     /// A throwaway shell in the project's folder, in a popup.
     ProjectShell {
         slug: String,
+    },
+    /// A shell that stays open, in its own window in the project's folder.
+    NewShell {
+        slug: String,
+    },
+    /// Close a shell's window.
+    CloseShell {
+        window: String,
+        /// `project:name`, for the footer.
+        label: String,
     },
     /// A login shell on the finca, at `via` like `ConnectFinca`.
     FincaShell {
@@ -232,6 +248,9 @@ pub struct App {
     pub todo_slug: Option<String>,
     /// Unchecked to-dos per project slug, for the project rows.
     pub open_todos: HashMap<String, usize>,
+    /// Shells that stay open, every project's (refreshed from tmux by the
+    /// loop); each project's list under its sessions.
+    pub shells: Vec<crate::shells::Shell>,
     /// Open shell windows per finca slug (refreshed from tmux by the loop).
     pub finca_shells: HashMap<String, Vec<crate::finca::ShellWindow>>,
     /// ~/.ssh here, for completing finca destinations.
@@ -307,6 +326,7 @@ impl App {
             todos: crate::todo::Todos::default(),
             todo_slug: None,
             open_todos: HashMap::new(),
+            shells: Vec::new(),
             finca_shells: HashMap::new(),
             ssh_dir: std::env::var_os("HOME")
                 .map(std::path::PathBuf::from)
@@ -359,6 +379,7 @@ impl App {
         let keep_project = self.selected_project().map(|p| p.slug.clone());
         let keep_finca = self.selected_finca().map(|f| f.slug.clone());
         let keep_session = self.selected_session().map(|s| s.id.clone());
+        let keep_shell = self.selected_shell().map(|s| s.id.clone());
         let keep_item = self.selected_finca_item().map(|i| i.key());
 
         self.projects = store
@@ -437,10 +458,14 @@ impl App {
             .iter()
             .map(|s| s.id.clone())
             .collect();
+        let shells: Vec<String> = self.visible_shells().iter().map(|s| s.id.clone()).collect();
         if let Some(i) = keep_session.and_then(|id| visible.iter().position(|v| *v == id)) {
             self.sess_idx = i;
         }
-        let mut len = visible.len();
+        if let Some(i) = keep_shell.and_then(|id| shells.iter().position(|v| *v == id)) {
+            self.sess_idx = visible.len() + i;
+        }
+        let mut len = visible.len() + shells.len();
         if self.selected_finca().is_some() {
             let items: Vec<String> = self.finca_items().iter().map(FincaItem::key).collect();
             if let Some(i) = keep_item.and_then(|k| items.iter().position(|v| *v == k)) {
@@ -534,6 +559,25 @@ impl App {
 
     pub fn selected_session(&self) -> Option<&Session> {
         self.visible_sessions().get(self.sess_idx).copied()
+    }
+
+    /// The selected project's shells, listed below its sessions.
+    pub fn visible_shells(&self) -> Vec<&crate::shells::Shell> {
+        match self.selected_project() {
+            Some(p) => self.shells.iter().filter(|s| s.project == p.slug).collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// The selected Sessions-pane row, when it's a shell.
+    pub fn selected_shell(&self) -> Option<&crate::shells::Shell> {
+        let i = self.sess_idx.checked_sub(self.visible_sessions().len())?;
+        self.visible_shells().get(i).copied()
+    }
+
+    /// Rows in the Sessions pane of a project: sessions, then shells.
+    pub fn session_rows(&self) -> usize {
+        self.visible_sessions().len() + self.visible_shells().len()
     }
 
     /// The selected finca's rows: its sessions (from the last good status),
