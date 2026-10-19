@@ -409,6 +409,10 @@ fn move_selection(app: &mut App, delta: isize) {
             };
             (&mut app.sess_idx, len)
         }
+        Pane::Pinned => {
+            let len = app.pinned_rows().len();
+            (&mut app.pin_idx, len)
+        }
         // todo_key handles its own movement.
         Pane::Todo => return,
     };

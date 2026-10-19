@@ -8,7 +8,6 @@ mod log;
 mod mcp;
 mod mcp_overview;
 mod model;
-#[allow(dead_code)] // used from Task 2 (pinned sessions plan)
 mod pins;
 mod prompt;
 mod runfiles;

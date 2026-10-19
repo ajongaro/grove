@@ -11,6 +11,9 @@ use crate::store::Store;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
     Projects,
+    /// Pinned sessions, at the top of the right column.
+    #[allow(dead_code)] // entered from Task 3 (pinned sessions plan)
+    Pinned,
     Sessions,
     /// The selected project's to-do list, below its sessions.
     Todo,
@@ -236,6 +239,28 @@ pub struct App {
     pub too_old: HashSet<String>,
     /// The grid's column count, set when it's drawn, for hjkl.
     pub grid_cols: std::cell::Cell<usize>,
+    /// Pinned sessions in pin order (pins.json, pruned on reload).
+    pub pins: Vec<crate::pins::Pin>,
+    /// Selected row of the Pinned pane.
+    pub pin_idx: usize,
+}
+
+/// A pinned session as the Pinned pane shows it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PinRow {
+    pub pin: crate::pins::Pin,
+    /// (slug, name, destination that last answered), for a finca's pin.
+    pub finca: Option<(String, String, Option<String>)>,
+    /// The Claude account, for a local pin.
+    pub account: Option<crate::config::Account>,
+    /// `project:name`.
+    pub handle: String,
+    pub state: State,
+    pub updated_at: DateTime<Utc>,
+    pub message: Option<String>,
+    pub window: Option<String>,
+    /// Its finca's last poll failed (or none has come yet).
+    pub unreachable: bool,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -286,6 +311,8 @@ impl App {
             finca_screens: HashMap::new(),
             too_old: HashSet::new(),
             grid_cols: std::cell::Cell::new(1),
+            pins: Vec::new(),
+            pin_idx: 0,
         }
     }
 
@@ -385,6 +412,17 @@ impl App {
             self.proj_idx = self.projects.len() + i;
         }
         self.proj_idx = self.proj_idx.min(self.left_len().saturating_sub(1));
+        let keep_pin = self.pins.get(self.pin_idx).cloned();
+        let loaded = crate::pins::load(&store.paths);
+        self.pins = loaded.clone();
+        if self.prune_pins() || self.pins != loaded {
+            // Best effort: a failed write just prunes again next time.
+            let _ = crate::pins::save(&store.paths, &self.pins);
+        }
+        if let Some(i) = keep_pin.and_then(|k| self.pins.iter().position(|p| *p == k)) {
+            self.pin_idx = i;
+        }
+        self.pin_idx = self.pin_idx.min(self.pins.len().saturating_sub(1));
         let visible: Vec<String> = self
             .visible_sessions()
             .iter()
@@ -517,6 +555,108 @@ impl App {
 
     pub fn selected_finca_item(&self) -> Option<FincaItem> {
         self.finca_items().into_iter().nth(self.sess_idx)
+    }
+
+    #[allow(dead_code)] // used from Task 3 (pinned sessions plan)
+    pub fn is_pinned(&self, finca: Option<&str>, id: &str) -> bool {
+        self.pins
+            .iter()
+            .any(|p| p.finca.as_deref() == finca && p.id == id)
+    }
+
+    /// Whether a pin still names a live session. A finca pin goes only
+    /// when its finca is gone, or answered without the session: while it
+    /// isn't answering, there's no telling.
+    fn pin_alive(&self, pin: &crate::pins::Pin) -> bool {
+        match &pin.finca {
+            None => self
+                .sessions
+                .iter()
+                .any(|s| s.id == pin.id && state_is_live(s.state)),
+            Some(slug) => match self.fincas.iter().find(|f| &f.slug == slug) {
+                None => false,
+                Some(f) => match &f.reach {
+                    Some(crate::finca::Reach::Reachable(st)) => st
+                        .projects
+                        .iter()
+                        .flat_map(|p| &p.sessions)
+                        .any(|s| s.id.as_deref() == Some(pin.id.as_str())),
+                    _ => true,
+                },
+            },
+        }
+    }
+
+    /// Drops pins whose sessions ended; true when any went.
+    pub fn prune_pins(&mut self) -> bool {
+        let before = self.pins.len();
+        let pins = std::mem::take(&mut self.pins);
+        self.pins = pins.into_iter().filter(|p| self.pin_alive(p)).collect();
+        self.pins.len() != before
+    }
+
+    /// The Pinned pane's rows, in pin order.
+    pub fn pinned_rows(&self) -> Vec<PinRow> {
+        self.pins
+            .iter()
+            .filter(|p| self.pin_alive(p))
+            .filter_map(|pin| match &pin.finca {
+                None => {
+                    let s = self.sessions.iter().find(|s| s.id == pin.id)?;
+                    let account = self
+                        .projects
+                        .iter()
+                        .find(|p| p.slug == s.project)
+                        .map(|p| self.account_of(p));
+                    Some(PinRow {
+                        pin: pin.clone(),
+                        finca: None,
+                        account,
+                        handle: format!("{}:{}", s.project, s.name),
+                        state: s.state,
+                        updated_at: s.updated_at,
+                        message: s.message.clone(),
+                        window: s.tmux_window.clone(),
+                        unreachable: false,
+                    })
+                }
+                Some(slug) => {
+                    let f = self.fincas.iter().find(|f| &f.slug == slug)?;
+                    let found = f
+                        .last_status
+                        .iter()
+                        .flat_map(|st| &st.projects)
+                        .find_map(|p| {
+                            p.sessions
+                                .iter()
+                                .find(|s| s.id.as_deref() == Some(pin.id.as_str()))
+                                .map(|s| (p.name.clone(), s))
+                        });
+                    let unreachable = !matches!(f.reach, Some(crate::finca::Reach::Reachable(_)));
+                    let (handle, state, updated_at, message, window) = match found {
+                        Some((project, s)) => (
+                            format!("{project}:{}", s.name),
+                            s.state,
+                            s.updated_at,
+                            s.message.clone(),
+                            s.window.clone(),
+                        ),
+                        None => ("?".into(), State::Starting, Utc::now(), None, None),
+                    };
+                    Some(PinRow {
+                        pin: pin.clone(),
+                        finca: Some((f.slug.clone(), f.name.clone(), f.via.clone())),
+                        account: None,
+                        handle,
+                        state,
+                        updated_at,
+                        message,
+                        window,
+                        unreachable,
+                    })
+                }
+            })
+            .collect()
     }
 
     /// Local sessions needing you plus those on reachable fincas.

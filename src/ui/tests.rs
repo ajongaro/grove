@@ -2571,3 +2571,98 @@ fn the_grid_kill_popup_draws_over_the_grid() {
     assert!(out.contains("Kill session alpha:w1?"), "{out}");
     assert!(out.contains("SESSIONS"), "{out}");
 }
+
+// ---------- pins ----------
+
+fn pin(finca: Option<&str>, id: &str) -> crate::pins::Pin {
+    crate::pins::Pin {
+        finca: finca.map(str::to_string),
+        id: id.into(),
+    }
+}
+
+#[test]
+fn pins_load_on_reload_and_ended_local_ones_are_pruned_and_saved() {
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("a1", "alpha", "s1", State::Working, Some("@1")),
+            session("a2", "alpha", "s2", State::Ended, None),
+        ],
+    );
+    crate::pins::save(
+        &s.paths,
+        &[pin(None, "a1"), pin(None, "a2"), pin(None, "gone")],
+    )
+    .unwrap();
+    app.reload(&s);
+    assert_eq!(app.pins, vec![pin(None, "a1")]);
+    assert_eq!(crate::pins::load(&s.paths), vec![pin(None, "a1")]);
+    let rows = app.pinned_rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].handle, "alpha:s1");
+    assert_eq!(rows[0].window.as_deref(), Some("@1"));
+    assert_eq!(
+        rows[0].account.as_ref().map(|a| a.name.as_str()),
+        Some("default")
+    );
+    assert!(rows[0].finca.is_none() && !rows[0].unreachable);
+    assert!(app.is_pinned(None, "a1") && !app.is_pinned(Some("pi"), "a1"));
+}
+
+#[test]
+fn finca_pins_go_only_when_a_good_poll_lacks_them() {
+    let (_d, s, mut app) = with_fincas(&[], &[], &["pi"]);
+    crate::pins::save(
+        &s.paths,
+        &[pin(Some("pi"), "pi-n0"), pin(Some("pi"), "pi-w0")],
+    )
+    .unwrap();
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 1)),
+        t0(),
+    );
+    app.reload(&s);
+    let rows = app.pinned_rows();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].handle, "btt:n0");
+    assert_eq!(rows[0].state, State::NeedsYou);
+    assert_eq!(
+        rows[0].finca,
+        Some(("pi".into(), "pi".into(), Some("me@pi".into())))
+    );
+    assert_eq!(rows[0].window.as_deref(), Some("@10"));
+    // Unreachable: kept, marked.
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable { error: "x".into() },
+        t0(),
+    );
+    app.reload(&s);
+    assert_eq!(app.pins.len(), 2);
+    assert!(app.pinned_rows().iter().all(|r| r.unreachable));
+    // A good poll without w0: it goes, even before the next reload.
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 0)),
+        t0(),
+    );
+    assert_eq!(app.pinned_rows().len(), 1);
+    app.reload(&s);
+    assert_eq!(crate::pins::load(&s.paths), vec![pin(Some("pi"), "pi-n0")]);
+}
+
+#[test]
+fn pins_of_a_removed_finca_go() {
+    let (_d, s, mut app) = with_fincas(&[], &[], &["pi"]);
+    crate::pins::save(&s.paths, &[pin(Some("pi"), "pi-n0"), pin(Some("old"), "x")]).unwrap();
+    app.reload(&s);
+    assert_eq!(app.pins, vec![pin(Some("pi"), "pi-n0")]);
+    // Not polled yet: shown as unreachable, with a placeholder handle.
+    let rows = app.pinned_rows();
+    assert!(rows[0].unreachable);
+}
