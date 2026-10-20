@@ -162,7 +162,9 @@ in your editor.
 
 Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
 → **your turn** (Claude finished) → **ended**. A session that needs you also
-gets ⚑ in front of its tmux window name. Each project row counts its live
+gets ⚑ in front of its tmux window name. The tmux status bar lists only the
+window you're in and the windows that need you (in red); the dashboard has the
+rest. Each project row counts its live
 sessions by state: red ⚑ needs you, yellow ● your turn, green ● working.
 
 While the dashboard runs, it sends a **desktop alert** when a session needs

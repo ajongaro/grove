@@ -72,6 +72,12 @@ set -g focus-events on
 set -s set-clipboard on
 set -g status-left "#[bold] GROVE "
 set -g status-left-length 12
+# The dashboard lists every session, so the bar shows only the window you're
+# in and those that need you (⚑, ui/run.rs). Hidden windows render empty, so
+# the spacing lives in the formats rather than the separator.
+setw -g window-status-separator ""
+setw -g window-status-current-format "#[reverse] #I #W #[default]"
+setw -g window-status-format "#{?#{m:⚑ *,#W},#[fg=red#,bold] #I #W #[default],}"
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
 bind -n C-g select-window -t :=dashboard
@@ -405,6 +411,63 @@ mod tests {
                 && l.ends_with("select-window -t :=dashboard")),
             "{keys}"
         );
+    }
+
+    #[test]
+    fn status_bar_lists_only_the_current_window_and_those_needing_you() {
+        let (_d, p) = paths();
+        let conf = p.run.join("tmux.conf");
+        std::fs::create_dir_all(&p.run).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None)).unwrap();
+        let tmux = crate::tmux::Tmux {
+            config: Some(conf),
+            ..crate::tmux::Tmux::new(format!("grove-test-{}-bar", std::process::id()))
+        };
+        let run = |args: &[&str]| {
+            let out = tmux.cmd().args(args).output().unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        run(&[
+            "new-session",
+            "-d",
+            "-s",
+            "grove",
+            "-n",
+            "dashboard",
+            "sleep 30",
+        ]);
+        run(&[
+            "new-window",
+            "-d",
+            "-t",
+            "grove:",
+            "-n",
+            "⚑ p:needy",
+            "sleep 30",
+        ]);
+        run(&[
+            "new-window",
+            "-d",
+            "-t",
+            "grove:",
+            "-n",
+            "p:quiet",
+            "sleep 30",
+        ]);
+        let list = run(&["display", "-p", "-t", "grove", "#{E:window-status-format}"]);
+        let rendered = run(&[
+            "list-windows",
+            "-t",
+            "grove",
+            "-F",
+            "#{?window_active,#{E:window-status-current-format},#{E:window-status-format}}|",
+        ]);
+        tmux.kill_server();
+        assert!(!list.is_empty());
+        let rendered = rendered.replace('\n', "");
+        assert!(rendered.contains(" 0 dashboard "), "{rendered}");
+        assert!(rendered.contains(" 1 ⚑ p:needy "), "{rendered}");
+        assert!(!rendered.contains("quiet"), "{rendered}");
     }
 
     #[test]
