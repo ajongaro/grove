@@ -1794,6 +1794,7 @@ fn finca_with_items() -> (tempfile::TempDir, Store, App) {
             id: "@5".into(),
             index: 1,
             title: Some("me@homebox: ~/stacks".into()),
+            name: None,
         }],
     );
     app.pane = Pane::Sessions;
@@ -3039,13 +3040,12 @@ fn x_on_a_shell_asks_then_closes_it() {
 }
 
 #[test]
-fn session_keys_leave_a_shell_alone() {
+fn p_leaves_a_shell_alone() {
     let (_d, _s, mut app) = shell_app();
     handle_key(&mut app, ch('j'));
-    for c in ['p', 'r'] {
-        assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
-        assert_eq!(app.mode, Mode::Normal, "{c}");
-    }
+    // A shell can't be pinned (pins are Claude sessions).
+    assert_eq!(handle_key(&mut app, ch('p')), Action::None);
+    assert_eq!(app.mode, Mode::Normal);
     assert!(app.pins.is_empty());
 }
 
@@ -3067,4 +3067,81 @@ fn reload_keeps_a_selected_shell() {
     app.shells.clear();
     app.reload(&s);
     assert_eq!(app.sess_idx, 0);
+}
+
+// ---------- renaming shells ----------
+
+fn type_str(app: &mut App, text: &str) {
+    for c in text.chars() {
+        handle_key(app, ch(c));
+    }
+}
+
+#[test]
+fn r_renames_a_local_shell() {
+    let (_d, _s, mut app) = shell_app();
+    handle_key(&mut app, ch('j'));
+    handle_key(&mut app, ch('r'));
+    assert_eq!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::RenameShell {
+                window: "@5".into(),
+                finca: None
+            },
+            input: "sh1".into()
+        }
+    );
+    assert!(screen(&app, 110, 32).contains("Rename shell"));
+    // Unchanged: nothing to do.
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    handle_key(&mut app, ch('r'));
+    handle_key(&mut app, ctrl('u'));
+    type_str(&mut app, "build");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::RenameShell {
+            window: "@5".into(),
+            finca: None,
+            name: "build".into()
+        }
+    );
+}
+
+#[test]
+fn r_renames_a_finca_shell() {
+    let (_d, _s, mut app) = finca_with_items();
+    for _ in 0..5 {
+        handle_key(&mut app, ch('j'));
+    }
+    handle_key(&mut app, ch('r'));
+    assert_eq!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::RenameShell {
+                window: "@5".into(),
+                finca: Some("homebox".into())
+            },
+            input: "shell 1".into()
+        }
+    );
+    handle_key(&mut app, ctrl('u'));
+    type_str(&mut app, "logs");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::RenameShell {
+            window: "@5".into(),
+            finca: Some("homebox".into()),
+            name: "logs".into()
+        }
+    );
+}
+
+#[test]
+fn a_named_finca_shell_shows_its_name() {
+    let (_d, _s, mut app) = finca_with_items();
+    app.finca_shells.get_mut("homebox").unwrap()[0].name = Some("logs".into());
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("logs"), "{out}");
+    assert!(!out.contains("shell 1"), "{out}");
 }

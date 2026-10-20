@@ -884,29 +884,54 @@ pub struct ShellWindow {
     pub index: u32,
     /// What the remote shell titled it (often user@host: dir), if anything.
     pub title: Option<String>,
+    /// The name you gave it (`r`), if any.
+    pub name: Option<String>,
+}
+
+/// The window option holding a finca shell's name. Window names there
+/// can't tell: new windows are named after their command.
+pub const SHELL_NAME: &str = "@grove_name";
+
+impl ShellWindow {
+    /// Its name, else "shell <index>".
+    pub fn label(&self) -> String {
+        self.name
+            .clone()
+            .unwrap_or_else(|| format!("shell {}", self.index))
+    }
+}
+
+/// Names one of a finca's shell windows (the dashboard and tmux show it).
+pub fn rename_shell(tmux: &crate::tmux::Tmux, window: &str, name: &str) -> Result<()> {
+    tmux.set_window_option(window, SHELL_NAME, name)?;
+    tmux.rename_window(window, name)
 }
 
 /// The finca's open shell windows; none if no shell session is open.
 pub fn shell_windows(tmux: &crate::tmux::Tmux, slug: &str) -> Vec<ShellWindow> {
     tmux.list_windows_as(
         &shell_session_name(slug),
-        "#{window_id}\t#{window_index}\t#{pane_title}\t#{host}",
+        &format!(
+            "#{{window_id}}\t#{{window_index}}\t#{{pane_title}}\t#{{host}}\t#{{{SHELL_NAME}}}"
+        ),
     )
     .map(|lines| parse_shell_windows(&lines.join("\n")))
     .unwrap_or_default()
 }
 
-/// Parses `id \t index \t pane title \t host` lines. A title equal to the
-/// host name is tmux's default, not something the remote shell set.
+/// Parses `id \t index \t pane title \t host \t name` lines. A title equal
+/// to the host name is tmux's default, not something the remote shell set.
 fn parse_shell_windows(out: &str) -> Vec<ShellWindow> {
     out.lines()
         .filter_map(|l| {
             let mut f = l.split('\t');
             let (id, index, title, host) = (f.next()?, f.next()?, f.next()?, f.next()?);
+            let name = f.next().filter(|n| !n.is_empty()).map(str::to_string);
             Some(ShellWindow {
                 id: id.to_string(),
                 index: index.parse().ok()?,
                 title: (!title.is_empty() && title != host).then(|| title.to_string()),
+                name,
             })
         })
         .collect()

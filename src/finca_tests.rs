@@ -933,19 +933,22 @@ fn every_ssh_grove_runs_shares_connections() {
 fn shell_window_titles_skip_tmuxs_default() {
     // tmux titles a pane with this machine's host name until the remote
     // shell sets one.
-    let out = "@4\t1\tlaptop\tlaptop\n@7\t2\tme@homebox: ~/stacks\tlaptop\n";
+    // The last field is the name you gave it (`r`), if any.
+    let out = "@4\t1\tlaptop\tlaptop\t\n@7\t2\tme@homebox: ~/stacks\tlaptop\tlogs\n";
     assert_eq!(
         parse_shell_windows(out),
         [
             ShellWindow {
                 id: "@4".into(),
                 index: 1,
-                title: None
+                title: None,
+                name: None,
             },
             ShellWindow {
                 id: "@7".into(),
                 index: 2,
-                title: Some("me@homebox: ~/stacks".into())
+                title: Some("me@homebox: ~/stacks".into()),
+                name: Some("logs".into()),
             },
         ]
     );

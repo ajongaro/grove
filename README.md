@@ -142,7 +142,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
 | `s` | dashboard | a quick shell in the project's folder (popup; `exit` closes it) |
 | `S` | dashboard | a shell in the project's folder that stays open (see [Shells](#shells)) |
-| `r` | session | rename it (tmux window too) |
+| `r` | session | rename it, or a shell (tmux window too) |
 | `x` | session | kill it, or close a shell (asks first) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
 | `1`–`9` | dashboard | jump to that pinned session |
@@ -193,8 +193,8 @@ command, gone when you `exit`, and with no scrollback. `S` opens one that
 stays: a full window in the project's folder, so the mouse wheel (or
 prefix `[`) scrolls back through it. `C-g` comes back to the dashboard, and
 the shell is listed in the project's Sessions pane below its sessions
-(`$ sh1`, with what's running in it), where `Enter` goes back to it and
-`x` closes it. A shell lasts until you `exit` it or Grove's tmux server
+(`$ sh1`, with what's running in it), where `Enter` goes back to it, `r`
+renames it and `x` closes it. A shell lasts until you `exit` it or Grove's tmux server
 stops (a reboot); restarting the dashboard doesn't touch it. Shells aren't
 in the grid or the pins.
 
@@ -314,8 +314,8 @@ the footer counts remote sessions that need you.
   stays open, so Enter or `s` returns instantly.
 - Selecting a finca lists its sessions and the shells you've opened there.
   `l` (or Tab) moves into the list; **Enter** on a session connects
-  straight into that session's window, and Enter on a shell goes back to
-  it. To start, kill or edit sessions, connect.
+  straight into that session's window, Enter on a shell goes back to
+  it, and `r` on a shell names it. To start, kill or edit sessions, connect.
 - **`C-v`** in a finca window (its Grove or a shell there) sends a file
   you copied in Finder (⌘C) or an image on the clipboard (a screenshot
   taken with ⌘⇧⌃4) to the finca's `~/.grove/inbox`, and pastes its path.

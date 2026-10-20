@@ -2,7 +2,7 @@
 //! Grove's tmux session, tagged with its project. tmux is the record:
 //! nothing is stored, so a shell lasts exactly as long as its window.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::model::Project;
 use crate::tmux::Tmux;
@@ -75,6 +75,23 @@ pub fn open(tmux: &Tmux, session: &str, project: &Project, argv: &[String]) -> R
         name,
         command: command.unwrap_or_default().to_string(),
     })
+}
+
+/// Renames the shell in `window`: refused when another of its project's
+/// shells has that name. Returns its old name.
+pub fn rename(tmux: &Tmux, session: &str, window: &str, name: &str) -> Result<String> {
+    let shells = list(tmux, session);
+    let Some(sh) = shells.iter().find(|s| s.id == window) else {
+        bail!("that shell has closed");
+    };
+    if shells
+        .iter()
+        .any(|s| s.id != sh.id && s.project == sh.project && s.name == name)
+    {
+        bail!("another shell in {} is already called {name}", sh.project);
+    }
+    tmux.rename_window(window, &format!("{}:{name}", sh.project))?;
+    Ok(sh.name.clone())
 }
 
 #[cfg(test)]

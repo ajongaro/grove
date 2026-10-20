@@ -104,6 +104,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                     " Add finca — SSH destination (Tab completes, Enter sets it up, Esc cancels) "
                 }
                 PromptKind::RenameSession { .. } => " Rename session (Enter saves, Esc cancels) ",
+                PromptKind::RenameShell { .. } => " Rename shell (Enter saves, Esc cancels) ",
             };
             let area = popup(frame.area(), 70, 3);
             frame.render_widget(Clear, area);
@@ -505,7 +506,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                 }
                 let mut spans = vec![
                     Span::raw("  ● ").fg(FINCAS_COLOR),
-                    Span::raw(format!("{:<w$}", format!("shell {}", w.index), w = name_w)).bold(),
+                    Span::raw(format!("{:<w$}", w.label(), w = name_w)).bold(),
                 ];
                 if let Some(t) = &w.title {
                     spans.push(Span::raw(t.clone()).dark_gray());

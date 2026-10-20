@@ -40,7 +40,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         "Sessions",
         &[
             ("Enter", "jump to its window (or shell)"),
-            ("r", "rename"),
+            ("r", "rename (a shell too)"),
             ("x", "kill, or close a shell"),
             ("p", "pin / unpin (any account or finca)"),
         ],
@@ -73,7 +73,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Fincas",
         &[
-            ("s", "open a shell there"),
+            ("s", "open a shell there (r renames it)"),
             ("Enter", "connect, or jump into a session"),
             ("F", "add a finca (or a on a finca)"),
         ],

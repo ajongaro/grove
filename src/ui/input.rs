@@ -161,6 +161,17 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                 }
                 PromptKind::AddFinca if text.is_empty() => Action::None,
                 PromptKind::AddFinca => Action::SetupFinca { dest: text },
+                PromptKind::RenameShell { window, finca } => {
+                    if text.is_empty() || text == app.shell_label(&window, finca.as_deref()) {
+                        Action::None
+                    } else {
+                        Action::RenameShell {
+                            window,
+                            finca,
+                            name: text,
+                        }
+                    }
+                }
                 PromptKind::RenameSession { session_id } => {
                     let current = app
                         .sessions
@@ -301,6 +312,18 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::Jump {
                 window: window.unwrap_or_default(),
             }
+        }
+        KeyCode::Char('r') if app.pane == Pane::Sessions && app.selected_shell().is_some() => {
+            if let Some(s) = app.selected_shell() {
+                app.mode = Mode::Prompt {
+                    kind: PromptKind::RenameShell {
+                        window: s.id.clone(),
+                        finca: None,
+                    },
+                    input: s.name.clone(),
+                };
+            }
+            Action::None
         }
         KeyCode::Char('x') if app.pane == Pane::Sessions && app.selected_shell().is_some() => {
             if let Some(s) = app.selected_shell() {
@@ -506,6 +529,18 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
         }),
         KeyCode::Char('a') => {
             app.mode = add_finca_prompt();
+            Some(Action::None)
+        }
+        KeyCode::Char('r') => {
+            if let Some(FincaItem::Shell(w)) = item {
+                app.mode = Mode::Prompt {
+                    kind: PromptKind::RenameShell {
+                        window: w.id.clone(),
+                        finca: Some(slug),
+                    },
+                    input: w.label(),
+                };
+            }
             Some(Action::None)
         }
         KeyCode::Char('s') => Some(match error {

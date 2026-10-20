@@ -755,3 +755,62 @@ fn remove_project_waits_for_open_shells() {
     tm.kill_window(&sh.id).unwrap();
     remove_project(s, tm, "grove", &p.slug()).unwrap();
 }
+
+#[test]
+fn rename_shell_renames_a_local_shell_unless_the_name_is_taken() {
+    let t = setup("renameshell");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    add_project_at(s, &t.root.to_string_lossy()).unwrap();
+    let p = s.list_projects()[0].as_ref().unwrap().clone();
+    let one = crate::shells::open(tm, "grove", &p, &sleeper()).unwrap();
+    let two = crate::shells::open(tm, "grove", &p, &sleeper()).unwrap();
+    let rename = |window: &str, name: &str| {
+        perform(
+            &t.ctx,
+            Action::RenameShell {
+                window: window.into(),
+                finca: None,
+                name: name.into(),
+            },
+        )
+    };
+    match rename(&one.id, "build") {
+        Ok(Outcome::Message(m)) => assert_eq!(m, "Renamed sh1 to build"),
+        other => panic!("{other:?}"),
+    }
+    let names: Vec<String> = crate::shells::list(tm, "grove")
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(names, ["build", "sh2"]);
+    assert_eq!(window_name(tm, &one.id), format!("{}:build", p.slug()));
+    let err = rename(&two.id, "build").unwrap_err();
+    assert!(format!("{err:#}").contains("already"), "{err:#}");
+}
+
+#[test]
+fn rename_shell_names_a_finca_shell() {
+    let t = setup("renamefshell");
+    let tm = &t.ctx.tmux;
+    let session = crate::finca::shell_session_name("homebox");
+    tm.new_session_detached(&session, "Homebox", &t.root, &sleeper())
+        .unwrap();
+    let w = crate::finca::shell_windows(tm, "homebox")[0].id.clone();
+    match perform(
+        &t.ctx,
+        Action::RenameShell {
+            window: w.clone(),
+            finca: Some("homebox".into()),
+            name: "logs".into(),
+        },
+    ) {
+        Ok(Outcome::Message(m)) => assert_eq!(m, "Renamed shell 1 to logs"),
+        other => panic!("{other:?}"),
+    }
+    let wins = crate::finca::shell_windows(tm, "homebox");
+    assert_eq!(wins[0].name.as_deref(), Some("logs"));
+    assert_eq!(window_name(tm, &w), "logs");
+}

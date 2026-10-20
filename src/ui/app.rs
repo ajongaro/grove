@@ -35,7 +35,14 @@ pub enum PromptKind {
     NewSession,
     AddProject,
     AddFinca,
-    RenameSession { session_id: String },
+    RenameSession {
+        session_id: String,
+    },
+    /// A shell's window: a project's (`finca` None) or a finca's.
+    RenameShell {
+        window: String,
+        finca: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +151,12 @@ pub enum Action {
     /// A throwaway shell in the project's folder, in a popup.
     ProjectShell {
         slug: String,
+    },
+    RenameShell {
+        window: String,
+        /// The finca's slug, for a finca shell.
+        finca: Option<String>,
+        name: String,
     },
     /// A shell that stays open, in its own window in the project's folder.
     NewShell {
@@ -573,6 +586,23 @@ impl App {
     pub fn selected_shell(&self) -> Option<&crate::shells::Shell> {
         let i = self.sess_idx.checked_sub(self.visible_sessions().len())?;
         self.visible_shells().get(i).copied()
+    }
+
+    /// A shell's name as the dashboard shows it (empty once it's closed).
+    pub fn shell_label(&self, window: &str, finca: Option<&str>) -> String {
+        match finca {
+            None => self
+                .shells
+                .iter()
+                .find(|s| s.id == window)
+                .map(|s| s.name.clone()),
+            Some(slug) => self
+                .finca_shells
+                .get(slug)
+                .and_then(|ws| ws.iter().find(|w| w.id == window))
+                .map(|w| w.label()),
+        }
+        .unwrap_or_default()
     }
 
     /// Rows in the Sessions pane of a project: sessions, then shells.

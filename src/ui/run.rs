@@ -168,6 +168,25 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::finca::open_shell(&ctx.tmux, &f, via.as_deref())?;
             Outcome::Nothing
         }
+        Action::RenameShell {
+            window,
+            finca,
+            name,
+        } => {
+            let name = name.trim();
+            let old = match finca {
+                None => crate::shells::rename(&ctx.tmux, &ctx.cfg.tmux_session, &window, name)?,
+                Some(slug) => {
+                    let wins = crate::finca::shell_windows(&ctx.tmux, &slug);
+                    let Some(w) = wins.iter().find(|w| w.id == window) else {
+                        bail!("that shell has closed");
+                    };
+                    crate::finca::rename_shell(&ctx.tmux, &window, name)?;
+                    w.label()
+                }
+            };
+            Outcome::Message(format!("Renamed {old} to {name}"))
+        }
         Action::RenameSession { session_id, name } => {
             Outcome::Message(rename_session(ctx, &session_id, &name)?)
         }
