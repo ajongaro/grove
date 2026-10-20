@@ -1261,6 +1261,10 @@ fn install_plan_copies_downloads_or_builds() {
     assert_eq!(
         install_plan(&elsewhere(), false, Some(empty.path())),
         Plan::Download
+    ); // A 32-bit ARM board is too small to build Grove: it downloads.
+    assert_eq!(
+        install_plan(&platform_facts("linux", "armv6l"), false, src),
+        Plan::Download
     );
 }
 
@@ -1282,8 +1286,16 @@ fn release_targets_per_platform() {
         release_target("macos", "x86_64").unwrap(),
         "x86_64-apple-darwin"
     );
+    // 32-bit ARM (Pi Zero, older Pis): one armv6 build runs on both.
+    for arch in ["armv6l", "armv7l"] {
+        assert_eq!(
+            release_target("linux", arch).unwrap(),
+            "arm-unknown-linux-musleabihf"
+        );
+    }
     assert!(release_target("freebsd", "x86_64").is_err());
-    assert!(release_target("linux", "armv7l").is_err());
+    assert!(release_target("linux", "riscv64").is_err());
+    assert!(release_target("macos", "armv7l").is_err());
 }
 
 /// A release folder with a grove for `target` and its SHA256SUMS.

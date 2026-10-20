@@ -367,13 +367,16 @@ fn dashboard(paths: Paths) -> Result<()> {
 /// Checks everything a session launch depends on, before touching tmux.
 fn preflight(paths: &Paths) -> Result<Config> {
     let cfg = load_config(paths)?;
-    claude_dir(&cfg)?;
     let v = tmux::version()?;
     if v < (3, 2) {
         bail!("tmux {}.{} is too old; Grove needs 3.2 or newer", v.0, v.1);
     }
-    if !launch::claude_bin().starts_with('/') {
-        bail!("`claude` was not found on PATH");
+    // Where Claude can't run (a Pi Zero), Grove is for shells and to-dos.
+    if setup::claude_runs_on(std::env::consts::ARCH) {
+        claude_dir(&cfg)?;
+        if !launch::claude_bin().starts_with('/') {
+            bail!("`claude` was not found on PATH");
+        }
     }
     Ok(cfg)
 }

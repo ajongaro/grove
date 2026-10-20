@@ -28,9 +28,20 @@ impl Facts {
         self.tools.contains(tool)
     }
 
+    /// Whether Claude Code can run there at all.
+    pub fn claude_runs(&self) -> bool {
+        claude_runs_on(&self.arch)
+    }
+
     pub fn same_platform_as_here(&self) -> bool {
         self.os == std::env::consts::OS && self.arch == std::env::consts::ARCH
     }
+}
+
+/// Claude Code ships for 64-bit x86 and ARM only (`Facts` / `ARCH` form).
+/// Elsewhere (a Pi Zero) a finca is for its shells.
+pub fn claude_runs_on(arch: &str) -> bool {
+    matches!(arch, "x86_64" | "aarch64")
 }
 
 /// Parses `key=value` lines; other lines (login chatter) are ignored.
@@ -224,7 +235,16 @@ impl Setup<'_> {
             None => self.pick_name(io, &host),
         };
 
-        for tool in ["tmux", "claude"] {
+        let tools: &[&str] = if facts.claude_runs() {
+            &["tmux", "claude"]
+        } else {
+            io.say(&format!(
+                "– Claude Code doesn't run on {}: this finca is for its shells",
+                facts.arch
+            ));
+            &["tmux"]
+        };
+        for &tool in tools {
             if facts.has(tool) {
                 io.say(&format!("✓ {tool}"));
                 continue;
@@ -248,7 +268,9 @@ impl Setup<'_> {
         }
 
         let grove_bin = self.grove(io, dest, &mut facts)?;
-        self.claude_login(io, dest, &host)?;
+        if facts.claude_runs() {
+            self.claude_login(io, dest, &host)?;
+        }
         let backup = match &existing {
             Some(f) => f.backup.clone(),
             None => self.backup(io, dest, &host),

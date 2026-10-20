@@ -490,3 +490,41 @@ fn a_finca_on_another_platform_gets_the_release_binary() {
     );
     assert_eq!(w.store.get_finca(&f.name).unwrap(), f);
 }
+
+#[test]
+fn claude_runs_only_on_64_bit_cpus() {
+    assert!(claude_runs_on("aarch64"));
+    assert!(claude_runs_on("x86_64"));
+    assert!(!claude_runs_on("armv6l"));
+    assert!(!claude_runs_on("armv7l"));
+}
+
+#[test]
+fn a_pi_zero_becomes_a_finca_without_claude() {
+    let w = world(&["tmux"]);
+    crate::finca::tests::script(
+        &w.bin,
+        "uname",
+        "case \"$1\" in -s) echo Linux;; -m) echo armv6l;; *) echo Linux;; esac",
+    );
+    let rel = w.home.parent().unwrap().join("release");
+    std::fs::create_dir_all(&rel).unwrap();
+    crate::finca::tests::fake_release(&rel, "arm-unknown-linux-musleabihf", true);
+    // Default name; install grove. Nothing about Claude is asked.
+    let mut io = Script::new(&["", "y"]);
+    let f = run_with(
+        &w,
+        &mut io,
+        "me@pizero",
+        false,
+        Some(format!("file://{}", rel.display())),
+    )
+    .unwrap();
+    let said = io.said.join("\n");
+    assert!(said.contains("Claude Code doesn't run on armv6l"), "{said}");
+    assert!(!said.contains("Rust"), "{said}");
+    assert!(io.ran.is_empty(), "nothing interactive: {:?}", io.ran);
+    let installed = std::fs::read_to_string(w.home.join(".local/bin/grove")).unwrap();
+    assert!(installed.contains("grove 0.1.0"), "{installed}");
+    assert_eq!(w.store.get_finca(&f.name).unwrap(), f);
+}

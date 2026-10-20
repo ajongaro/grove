@@ -332,13 +332,16 @@ Claude login, and asks before fixing each one:
 - no key-based SSH yet: it can create a key and copy it there (you type the
   password once);
 - missing tmux or Claude Code: it shows the install command and runs it
-  over SSH (sudo can prompt);
+  over SSH (sudo can prompt). Claude Code runs on 64-bit machines only, so
+  a 32-bit board (an original Pi Zero W) becomes a finca for its shells,
+  with no Claude install or login;
 - Grove: a machine with this one's OS and CPU gets a copy of this build.
   Any other gets the release of the same version built for it (downloaded
   here, checked, and copied over SSH, so it needs nothing extra), if you
   installed Grove with Homebrew or the install script. If you built Grove
   from a source checkout, it builds that checkout there instead (offering
-  to install Rust first), so the finca runs the same code;
+  to install Rust first), so the finca runs the same code; a 32-bit ARM
+  board, too small to build it, gets the release;
 - logged out of Claude there: it runs `claude auth login` for you;
 - if Tailscale here knows the machine, it offers its Tailscale name as the
   backup.
@@ -435,7 +438,8 @@ scripts/release.sh 0.2.0
 
 It sets the version, runs the tests, tags `v0.2.0` and pushes. The tag
 starts `.github/workflows/release.yml`, which builds macOS and Linux
-binaries (arm64 and x86_64; Linux ones are static, musl) and publishes them
+binaries (arm64 and x86_64, plus 32-bit ARM Linux for Pi Zeros; Linux
+ones are static, musl) and publishes them
 with `SHA256SUMS` and `install.sh`. The script then writes the Homebrew
 formula (`scripts/formula.sh`) to the
 [ajongaro/homebrew-grove](https://github.com/ajongaro/homebrew-grove) tap.

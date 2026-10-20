@@ -492,7 +492,8 @@ pub enum Plan {
 
 /// A finca like this machine gets a copy. Otherwise a source build builds
 /// its checkout there, so the finca runs the same code; a release build,
-/// or one whose checkout is gone, downloads the matching release.
+/// one whose checkout is gone, or a 32-bit ARM board (too small to compile
+/// Grove) downloads the matching release.
 pub fn install_plan(
     facts: &crate::setup::Facts,
     release_build: bool,
@@ -500,15 +501,27 @@ pub fn install_plan(
 ) -> Plan {
     if facts.same_platform_as_here() {
         Plan::Copy
-    } else if !release_build && source.is_some_and(|s| s.join("Cargo.toml").exists()) {
+    } else if !release_build
+        && !is_arm32(&facts.arch)
+        && source.is_some_and(|s| s.join("Cargo.toml").exists())
+    {
         Plan::Build
     } else {
         Plan::Download
     }
 }
 
+/// 32-bit ARM, as `uname -m` says it (Pi Zero, older Pis).
+fn is_arm32(arch: &str) -> bool {
+    matches!(arch, "armv6l" | "armv7l")
+}
+
 /// The release asset's target for a finca's OS and CPU (`Facts` form).
 pub fn release_target(os: &str, arch: &str) -> Result<String> {
+    // One armv6 build, which armv7 runs too.
+    if os == "linux" && is_arm32(arch) {
+        return Ok("arm-unknown-linux-musleabihf".into());
+    }
     let os = match os {
         "macos" => "apple-darwin",
         "linux" => "unknown-linux-musl",

@@ -26,11 +26,15 @@ case "$(uname -s)" in
   *) fail "$(uname -s) isn't supported (macOS and Linux only)" ;;
 esac
 case "$(uname -m)" in
-  arm64 | aarch64) cpu=aarch64 ;;
-  x86_64 | amd64) cpu=x86_64 ;;
-  *) fail "$(uname -m) CPUs aren't supported (arm64 and x86_64 only)" ;;
+  arm64 | aarch64) target="aarch64-$os" ;;
+  x86_64 | amd64) target="x86_64-$os" ;;
+  # 32-bit ARM Linux (Pi Zero, older Pis): one armv6 build runs on both.
+  armv6l | armv7l)
+    [ "$os" = unknown-linux-musl ] || fail "$(uname -m) is supported on Linux only"
+    target=arm-unknown-linux-musleabihf ;;
+  *) fail "$(uname -m) CPUs aren't supported (arm64, x86_64 and 32-bit ARM Linux only)" ;;
 esac
-asset="grove-$cpu-$os.tar.gz"
+asset="grove-$target.tar.gz"
 
 if command -v sha256sum >/dev/null 2>&1; then
   sha256() { sha256sum "$1" | cut -d' ' -f1; }

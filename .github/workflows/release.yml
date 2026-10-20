@@ -1,5 +1,6 @@
-# Pushing a v* tag builds grove for macOS and Linux (arm64 and x86_64) and
-# publishes them, with SHA256SUMS and install.sh, as that tag's release.
+# Pushing a v* tag builds grove for macOS and Linux (arm64 and x86_64, and
+# 32-bit ARM Linux for Pi Zeros) and publishes them, with SHA256SUMS and
+# install.sh, as that tag's release.
 # scripts/release.sh pushes the tag and then updates the Homebrew formula.
 name: release
 
@@ -20,15 +21,19 @@ jobs:
           # musl: static binaries, so any distro's glibc works.
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
+          # armv6 (Pi Zero W; armv7 runs it too), cross-linked with zig.
+          - { target: arm-unknown-linux-musleabihf, os: ubuntu-24.04, zig: true }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
+      - if: matrix.zig
+        run: pip3 install --break-system-packages cargo-zigbuild
       # Marks a release build: it sets up fincas of another OS or CPU by
       # downloading this release rather than building from source there.
-      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - run: cargo ${{ matrix.zig && 'zigbuild' || 'build' }} --release --locked --target ${{ matrix.target }}
         env:
           GROVE_RELEASE_BUILD: "1"
       - name: Package

@@ -14,10 +14,15 @@ fn target() -> String {
 
 /// A release folder holding a fake grove for this machine and its checksum.
 fn fake_release(dir: &Path, checksum_ok: bool) {
+    fake_release_for(dir, &target(), checksum_ok);
+}
+
+/// The same, for `target`.
+fn fake_release_for(dir: &Path, target: &str, checksum_ok: bool) {
     let stage = dir.join("stage");
     std::fs::create_dir_all(&stage).unwrap();
     std::fs::write(stage.join("grove"), "#!/bin/sh\necho grove 9.9.9\n").unwrap();
-    let asset = format!("grove-{}.tar.gz", target());
+    let asset = format!("grove-{target}.tar.gz");
     let st = Command::new("tar")
         .args(["-czf"])
         .arg(dir.join(&asset))
@@ -79,4 +84,39 @@ fn a_bad_checksum_installs_nothing() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(!bin.join("grove").exists());
+}
+
+#[test]
+fn a_32_bit_arm_linux_board_gets_the_armv6_build() {
+    let dir = tempfile::tempdir().unwrap();
+    fake_release_for(dir.path(), "arm-unknown-linux-musleabihf", true);
+    // A Pi Zero, as far as install.sh can tell.
+    let fake = dir.path().join("fake bin");
+    std::fs::create_dir_all(&fake).unwrap();
+    let uname = fake.join("uname");
+    std::fs::write(
+        &uname,
+        "#!/bin/sh\ncase \"$1\" in -m) echo armv6l;; *) echo Linux;; esac\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&uname, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin = dir.path().join("my bin");
+    let path = format!("{}:{}", fake.display(), std::env::var("PATH").unwrap());
+    let out = Command::new("sh")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/install.sh"))
+        .env(
+            "GROVE_DOWNLOAD_URL",
+            format!("file://{}", dir.path().display()),
+        )
+        .env("GROVE_INSTALL_DIR", &bin)
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(bin.join("grove").exists());
 }
