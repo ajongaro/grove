@@ -1392,3 +1392,17 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
         })
         .collect()
 }
+
+#[test]
+fn update_downloads_where_there_is_no_cargo_to_build_with() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::write(d.path().join("Cargo.toml"), "").unwrap();
+    let src = Some(d.path());
+    // Set up from a release (a Pi Zero 2 W, say): no Rust there.
+    assert_eq!(update_plan(&elsewhere(), false, src), Plan::Download);
+    let mut with_cargo = elsewhere();
+    with_cargo.tools.insert("cargo".into());
+    assert_eq!(update_plan(&with_cargo, false, src), Plan::Build);
+    let here = platform_facts(std::env::consts::OS, std::env::consts::ARCH);
+    assert_eq!(update_plan(&here, false, src), Plan::Copy);
+}

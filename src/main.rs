@@ -643,7 +643,7 @@ fn update_one(f: &finca::Finca, exe: &std::path::Path) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("couldn't read the machine's details"))?;
     let source = finca::source_dir();
     let downloaded;
-    let (how, label) = match finca::install_plan(&facts, finca::RELEASE_BUILD, source.as_deref()) {
+    let (how, label) = match finca::update_plan(&facts, finca::RELEASE_BUILD, source.as_deref()) {
         finca::Plan::Copy => (finca::How::Copy(exe), "copied"),
         finca::Plan::Download => {
             let version = env!("CARGO_PKG_VERSION");

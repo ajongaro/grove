@@ -511,6 +511,20 @@ pub fn install_plan(
     }
 }
 
+/// `install_plan` for `grove finca update`, which asks nothing: a finca
+/// with no cargo (set up from a release) gets the release rather than a
+/// build it can't do.
+pub fn update_plan(
+    facts: &crate::setup::Facts,
+    release_build: bool,
+    source: Option<&std::path::Path>,
+) -> Plan {
+    match install_plan(facts, release_build, source) {
+        Plan::Build if !facts.has("cargo") => Plan::Download,
+        plan => plan,
+    }
+}
+
 /// 32-bit ARM, as `uname -m` says it (Pi Zero, older Pis).
 fn is_arm32(arch: &str) -> bool {
     matches!(arch, "armv6l" | "armv7l")
