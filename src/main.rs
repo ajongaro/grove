@@ -15,6 +15,7 @@ mod screens;
 mod setup;
 mod shells;
 mod state;
+mod stats;
 mod status;
 mod store;
 mod tmux;

@@ -171,6 +171,8 @@ pub struct Paths {
     pub fincas: PathBuf,
     pub todos: PathBuf,
     pub run: PathBuf,
+    /// What each session's status line recorded (stats.rs).
+    pub stats: PathBuf,
     pub log: PathBuf,
 }
 
@@ -182,6 +184,7 @@ impl Paths {
             fincas: home.join("fincas"),
             todos: home.join("todos"),
             run: home.join("run"),
+            stats: home.join("stats"),
             log: home.join("grove.log"),
             home,
         }
@@ -200,6 +203,7 @@ impl Paths {
             &self.projects,
             &self.sessions,
             &self.run,
+            &self.stats,
             &self.fincas,
             &self.todos,
         ] {
@@ -466,7 +470,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = Paths::new(dir.path().join("nested home"));
         p.ensure().unwrap();
-        for d in [&p.projects, &p.sessions, &p.run, &p.todos] {
+        for d in [&p.projects, &p.sessions, &p.run, &p.stats, &p.todos] {
             assert!(d.is_dir(), "{d:?}");
         }
     }
