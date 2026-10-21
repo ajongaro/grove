@@ -566,12 +566,15 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         .iter()
         .map(|s| {
             let color = state_color(s.state);
-            let spans = vec![
+            let mut spans = vec![
                 Span::styled("● ", Style::new().fg(color)),
                 Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                 Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                 Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).dark_gray(),
             ];
+            if let Some(st) = app.stats.get(&s.id) {
+                spans.push(Span::raw(format!(" · {}", stats_label(st))).dark_gray());
+            }
             let mut lines = vec![Line::from(spans)];
             // On its own line so long permission prompts aren't cut off.
             if let Some(m) = &s.message {
@@ -589,6 +592,15 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         .block(block)
         .highlight_style(highlight(app.pane == Pane::Sessions));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// A session's cost and context use, as its status line last saw them:
+/// `$1.23 · 23%`.
+pub(super) fn stats_label(st: &crate::stats::SessionStats) -> String {
+    match st.context_pct {
+        Some(p) => format!("${:.2} · {}%", st.last.cost, p.clamp(0.0, 100.0) as u32),
+        None => format!("${:.2}", st.last.cost),
+    }
 }
 
 /// Session-name column: the longest name plus a gap, so states line up and

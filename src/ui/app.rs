@@ -239,6 +239,8 @@ pub struct App {
     pub fincas: Vec<FincaRow>,
     /// All sessions, oldest first.
     pub sessions: Vec<Session>,
+    /// What each session's status line last recorded, by session id.
+    pub stats: HashMap<String, crate::stats::SessionStats>,
     pub pane: Pane,
     pub proj_idx: usize,
     pub sess_idx: usize,
@@ -327,6 +329,7 @@ impl App {
             projects: Vec::new(),
             fincas: Vec::new(),
             sessions: Vec::new(),
+            stats: HashMap::new(),
             pane: Pane::Projects,
             proj_idx: 0,
             sess_idx: 0,
@@ -395,6 +398,7 @@ impl App {
         let keep_shell = self.selected_shell().map(|s| s.id.clone());
         let keep_item = self.selected_finca_item().map(|i| i.key());
 
+        self.stats = crate::stats::load_all(&store.paths);
         self.projects = store
             .list_projects()
             .into_iter()

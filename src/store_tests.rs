@@ -233,3 +233,14 @@ fn malformed_or_renamed_finca_file_is_an_error_row() {
     assert_eq!(all.len(), 2);
     assert!(all.iter().all(|r| r.is_err()));
 }
+
+#[test]
+fn delete_session_removes_stats() {
+    let (_d, s) = store();
+    let input: crate::stats::StatusInput =
+        serde_json::from_str(r#"{"cost":{"total_cost_usd":1.0}}"#).unwrap();
+    crate::stats::record(&s.paths, "s1", "work", &input).unwrap();
+    s.save_session(&sess("s1", "alpha")).unwrap();
+    s.delete_session("s1").unwrap();
+    assert!(!crate::stats::load_all(&s.paths).contains_key("s1"));
+}

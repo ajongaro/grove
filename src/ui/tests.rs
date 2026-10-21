@@ -3145,3 +3145,21 @@ fn a_named_finca_shell_shows_its_name() {
     assert!(out.contains("logs"), "{out}");
     assert!(!out.contains("shell 1"), "{out}");
 }
+
+#[test]
+fn session_row_shows_cost_and_context() {
+    let (_d, s, app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    assert!(!screen(&app, 120, 30).contains('$'));
+    let input: crate::stats::StatusInput = serde_json::from_str(
+        r#"{"cost":{"total_cost_usd":1.234},"context_window":{"used_percentage":23.0}}"#,
+    )
+    .unwrap();
+    crate::stats::record(&s.paths, "1", "work", &input).unwrap();
+    let mut app = app;
+    app.reload(&s);
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("$1.23 · 23%"), "{out}");
+}

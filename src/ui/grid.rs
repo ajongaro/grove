@@ -32,6 +32,8 @@ pub struct Tile {
     /// None: no live screen for this tile.
     pub screen: Option<String>,
     pub stale: bool,
+    /// Cost and context from its status line (this machine's sessions only).
+    pub stats: Option<String>,
 }
 
 impl Tile {
@@ -61,6 +63,7 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
                 window: s.tmux_window.clone(),
                 screen: Some(app.local_screens.get(&s.id).cloned().unwrap_or_default()),
                 stale: false,
+                stats: app.stats.get(&s.id).map(super::render::stats_label),
             });
         }
     }
@@ -84,6 +87,7 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
                     window: s.window.clone(),
                     screen: Some(s.screen.clone()),
                     stale,
+                    stats: None,
                 });
             }
         } else if let Some(st) = f
@@ -105,6 +109,7 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
                         window: s.window.clone(),
                         screen: None,
                         stale: false,
+                        stats: None,
                     });
                 }
             }
@@ -325,6 +330,9 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     title.push(Span::raw(t.handle()).fg(dim(Color::White)));
     title.push(Span::raw(format!(" {icon} {}", t.state.label())).fg(dim(state_color(t.state))));
     title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).dark_gray());
+    if let Some(st) = &t.stats {
+        title.push(Span::raw(format!("  {st}")).dark_gray());
+    }
     if draft {
         title.push(Span::raw("  ✎ draft").fg(dim(Color::Cyan)));
     }
