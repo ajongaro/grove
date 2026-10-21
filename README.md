@@ -173,6 +173,23 @@ in a focused terminal. It uses `osascript` on macOS and `notify-send` on
 Linux. Set `alerts = false` in `config.toml` to turn alerts off, for example
 on a finca nobody sits at.
 
+Grove sessions get Grove's own **status line** under Claude's prompt:
+
+```
+🤖 Opus | WORK | 📁 api:s2 | 🌿 main +1 ~2 | 🧠 ▓▓░░░░░░░░ 23% | 💰 $1.23 | ⏱️ 2m 5s | ✏️ +10 -2 | 📊 12%
+```
+
+That's the model, the session's account in its colour, `project:session`,
+the git branch with staged and modified file counts, context use, cost,
+time, and lines changed. The last one is your 5-hour usage, shown only on
+Pro and Max plans. Each session's row in the dashboard shows its cost and
+context use too (`$1.23 · 23%`). The cost is Claude Code's own estimate;
+on a subscription it isn't what you're billed.
+
+Inside Grove it replaces any status line you've set up, without touching
+your Claude settings. To keep yours, set `statusline = false` in
+`config.toml`.
+
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP
 tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
@@ -383,6 +400,7 @@ tmux.local.conf           your own tmux setup for Grove's server (optional)
 projects/<slug>.toml      name, path, color, summary
 todos/<slug>.md           the project's to-do list (Markdown checklist)
 sessions/<uuid>.json      one per session: state, window, message
+stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
 grove.log                 errors from hooks / MCP
@@ -395,11 +413,12 @@ tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
+statusline = true                      # Grove's status line in its sessions
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
 
-Grove never edits `~/.claude*/settings.json`. Hooks are passed per session
-with `--settings run/hooks.json` and the MCP server with
+Grove never edits `~/.claude*/settings.json`. Hooks and the status line are
+passed per session with `--settings run/hooks.json` and the MCP server with
 `--mcp-config run/mcp.json`.
 
 ## Extending it
@@ -410,6 +429,8 @@ Each file does one job, so new features usually touch one or two:
 |---|---|
 | `src/state.rs` | hook event → session state (pure; start here for new signals) |
 | `src/hook.rs` | `grove hook`: applies events, prints session-start context |
+| `src/statusline.rs` | `grove statusline`: the status line in Grove's sessions |
+| `src/stats.rs` | what each status line saw: per-session and per-day, per-account totals |
 | `src/store.rs` | all disk reads/writes (atomic) |
 | `src/config.rs` | `config.toml`, accounts and which folder picks which |
 | `src/launch.rs` | builds the `claude` command + window env |
