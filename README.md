@@ -191,6 +191,10 @@ Inside Grove it replaces any status line you've set up, without touching
 your Claude settings. To keep yours, set `statusline = false` in
 `config.toml`.
 
+The header shows the day's **harvest** under the session totals: what this
+machine's sessions cost and changed today, split by account when you have
+more than one (`🧺 work $9.80 +1.4k −200 · personal $4.40 +700 −140`).
+
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP
 tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
@@ -443,7 +447,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
-| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
+| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the grove art, leaves, harvest and quips, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
 | `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |
