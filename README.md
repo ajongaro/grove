@@ -195,8 +195,9 @@ The header shows the day's **harvest** under the session totals: what this
 machine's sessions cost and changed today, split by account when you have
 more than one (`🧺 work $9.80 +1.4k −200 · personal $4.40 +700 −140`).
 Beside the logo is a little window of sky with olive trees. Its colours
-follow your clock, from dawn to a starry night, and leaves blow through it
-while sessions work.
+follow your clock, from dawn to a starry night, and its weather follows your
+sessions: leaves blow through while they work, it rains while one needs you,
+and the sun (or moon) comes out when all is calm.
 
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP

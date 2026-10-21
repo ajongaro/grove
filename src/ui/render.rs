@@ -880,9 +880,17 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let ground = (area.width as usize)
         .saturating_sub(left + harvest.width() + 2)
         .min(sky_w);
-    let working = app.sessions.iter().any(|s| s.state == State::Working);
-    let sky =
-        (sky_w >= flair::SKY_MIN).then(|| flair::sky(sky_w, ground, local.hour(), now, working));
+    // The weather: rain while anything needs you, leaves while anything
+    // works, sun when all is calm.
+    let any = |state| app.sessions.iter().any(|s| s.state == state);
+    let mood = if any(State::NeedsYou) {
+        flair::Mood::Rain
+    } else if any(State::Working) {
+        flair::Mood::Busy
+    } else {
+        flair::Mood::Calm
+    };
+    let sky = (sky_w >= flair::SKY_MIN).then(|| flair::sky(sky_w, ground, local.hour(), now, mood));
     let logo: Vec<Line> = (0..3)
         .map(|i| {
             let mut spans = vec![Span::raw(" ")];

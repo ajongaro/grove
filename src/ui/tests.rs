@@ -3315,6 +3315,21 @@ fn narrow_header_shrinks_the_sky_before_the_totals() {
 }
 
 #[test]
+fn it_rains_in_the_header_while_a_session_needs_you() {
+    let rainy = |state| {
+        let (_d, _s, app) = loaded(
+            &["alpha"],
+            &[session("1", "alpha", "s1", state, Some("@1"))],
+        );
+        let out = screen(&app, 130, 30);
+        out.lines().take(2).any(|l| l.contains('╷'))
+    };
+    assert!(rainy(State::NeedsYou));
+    assert!(!rainy(State::Working));
+    assert!(!rainy(State::YourTurn));
+}
+
+#[test]
 fn quip_shows_on_a_laptop_width_too() {
     let (_d, _s, app) = loaded(&["alpha"], &[]);
     let now = quip_time();

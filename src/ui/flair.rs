@@ -17,9 +17,15 @@ pub(super) const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 /// A paler leaf, so neighbouring trees read as two.
 const SAGE: Color = Color::Rgb(0x6f, 0x9a, 0x6a);
 const STAR: Color = Color::Rgb(0xf0, 0xe6, 0xa0);
+const SUN: Color = Color::Rgb(0xff, 0xd8, 0x4a);
+const MOON: Color = Color::Rgb(0xe8, 0xe4, 0xd0);
+const RAIN: Color = Color::Rgb(0xa8, 0xc8, 0xe8);
+const OVERCAST: (u8, u8, u8) = (0x70, 0x78, 0x84);
 
 /// How long a drifting leaf stays in one place.
 const LEAF_STEP_MS: i64 = 400;
+/// How long a raindrop stays in one place.
+const RAIN_STEP_MS: i64 = 300;
 /// How long a cloud stays in one place.
 const CLOUD_STEP_S: i64 = 3;
 
@@ -41,7 +47,11 @@ fn palette(hour: u32) -> Palette {
             Color::Rgb(0xff, 0xee, 0xf0),
             false,
         ),
-        8..18 => (Color::Rgb(0x5f, 0xa8, 0xe0), Color::White, false),
+        8..18 => (
+            Color::Rgb(0x5f, 0xa8, 0xe0),
+            Color::Rgb(0xff, 0xff, 0xff),
+            false,
+        ),
         18..20 => (
             Color::Rgb(0xe0, 0x84, 0x4c),
             Color::Rgb(0xc9, 0xb4, 0xb8),
@@ -54,6 +64,24 @@ fn palette(hour: u32) -> Palette {
         ),
     };
     Palette { sky, cloud, stars }
+}
+
+/// The grove's weather, from what its sessions are doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mood {
+    /// Nothing working, nothing waiting: the sun (or moon) is out.
+    Calm,
+    /// Something is working: leaves blow through.
+    Busy,
+    /// Something needs you: it rains.
+    Rain,
+}
+
+/// `c` moved `t` of the way towards `to`.
+fn blend(c: Color, to: (u8, u8, u8), t: f32) -> Color {
+    let Color::Rgb(r, g, b) = c else { return c };
+    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+    Color::Rgb(mix(r, to.0), mix(g, to.1), mix(b, to.2))
 }
 
 /// One cell of the sky; `None` is open sky.
@@ -71,20 +99,33 @@ fn put(row: &mut [Cell], x: isize, s: &str, style: impl Fn(char) -> Style) {
 }
 
 /// A window of sky `width` columns wide over a strip of grass `ground`
-/// wide: clouds drifting, olive trees, stars at night, and leaves blowing
-/// through while anything is working. Its colours follow the local `hour`.
+/// wide: clouds drifting, olive trees and stars at night. Its colours follow
+/// the local `hour`, its weather the grove's `mood`.
 pub fn sky(
     width: usize,
     ground: usize,
     hour: u32,
     now: DateTime<Utc>,
-    working: bool,
+    mood: Mood,
 ) -> [Line<'static>; 3] {
-    let p = palette(hour);
+    let mut p = palette(hour);
+    if mood == Mood::Rain {
+        p.sky = blend(p.sky, OVERCAST, 0.6);
+        p.cloud = blend(p.cloud, OVERCAST, 0.5);
+        p.stars = false;
+    }
     let on_sky = |fg: Color| Style::new().fg(fg).bg(p.sky);
     let mut rows = [vec![None; width], vec![None; width]];
     let secs = now.timestamp();
     let w = width as isize;
+
+    // Clouds pass in front of the sun and moon.
+    if mood == Mood::Calm && width >= 4 {
+        let light = if p.stars { MOON } else { SUN };
+        for (row, part) in rows.iter_mut().zip(["▗▄▖", "▝▀▘"]) {
+            put(row, w - 4, part, |_| on_sky(light));
+        }
+    }
 
     // Two clouds, the small one slower and half a sky behind.
     for (shape, speed, offset) in [([" ▄▄▄▄ ", "▀▀▀▀▀▀"], 1, 0), (["▗▄▄▖", ""], 2, w / 2)]
@@ -105,6 +146,17 @@ pub fn sky(
             let twinkle = (secs / 2 + i as i64).rem_euclid(5) == 0;
             if x < width && rows[y][x].is_none() && !twinkle {
                 rows[y][x] = Some(('✦', on_sky(STAR)));
+            }
+        }
+    }
+
+    if mood == Mood::Rain {
+        let step = now.timestamp_millis().div_euclid(RAIN_STEP_MS) as usize;
+        for (y, row) in rows.iter_mut().enumerate() {
+            for (x, cell) in row.iter_mut().enumerate() {
+                if cell.is_none() && (x + y + step).is_multiple_of(3) {
+                    *cell = Some(('╷', on_sky(RAIN)));
+                }
             }
         }
     }
@@ -136,7 +188,7 @@ pub fn sky(
         trunks.push(x + trunk);
     }
 
-    if working {
+    if mood == Mood::Busy {
         let step = now.timestamp_millis().div_euclid(LEAF_STEP_MS) as usize;
         for (y, x, c) in [
             (
@@ -378,7 +430,7 @@ mod tests {
     #[test]
     fn sky_fills_its_width_and_the_ground_its_own() {
         for w in [SKY_MIN, 20, SKY_MAX] {
-            let rows = sky(w, w - 3, 12, t(), true);
+            let rows = sky(w, w - 3, 12, t(), Mood::Busy);
             assert_eq!(rows[0].width(), w);
             assert_eq!(rows[1].width(), w);
             assert_eq!(rows[2].width(), w - 3);
@@ -387,14 +439,14 @@ mod tests {
 
     #[test]
     fn olive_trees_and_white_clouds_by_day() {
-        let rows = sky(SKY_MAX, SKY_MAX, 12, t(), false);
+        let rows = sky(SKY_MAX, SKY_MAX, 12, t(), Mood::Calm);
         let top = text(&rows[0]) + &text(&rows[1]);
         assert!(top.contains("▟█●▙") && top.contains('●'), "{top}");
         assert!(
             cells(&rows[0])
                 .iter()
                 .chain(cells(&rows[1]).iter())
-                .any(|(c, st)| (c == "▀" || c == "▄") && st.fg == Some(Color::White)),
+                .any(|(c, st)| (c == "▀" || c == "▄") && st.fg == Some(Color::Rgb(255, 255, 255))),
             "no cloud: {top}"
         );
         assert!(!top.contains('✦'), "{top}");
@@ -408,26 +460,56 @@ mod tests {
 
     #[test]
     fn sky_follows_the_clock() {
-        let bg = |hour| sky(20, 20, hour, t(), false)[0].spans[0].style.bg;
+        let bg = |hour| sky(20, 20, hour, t(), Mood::Calm)[0].spans[0].style.bg;
         let [dawn, day, sunset, night] = [7, 12, 19, 23].map(bg);
         assert!(day.is_some());
         assert!(dawn != day && day != sunset && sunset != night && night != dawn);
         assert_eq!(bg(3), night);
-        let rows = sky(SKY_MAX, SKY_MAX, 23, t(), false);
+        let rows = sky(SKY_MAX, SKY_MAX, 23, t(), Mood::Calm);
         assert!((text(&rows[0]) + &text(&rows[1])).contains('✦'));
     }
 
     #[test]
     fn leaves_blow_only_while_working() {
-        let blown = |working| {
+        let blown = |mood| {
             (0..6).any(|i| {
                 let at = t() + chrono::Duration::milliseconds(LEAF_STEP_MS * i);
-                let rows = sky(SKY_MAX, SKY_MAX, 12, at, working);
+                let rows = sky(SKY_MAX, SKY_MAX, 12, at, mood);
                 (text(&rows[0]) + &text(&rows[1])).contains(['❦', '❧', ','])
             })
         };
-        assert!(blown(true));
-        assert!(!blown(false));
+        assert!(blown(Mood::Busy));
+        assert!(!blown(Mood::Calm));
+        assert!(!blown(Mood::Rain));
+    }
+
+    fn has_fg(rows: &[Line], fg: Color) -> bool {
+        rows[..2]
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .any(|s| s.style.fg == Some(fg))
+    }
+
+    #[test]
+    fn rain_when_someone_needs_you() {
+        let at = |ms| t() + chrono::Duration::milliseconds(ms);
+        let rain = sky(SKY_MAX, SKY_MAX, 12, at(0), Mood::Rain);
+        let busy = sky(SKY_MAX, SKY_MAX, 12, at(0), Mood::Busy);
+        assert!(text(&rain[1]).contains('╷'), "{}", text(&rain[1]));
+        assert!(!text(&busy[1]).contains('╷'));
+        // A greyer sky, and the drops fall.
+        assert_ne!(rain[0].spans[0].style.bg, busy[0].spans[0].style.bg);
+        let later = sky(SKY_MAX, SKY_MAX, 12, at(RAIN_STEP_MS), Mood::Rain);
+        assert_ne!(text(&rain[1]), text(&later[1]));
+    }
+
+    #[test]
+    fn sun_when_calm_and_moon_at_night() {
+        assert!(has_fg(&sky(SKY_MAX, SKY_MAX, 12, t(), Mood::Calm), SUN));
+        assert!(!has_fg(&sky(SKY_MAX, SKY_MAX, 12, t(), Mood::Busy), SUN));
+        assert!(!has_fg(&sky(SKY_MAX, SKY_MAX, 12, t(), Mood::Rain), SUN));
+        let night = sky(SKY_MAX, SKY_MAX, 23, t(), Mood::Calm);
+        assert!(has_fg(&night, MOON) && !has_fg(&night, SUN));
     }
 
     #[test]
@@ -439,7 +521,7 @@ mod tests {
                     SKY_MAX,
                     12,
                     t() + chrono::Duration::seconds(secs),
-                    false,
+                    Mood::Calm,
                 )[1],
             )
         };
@@ -448,7 +530,7 @@ mod tests {
 
     #[test]
     fn small_sky_keeps_one_tree() {
-        let rows = sky(SKY_MIN, SKY_MIN, 12, t(), false);
+        let rows = sky(SKY_MIN, SKY_MIN, 12, t(), Mood::Calm);
         assert_eq!(
             text(&rows[2]).matches("▐▌").count(),
             1,
