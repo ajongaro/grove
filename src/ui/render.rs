@@ -39,7 +39,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     ])
     .areas(frame.area());
     if header_h > 0 {
-        render_header(frame, app, header);
+        render_header(frame, app, header, now);
     }
     let grid = match &app.mode {
         Mode::Grid { sel, reply } => Some((*sel, reply.as_ref())),
@@ -782,9 +782,7 @@ fn highlight(focused: bool) -> Style {
 const HEADER_ROWS: u16 = 3;
 const HEADER_MIN_HEIGHT: u16 = 24;
 
-const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
-const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
-const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
+use super::flair::{self, LEAF, OLIVE, STEM};
 
 /// An olive branch growing to the right: (text, color) runs per row. The
 /// stem is a run of upper half blocks, so it sits where the rows meet.
@@ -800,12 +798,15 @@ const BRANCH: [&[(&str, Color)]; 2] = [
 
 const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", "█▄█ █▀▄ █▄█ ▀▄▀ ██▄"];
 
-/// Logo on the left; this machine's session totals and the fincas that are
-/// up on the right.
-fn render_header(frame: &mut Frame, app: &App, area: Rect) {
-    let logo: Vec<Line> = (0..2)
+/// Logo and its grove on the left, leaves drifting under them while anything
+/// works; this machine's session totals, the fincas that are up and the day's
+/// harvest on the right.
+fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
+    let trees = flair::grove();
+    let mut logo: Vec<Line> = (0..2)
         .map(|i| {
-            // The branch grows off the E, its stem level with the rows' seam.
+            // The branch grows off the E, its stem level with the rows' seam,
+            // and the trees stand on it.
             let mut spans = vec![
                 Span::raw(" "),
                 Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),
@@ -813,11 +814,32 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             spans.extend(
                 BRANCH[i]
                     .iter()
+                    .chain(&trees[i])
                     .map(|(t, c)| Span::styled(*t, Style::new().fg(*c))),
             );
             Line::from(spans)
         })
         .collect();
+
+    let today = now
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    let harvest = flair::harvest_line(
+        &crate::stats::harvest(&app.stats, &today),
+        &app.cfg,
+        (area.width as usize).saturating_sub(4),
+    );
+    let logo_w = logo.iter().map(Line::width).max().unwrap_or(0);
+    let room = (area.width as usize).saturating_sub(harvest.width() + 3);
+    let working = app.sessions.iter().any(|s| s.state == State::Working);
+    logo.push(Line::from(
+        Span::raw(format!(
+            " {}",
+            flair::leaves(logo_w.min(room).saturating_sub(1), now, working)
+        ))
+        .fg(LEAF),
+    ));
     frame.render_widget(Paragraph::new(logo), area);
 
     let count = |want: &[State]| {
@@ -856,8 +878,10 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
     let place = Line::from(vec![Span::raw(place).dark_gray(), Span::raw(" ")]);
+    let mut harvest = harvest;
+    harvest.spans.push(Span::raw(" "));
     frame.render_widget(
-        Paragraph::new(vec![totals, place]).alignment(ratatui::layout::Alignment::Right),
+        Paragraph::new(vec![totals, place, harvest]).alignment(ratatui::layout::Alignment::Right),
         area,
     );
 }
@@ -896,7 +920,7 @@ pub(super) fn state_color(s: State) -> Color {
     }
 }
 
-fn parse_hex(c: Option<&str>) -> Option<Color> {
+pub(super) fn parse_hex(c: Option<&str>) -> Option<Color> {
     let h = c?.strip_prefix('#')?;
     if h.len() != 6 {
         return None;

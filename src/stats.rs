@@ -108,8 +108,6 @@ pub struct SessionStats {
 }
 
 /// One account's share of a day.
-// The dashboard header shows these in the next release (the swagger design).
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct Harvest {
     pub account: String,
@@ -226,7 +224,6 @@ pub fn prune_old(paths: &Paths) {
 }
 
 /// Each account's totals for `day`, by account name.
-#[allow(dead_code)]
 pub fn harvest(all: &HashMap<String, SessionStats>, day: &str) -> Vec<Harvest> {
     let mut by: BTreeMap<&str, Harvest> = BTreeMap::new();
     for s in all.values() {

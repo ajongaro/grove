@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod complete;
+mod flair;
 pub mod grid;
 pub mod help;
 pub mod input;

@@ -55,9 +55,12 @@ fn ch(c: char) -> KeyEvent {
 }
 
 fn screen(app: &App, w: u16, h: u16) -> String {
+    screen_at(app, w, h, t0() + Duration::minutes(2))
+}
+
+fn screen_at(app: &App, w: u16, h: u16, now: chrono::DateTime<Utc>) -> String {
     let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-    term.draw(|f| render(f, app, t0() + Duration::minutes(2)))
-        .unwrap();
+    term.draw(|f| render(f, app, now)).unwrap();
     let buf = term.backend().buffer().clone();
     (0..h)
         .map(|y| {
@@ -1979,16 +1982,17 @@ fn header_shows_the_logo_and_session_totals() {
     let top: Vec<&str> = out.lines().take(3).collect();
     assert!(top[0].contains("█▀▀ █▀█ █▀█ █ █ █▀▀"), "{out}");
     assert!(top[1].contains("█▄█ █▀▄ █▄█ ▀▄▀ ██▄"), "{out}");
-    // The olive branch's stem runs off the right of the wordmark, and the
-    // two-row header has a blank row under it.
+    // The olive branch's stem runs off the right of the wordmark, with the
+    // trees on it; the third row has the day's harvest on the right.
     assert!(
         top[1].find("▀▀▀▀▀").unwrap() > top[1].find("██▄").unwrap(),
         "{out}"
     );
-    assert!(top[2].trim().is_empty(), "{out}");
+    assert_eq!(top[2].trim(), "🧺 nothing harvested yet today", "{out}");
     // Two olives on the branch: one among the leaves, one at the tip.
-    let logo: String = top[0].chars().take(40).collect();
+    let logo: String = top[0].chars().take(33).collect();
     assert_eq!(logo.matches('●').count(), 2, "{out}");
+    assert!(top[0].contains("▟●▙") && top[1].contains("▐▌"), "{out}");
     assert!(out.lines().nth(3).unwrap().contains("╭ "), "{out}");
     assert!(
         top[0].contains("💧1 needs you  🌳2 your turn  🌿1 working"),
@@ -3197,4 +3201,21 @@ fn project_counts_align_with_wide_glyphs() {
     let out = screen(&app, 80, 24);
     let row = project_row(&out, "alpha");
     assert!(row.contains("💧1  🌳1  🌿2  │"), "{out}");
+}
+
+#[test]
+fn header_shows_grove_and_harvest() {
+    let (_d, s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    let input: crate::stats::StatusInput =
+        serde_json::from_str(r#"{"cost":{"total_cost_usd":2.5,"total_lines_added":40}}"#).unwrap();
+    // Recorded under today's local date, so draw at the real time too.
+    crate::stats::record(&s.paths, "1", "default", &input).unwrap();
+    app.reload(&s);
+    let out = screen_at(&app, 120, 30, Utc::now());
+    let rows: Vec<&str> = out.lines().collect();
+    assert!(rows[0].contains("needs you"), "{out}");
+    assert!(rows[2].contains("🧺 $2.50"), "{out}");
 }
