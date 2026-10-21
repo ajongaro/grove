@@ -3277,3 +3277,62 @@ fn quip_in_idle_footer() {
     );
     assert!(footer.contains("? help"), "{footer}");
 }
+
+#[test]
+fn shell_rows_line_up_with_session_rows() {
+    let (_d, _s, app) = shell_app();
+    let out = screen(&app, 120, 30);
+    let col = |needle: &str| {
+        out.lines()
+            .find_map(|l| l.find(needle).map(|i| width(&l[..i])))
+            .unwrap_or_else(|| panic!("missing {needle:?}\n{out}"))
+    };
+    assert_eq!(col("s1 "), col("sh1 "), "{out}");
+    assert_eq!(col("working    ·"), col("shell      ·"), "{out}");
+}
+
+#[test]
+fn narrow_header_gives_up_trees_before_totals() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    let wide = screen(&app, 130, 30);
+    assert!(wide.lines().next().unwrap().contains("▟●▙"), "{wide}");
+    for w in [80, 90] {
+        let out = screen(&app, w, 30);
+        let top = out.lines().next().unwrap();
+        assert!(!top.contains("▟●▙") && !top.contains("▟██▙"), "{w}: {out}");
+        // The branch, then a gap, then the totals.
+        assert!(top.contains("▄▀ ▄▀●▄▀ ●"), "{w}: {out}");
+        assert!(
+            top.contains("●  ") && top.contains("💧0 needs you"),
+            "{w}: {out}"
+        );
+    }
+}
+
+#[test]
+fn quip_shows_on_a_laptop_width_too() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    let now = quip_time();
+    let footer = screen_at(&app, 100, 30, now)
+        .lines()
+        .last()
+        .unwrap()
+        .to_string();
+    assert!(
+        footer.contains(super::flair::quip(now).unwrap()),
+        "{footer}"
+    );
+    assert!(footer.contains("? help"), "{footer}");
+}
+
+#[test]
+fn quiet_grove_skipped_in_a_narrow_pane() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    // A Sessions pane narrower than the scene.
+    let out = screen(&app, 38, 30);
+    assert!(!out.contains("▟█●█▙"), "{out}");
+    assert!(out.contains("No sessions"), "{out}");
+}

@@ -505,7 +505,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                     lines.push(Line::raw("Shells").bold());
                 }
                 let mut spans = vec![
-                    Span::raw("  ● ").fg(FINCAS_COLOR),
+                    Span::raw("  ●  ").fg(FINCAS_COLOR),
                     Span::raw(format!("{:<w$}", w.label(), w = name_w)).bold(),
                 ];
                 if let Some(t) = &w.title {
@@ -550,7 +550,9 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         // Nothing running here at all: the grove rests above the hint.
         let scene = flair::quiet_grove();
         let idle = app.sessions.iter().all(|s| s.state == State::Ended);
-        if idle && block.inner(area).height as usize >= scene.len() + 3 {
+        let inner = block.inner(area);
+        let scene_w = scene.iter().map(Line::width).max().unwrap_or(0);
+        if idle && inner.height as usize >= scene.len() + 3 && inner.width as usize >= scene_w {
             lines.extend(scene);
             lines.push(Line::raw(""));
         }
@@ -567,7 +569,8 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
     let name_w = name_width(names.chain(shells.iter().map(|s| s.name.as_str())));
     let shell_rows = shells.iter().map(|s| {
         ListItem::new(Line::from(vec![
-            Span::raw("$ ").fg(SHELL_COLOR),
+            // As wide as a session's glyph and space, so the columns match.
+            Span::raw("$  ").fg(SHELL_COLOR),
             Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
             Span::raw(format!("{:<10}", "shell")).fg(SHELL_COLOR),
             Span::raw(format!(" · {}", s.command)).dark_gray(),
@@ -772,17 +775,25 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
             Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
         None => {
-            spans.push(
-                Span::raw("enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
-            );
-            // Now and then, when nothing else needs saying, the grove speaks.
-            if let Some(q) = flair::quip(now).filter(|_| n == 0) {
-                let used: usize = spans.iter().map(Span::width).sum();
-                let pad = (area.width as usize).saturating_sub(used + q.chars().count() + 1);
-                if pad >= 2 {
+            const KEYS: &str = "enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach";
+            // Now and then, when nothing else needs saying, the grove speaks,
+            // taking the key list's room if it must ("? help" stays).
+            let used: usize = spans.iter().map(Span::width).sum();
+            let quip = flair::quip(now).filter(|_| n == 0).and_then(|q| {
+                let q = Span::raw(q).dark_gray().italic();
+                [KEYS, "? help"].into_iter().find_map(|keys| {
+                    let pad = (area.width as usize)
+                        .checked_sub(used + Span::raw(keys).width() + q.width() + 1)?;
+                    (pad >= 2).then(|| (keys, pad, q.clone()))
+                })
+            });
+            match quip {
+                Some((keys, pad, q)) => {
+                    spans.push(Span::raw(keys).dark_gray());
                     spans.push(Span::raw(" ".repeat(pad)));
-                    spans.push(Span::raw(q).dark_gray().italic());
+                    spans.push(q);
                 }
+                None => spans.push(Span::raw(KEYS).dark_gray()),
             }
         }
     }
@@ -824,46 +835,6 @@ const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", 
 /// works; this machine's session totals, the fincas that are up and the day's
 /// harvest on the right.
 fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
-    let trees = flair::grove();
-    let mut logo: Vec<Line> = (0..2)
-        .map(|i| {
-            // The branch grows off the E, its stem level with the rows' seam,
-            // and the trees stand on it.
-            let mut spans = vec![
-                Span::raw(" "),
-                Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),
-            ];
-            spans.extend(
-                BRANCH[i]
-                    .iter()
-                    .chain(&trees[i])
-                    .map(|(t, c)| Span::styled(*t, Style::new().fg(*c))),
-            );
-            Line::from(spans)
-        })
-        .collect();
-
-    let today = now
-        .with_timezone(&chrono::Local)
-        .format("%Y-%m-%d")
-        .to_string();
-    let harvest = flair::harvest_line(
-        &crate::stats::harvest(&app.stats, &today),
-        &app.cfg,
-        (area.width as usize).saturating_sub(4),
-    );
-    let logo_w = logo.iter().map(Line::width).max().unwrap_or(0);
-    let room = (area.width as usize).saturating_sub(harvest.width() + 3);
-    let working = app.sessions.iter().any(|s| s.state == State::Working);
-    logo.push(Line::from(
-        Span::raw(format!(
-            " {}",
-            flair::leaves(logo_w.min(room).saturating_sub(1), now, working)
-        ))
-        .fg(LEAF),
-    ));
-    frame.render_widget(Paragraph::new(logo), area);
-
     let count = |want: &[State]| {
         app.sessions
             .iter()
@@ -890,6 +861,56 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         ),
         Span::raw(" "),
     ]);
+    // The trees, then the branch, make way for the totals in a narrow window.
+    let trees = flair::grove();
+    let logo_at = |detail: usize| -> Vec<Line> {
+        (0..2)
+            .map(|i| {
+                // The branch grows off the E, its stem level with the rows'
+                // seam, and the trees stand on it.
+                let mut spans = vec![
+                    Span::raw(" "),
+                    Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),
+                ];
+                let branch = if detail > 0 { BRANCH[i] } else { &[] };
+                let grove: &[_] = if detail > 1 { &trees[i] } else { &[] };
+                spans.extend(
+                    branch
+                        .iter()
+                        .chain(grove)
+                        .map(|(t, c)| Span::styled(*t, Style::new().fg(*c))),
+                );
+                Line::from(spans)
+            })
+            .collect()
+    };
+    let mut logo = (0..=2)
+        .rev()
+        .map(logo_at)
+        .find(|l| l[0].width() + totals.width() < area.width as usize)
+        .unwrap_or_else(|| logo_at(0));
+
+    let today = now
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    let harvest = flair::harvest_line(
+        &crate::stats::harvest(&app.stats, &today),
+        &app.cfg,
+        (area.width as usize).saturating_sub(4),
+    );
+    let logo_w = logo.iter().map(Line::width).max().unwrap_or(0);
+    let room = (area.width as usize).saturating_sub(harvest.width() + 3);
+    let working = app.sessions.iter().any(|s| s.state == State::Working);
+    logo.push(Line::from(
+        Span::raw(format!(
+            " {}",
+            flair::leaves(logo_w.min(room).saturating_sub(1), now, working)
+        ))
+        .fg(LEAF),
+    ));
+    frame.render_widget(Paragraph::new(logo), area);
+
     let mut place = app.host.clone();
     if !app.fincas.is_empty() {
         let up = app

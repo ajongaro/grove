@@ -157,7 +157,9 @@ pub fn harvest_line(harvests: &[Harvest], cfg: &Config, max: usize) -> Line<'sta
             vec![
                 cost.clone(),
                 sep(),
-                Span::raw(format!("✏️ {}", lines(&t))),
+                // No ✏️: older tmux draws its variation selector a column
+                // short and shifts the rest of the row.
+                Span::raw(lines(&t)),
                 sep(),
                 sessions.clone(),
             ],
@@ -269,7 +271,7 @@ mod tests {
     #[test]
     fn harvest_one_account() {
         let l = harvest_line(&[h("default", 14.2, 2100, 340, 6)], &Config::default(), 80);
-        assert_eq!(text(&l), "🧺 $14.20 · ✏️ +2.1k −340 · 6 sessions today");
+        assert_eq!(text(&l), "🧺 $14.20 · +2.1k −340 · 6 sessions today");
         let l = harvest_line(&[h("default", 1.0, 1, 0, 1)], &Config::default(), 80);
         assert!(text(&l).ends_with("1 session today"), "{}", text(&l));
     }
