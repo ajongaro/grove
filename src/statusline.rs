@@ -1,5 +1,6 @@
 //! `grove statusline`: Claude Code's status line for Grove's sessions. Reads
-//! the status JSON on stdin, prints one coloured line, and records the
+//! the status JSON on stdin, prints a coloured line (two when the terminal
+//! is too narrow for one), and records the
 //! session's stats (stats.rs). Must never fail or block.
 
 use std::path::Path;
@@ -19,6 +20,12 @@ const DIM: &str = "\x1b[90m";
 const BOLD: &str = "\x1b[1m";
 const RESET: &str = "\x1b[0m";
 
+/// Columns kept free beside the line: Claude's padding of 2, plus slack for
+/// emoji a terminal draws wider than expected.
+const MARGIN: usize = 4;
+/// Names shorten no further than this.
+const SHORTEST: usize = 8;
+
 /// How long a directory's git summary is reused.
 const GIT_CACHE_FOR: Duration = Duration::from_secs(5);
 
@@ -29,6 +36,8 @@ pub struct Context {
     /// `project:session` for Grove's sessions, else the folder's name.
     pub place: String,
     pub git: Option<GitInfo>,
+    /// The terminal's width (Claude sets `COLUMNS`); None never wraps.
+    pub columns: Option<usize>,
 }
 
 pub struct GitInfo {
@@ -37,7 +46,61 @@ pub struct GitInfo {
     pub modified: usize,
 }
 
+/// Who and where on the first line, the numbers after; when the terminal
+/// is too narrow for one line the numbers move to a second, and long
+/// folder and branch names shorten until the first fits.
 pub fn render(input: &StatusInput, ctx: &Context) -> String {
+    let sep = format!(" {DIM}|{RESET} ");
+    let numbers = numbers(input);
+    let mut caps = (usize::MAX, usize::MAX);
+    let mut who = identity(input, ctx, caps);
+    let one = [who.clone(), numbers.clone()].concat().join(&sep);
+    let Some(room) = ctx.columns.map(|c| c.saturating_sub(MARGIN)) else {
+        return one;
+    };
+    if width(&one) <= room {
+        return one;
+    }
+    let place = ctx.place.chars().count();
+    let branch = ctx.git.as_ref().map_or(0, |g| g.branch.chars().count());
+    while width(&who.join(&sep)) > room {
+        // Take a character off the longer of the two names.
+        let (p, b) = (caps.0.min(place), caps.1.min(branch));
+        if p.max(b) <= SHORTEST {
+            break;
+        }
+        caps = if p >= b { (p - 1, b) } else { (p, b - 1) };
+        who = identity(input, ctx, caps);
+    }
+    format!("{}\n{}", who.join(&sep), numbers.join(&sep))
+}
+
+/// `s` cut to `max` characters, ending in "…" when cut.
+fn shorten(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// Display width of `s`, colour codes aside.
+fn width(s: &str) -> usize {
+    let mut plain = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            chars.by_ref().find(|&c| c == 'm');
+        } else {
+            plain.push(c);
+        }
+    }
+    ratatui::text::Span::raw(plain).width()
+}
+
+/// Model, account, place and git, with the place and branch cut to `caps`.
+fn identity(input: &StatusInput, ctx: &Context, caps: (usize, usize)) -> Vec<String> {
     let mut segs: Vec<String> = Vec::new();
     if let Some(m) = &input.model
         && let Some(name) = m.display_name.as_ref().or(m.id.as_ref())
@@ -58,9 +121,9 @@ pub fn render(input: &StatusInput, ctx: &Context) -> String {
             None => segs.push(tag),
         }
     }
-    segs.push(format!("📁 {BOLD}{}{RESET}", ctx.place));
+    segs.push(format!("📁 {BOLD}{}{RESET}", shorten(&ctx.place, caps.0)));
     if let Some(g) = &ctx.git {
-        let mut s = format!("🌿 {}", g.branch);
+        let mut s = format!("🌿 {}", shorten(&g.branch, caps.1));
         if g.staged > 0 {
             s.push_str(&format!(" {GREEN}+{}{RESET}", g.staged));
         }
@@ -69,6 +132,12 @@ pub fn render(input: &StatusInput, ctx: &Context) -> String {
         }
         segs.push(s);
     }
+    segs
+}
+
+/// Context, cost, time, lines changed and the five-hour limit.
+fn numbers(input: &StatusInput) -> Vec<String> {
+    let mut segs = Vec::new();
     let pct = input
         .context_window
         .as_ref()
@@ -110,7 +179,7 @@ pub fn render(input: &StatusInput, ctx: &Context) -> String {
     {
         segs.push(format!("📊 {}%", p.round() as i64));
     }
-    segs.join(&format!(" {DIM}|{RESET} "))
+    segs
 }
 
 fn rgb(hex: &str) -> Option<(u8, u8, u8)> {
@@ -187,6 +256,7 @@ fn run_with(
             account,
             place,
             git,
+            columns: std::env::var("COLUMNS").ok().and_then(|c| c.parse().ok()),
         },
     )
 }
@@ -283,7 +353,74 @@ mod tests {
             account: account.map(|(n, c)| (n.to_string(), c.map(str::to_string))),
             place: place.into(),
             git,
+            columns: None,
         }
+    }
+
+    fn long() -> (StatusInput, Context) {
+        let input = parse(json!({
+            "model": { "display_name": "Opus 5.5" },
+            "cost": { "total_cost_usd": 2.78, "total_duration_ms": 125_000 },
+            "context_window": { "used_percentage": 15.0 },
+            "rate_limits": { "five_hour": { "used_percentage": 4.0 } }
+        }));
+        let git = GitInfo {
+            branch: "feature/mi-7803/club-keno-extras".into(),
+            staged: 0,
+            modified: 3,
+        };
+        let c = ctx(
+            Some(("work", None)),
+            "msl-gambyt-product-middleware:google-analytics",
+            Some(git),
+        );
+        (input, c)
+    }
+
+    #[test]
+    fn one_line_when_it_fits() {
+        let (input, mut c) = long();
+        c.columns = Some(300);
+        let out = render(&input, &c);
+        assert!(!out.contains('\n'), "{out}");
+        assert!(plain(&out).contains("feature/mi-7803/club-keno-extras ~3 | 🧠"));
+    }
+
+    #[test]
+    fn numbers_move_to_a_second_line_when_narrow() {
+        let (input, mut c) = long();
+        c.columns = Some(120);
+        let out = plain(&render(&input, &c));
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        assert!(
+            lines[0].starts_with("🤖 Opus 5.5 | WORK | 📁 msl-gambyt"),
+            "{out}"
+        );
+        assert!(lines[0].contains("club-keno-extras"), "{out}");
+        assert!(lines[1].starts_with("🧠 ▓░░"), "{out}");
+        assert!(
+            lines[1].contains("💰 $2.78") && lines[1].ends_with("📊 4%"),
+            "{out}"
+        );
+        assert!(lines.iter().all(|l| width(l) <= 120 - MARGIN), "{out}");
+    }
+
+    #[test]
+    fn long_names_shorten_to_fit() {
+        let (input, mut c) = long();
+        c.columns = Some(70);
+        let out = plain(&render(&input, &c));
+        let first = out.lines().next().unwrap();
+        assert!(width(first) <= 70 - MARGIN, "{first}");
+        assert!(
+            first.contains('…') && first.contains("WORK") && first.contains("~3"),
+            "{first}"
+        );
+        assert!(
+            first.contains("📁 msl-") && first.contains("🌿 feat"),
+            "{first}"
+        );
     }
 
     fn with_ctx(pct: f64) -> String {

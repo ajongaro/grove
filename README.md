@@ -183,12 +183,13 @@ Grove sessions get Grove's own **status line** under Claude's prompt:
 That's the model, the session's account in its colour (with more than one), `project:session`,
 the git branch with staged and modified file counts, context use, cost,
 time, and lines changed. The last one is your 5-hour usage, shown only on
-Pro and Max plans. Each session's row in the dashboard shows its cost and
+Pro and Max plans. In a window too narrow for one line, the numbers move
+to a second line and long folder and branch names shorten. Each session's row in the dashboard shows its cost and
 context use too (`$1.23 · 23%`). The cost is Claude Code's own estimate;
 on a subscription it isn't what you're billed.
 
 Inside Grove it replaces any status line you've set up, without touching
-your Claude settings. To keep yours, set `statusline = false` in
+your Claude settings. A session picks it up when it starts. To keep yours, set `statusline = false` in
 `config.toml`.
 
 The header shows the day's **harvest** under the session totals: what this
