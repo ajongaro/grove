@@ -17,6 +17,7 @@ mod shells;
 mod state;
 mod stats;
 mod status;
+mod statusline;
 mod store;
 mod tmux;
 mod todo;
@@ -119,6 +120,9 @@ enum Cmd {
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
+    /// Internal: Claude Code's status line for Grove's sessions.
+    #[command(hide = true)]
+    Statusline,
     /// MCP server giving Claude Grove's projects, sessions and to-dos.
     /// `grove mcp setup` prints how to add it to each Claude account.
     Mcp {
@@ -172,6 +176,7 @@ fn main() {
     let paths = Paths::from_env();
     match cli.cmd {
         Some(Cmd::Hook) => run_hook(paths),
+        Some(Cmd::Statusline) => run_statusline(paths),
         Some(Cmd::Mcp {
             cmd: Some(McpCmd::Setup),
             ..
@@ -268,6 +273,20 @@ fn run_hook(paths: Paths) {
         Ok(Some(out)) => print!("{out}"),
         Ok(None) => {}
         Err(_) => log::error(&store.paths, "hook", "panic while handling hook"),
+    }
+}
+
+fn run_statusline(paths: Paths) {
+    // Like hooks: a Grove bug must never break Claude's screen.
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(|| {
+        let mut input = String::new();
+        let _ = std::io::stdin().read_to_string(&mut input);
+        statusline::run(&paths, &input)
+    });
+    match result {
+        Ok(line) => println!("{line}"),
+        Err(_) => println!("grove"),
     }
 }
 
