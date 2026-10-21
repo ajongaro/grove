@@ -187,6 +187,31 @@ every few minutes, and it never covers real messages. Write about 15–25 of
 them. Tone: dry and a bit odd, no puns about trees "branching out" more than
 once.
 
+## Usable by anyone
+
+The user wants Grove to work for anyone, not just them. For this work:
+
+- **Zero setup:** a fresh install with one default account gets the status
+  line, stats, glyphs and art with no config. Nothing assumes two accounts,
+  WORK/PLAY, `~/Play`, macOS, or a Max subscription.
+- **Degrade quietly:** no git repo means no 🌿 segment. No `rate_limits`
+  (API-key or Pro users, or early in a session) means no 📊. An account with
+  no colour uses the existing default. A terminal that draws emoji badly
+  still gets aligned rows, because widths come from ratatui, not guesses.
+- **Never take over someone's setup without a way back:** Grove's status
+  line replaces the user's own only inside Grove, and the opt-out restores
+  theirs. Grove doesn't touch `~/.claude/settings.json` or any script of
+  theirs.
+- **Cost is labelled honestly:** on subscription accounts,
+  `cost.total_cost_usd` is an estimate, not a bill. The README says so;
+  the UI doesn't need to.
+- **Documented:** the README gets a short section on the status line (what
+  it shows, the opt-out) and the harvest. It's written for a stranger, with
+  generic examples (`work`/`personal`, not the user's accounts). The help
+  popup lists the glyph legend.
+- **Nothing personal in code, tests or docs:** account names, colours and
+  hosts come from config. Tests use generic names.
+
 ## Constraints
 
 - Rust, ratatui, existing code style: comment density, naming, small
