@@ -1,6 +1,6 @@
 //! Draws the dashboard.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -815,24 +815,14 @@ fn highlight(focused: bool) -> Style {
 const HEADER_ROWS: u16 = 3;
 const HEADER_MIN_HEIGHT: u16 = 24;
 
-use super::flair::{self, LEAF, OLIVE, STEM};
+use super::flair;
 
 /// An olive branch growing to the right: (text, color) runs per row. The
 /// stem is a run of upper half blocks, so it sits where the rows meet.
-const BRANCH: [&[(&str, Color)]; 2] = [
-    &[
-        ("   ▄▀ ▄▀", LEAF),
-        ("●", OLIVE),
-        ("▄▀ ", LEAF),
-        ("●", OLIVE),
-    ],
-    &[("  ▀▀▀▀▀▀▀▀▀▀▀▀", STEM)],
-];
-
 const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", "█▄█ █▀▄ █▄█ ▀▄▀ ██▄"];
 
-/// Logo and its grove on the left, leaves drifting under them while anything
-/// works; this machine's session totals, the fincas that are up and the day's
+/// Logo and a window of sky with its olive trees on the left, leaves blowing
+/// through while anything works; this machine's session totals, the fincas that are up and the day's
 /// harvest on the right.
 fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let count = |want: &[State]| {
@@ -861,56 +851,6 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         ),
         Span::raw(" "),
     ]);
-    // The trees, then the branch, make way for the totals in a narrow window.
-    let trees = flair::grove();
-    let logo_at = |detail: usize| -> Vec<Line> {
-        (0..2)
-            .map(|i| {
-                // The branch grows off the E, its stem level with the rows'
-                // seam, and the trees stand on it.
-                let mut spans = vec![
-                    Span::raw(" "),
-                    Span::styled(WORDMARK[i], Style::new().fg(ACCENT).bold()),
-                ];
-                let branch = if detail > 0 { BRANCH[i] } else { &[] };
-                let grove: &[_] = if detail > 1 { &trees[i] } else { &[] };
-                spans.extend(
-                    branch
-                        .iter()
-                        .chain(grove)
-                        .map(|(t, c)| Span::styled(*t, Style::new().fg(*c))),
-                );
-                Line::from(spans)
-            })
-            .collect()
-    };
-    let mut logo = (0..=2)
-        .rev()
-        .map(logo_at)
-        .find(|l| l[0].width() + totals.width() < area.width as usize)
-        .unwrap_or_else(|| logo_at(0));
-
-    let today = now
-        .with_timezone(&chrono::Local)
-        .format("%Y-%m-%d")
-        .to_string();
-    let harvest = flair::harvest_line(
-        &crate::stats::harvest(&app.stats, &today),
-        &app.cfg,
-        (area.width as usize).saturating_sub(4),
-    );
-    let logo_w = logo.iter().map(Line::width).max().unwrap_or(0);
-    let room = (area.width as usize).saturating_sub(harvest.width() + 3);
-    let working = app.sessions.iter().any(|s| s.state == State::Working);
-    logo.push(Line::from(
-        Span::raw(format!(
-            " {}",
-            flair::leaves(logo_w.min(room).saturating_sub(1), now, working)
-        ))
-        .fg(LEAF),
-    ));
-    frame.render_widget(Paragraph::new(logo), area);
-
     let mut place = app.host.clone();
     if !app.fincas.is_empty() {
         let up = app
@@ -921,7 +861,44 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
     let place = Line::from(vec![Span::raw(place).dark_gray(), Span::raw(" ")]);
-    let mut harvest = harvest;
+
+    let local = now.with_timezone(&chrono::Local);
+    let today = local.format("%Y-%m-%d").to_string();
+    let mut harvest = flair::harvest_line(
+        &crate::stats::harvest(&app.stats, &today),
+        &app.cfg,
+        (area.width as usize).saturating_sub(4),
+    );
+
+    // The sky fills what the totals leave beside the wordmark: it narrows,
+    // then goes, in a narrow window. Its grass stops short of the harvest.
+    let wordmark_w = Span::raw(WORDMARK[0]).width();
+    let left = 1 + wordmark_w + 2;
+    let sky_w = (area.width as usize)
+        .saturating_sub(left + totals.width().max(place.width()) + 1)
+        .min(flair::SKY_MAX);
+    let ground = (area.width as usize)
+        .saturating_sub(left + harvest.width() + 2)
+        .min(sky_w);
+    let working = app.sessions.iter().any(|s| s.state == State::Working);
+    let sky =
+        (sky_w >= flair::SKY_MIN).then(|| flair::sky(sky_w, ground, local.hour(), now, working));
+    let logo: Vec<Line> = (0..3)
+        .map(|i| {
+            let mut spans = vec![Span::raw(" ")];
+            spans.push(match WORDMARK.get(i) {
+                Some(w) => Span::styled(*w, Style::new().fg(ACCENT).bold()),
+                None => Span::raw(" ".repeat(wordmark_w)),
+            });
+            if let Some(sky) = &sky {
+                spans.push(Span::raw("  "));
+                spans.extend(sky[i].spans.iter().cloned());
+            }
+            Line::from(spans)
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(logo), area);
+
     harvest.spans.push(Span::raw(" "));
     frame.render_widget(
         Paragraph::new(vec![totals, place, harvest]).alignment(ratatui::layout::Alignment::Right),

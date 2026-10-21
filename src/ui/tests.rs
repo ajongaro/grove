@@ -1982,17 +1982,20 @@ fn header_shows_the_logo_and_session_totals() {
     let top: Vec<&str> = out.lines().take(3).collect();
     assert!(top[0].contains("█▀▀ █▀█ █▀█ █ █ █▀▀"), "{out}");
     assert!(top[1].contains("█▄█ █▀▄ █▄█ ▀▄▀ ██▄"), "{out}");
-    // The olive branch's stem runs off the right of the wordmark, with the
-    // trees on it; the third row has the day's harvest on the right.
+    // A window of sky beside the wordmark with olive trees on grass; the
+    // third row has the day's harvest on the right.
     assert!(
-        top[1].find("▀▀▀▀▀").unwrap() > top[1].find("██▄").unwrap(),
+        top[0].find("▟█●▙").unwrap() > top[0].find("█▀▀").unwrap(),
         "{out}"
     );
-    assert_eq!(top[2].trim(), "🧺 nothing harvested yet today", "{out}");
-    // Two olives on the branch: one among the leaves, one at the tip.
-    let logo: String = top[0].chars().take(33).collect();
-    assert_eq!(logo.matches('●').count(), 2, "{out}");
-    assert!(top[0].contains("▟●▙") && top[1].contains("▐▌"), "{out}");
+    assert!(top[1].contains("▜●██●▛"), "{out}");
+    assert!(top[2].contains("▔▐▌▔"), "{out}");
+    assert!(
+        top[2]
+            .trim_end()
+            .ends_with("🧺 nothing harvested yet today"),
+        "{out}"
+    );
     assert!(out.lines().nth(3).unwrap().contains("╭ "), "{out}");
     assert!(
         top[0].contains("💧1 needs you  🌳2 your turn  🌿1 working"),
@@ -3292,24 +3295,23 @@ fn shell_rows_line_up_with_session_rows() {
 }
 
 #[test]
-fn narrow_header_gives_up_trees_before_totals() {
+fn narrow_header_shrinks_the_sky_before_the_totals() {
     let (_d, _s, app) = loaded(
         &["alpha"],
         &[session("1", "alpha", "s1", State::Working, Some("@1"))],
     );
     let wide = screen(&app, 130, 30);
-    assert!(wide.lines().next().unwrap().contains("▟●▙"), "{wide}");
+    let top = wide.lines().next().unwrap();
+    assert!(top.contains("▟█●▙") && top.contains("▄▄ "), "{wide}");
     for w in [80, 90] {
         let out = screen(&app, w, 30);
         let top = out.lines().next().unwrap();
-        assert!(!top.contains("▟●▙") && !top.contains("▟██▙"), "{w}: {out}");
-        // The branch, then a gap, then the totals.
-        assert!(top.contains("▄▀ ▄▀●▄▀ ●"), "{w}: {out}");
-        assert!(
-            top.contains("●  ") && top.contains("💧0 needs you"),
-            "{w}: {out}"
-        );
+        assert!(top.contains("▟█●▙"), "{w}: {out}");
+        assert!(top.contains("💧0 needs you"), "{w}: {out}");
     }
+    let out = screen(&app, 70, 30);
+    let top = out.lines().next().unwrap();
+    assert!(!top.contains('●') && top.contains("💧0 needs you"), "{out}");
 }
 
 #[test]

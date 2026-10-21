@@ -1,6 +1,7 @@
-//! The dashboard's grove: the trees in the header, leaves that drift while
-//! sessions work, and the day's harvest. Anything that moves is a function of
-//! the time the frame is drawn at, so it adds no redraws.
+//! The dashboard's grove: a sky in the header with olive trees, clouds and
+//! leaves that blow while sessions work, and the day's harvest. Anything that
+//! moves is a function of the time the frame is drawn at, so it adds no
+//! redraws.
 
 use chrono::{DateTime, Utc};
 use ratatui::style::{Color, Style, Stylize};
@@ -15,45 +16,170 @@ pub(super) const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
 pub(super) const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 /// A paler leaf, so neighbouring trees read as two.
 const SAGE: Color = Color::Rgb(0x6f, 0x9a, 0x6a);
+const STAR: Color = Color::Rgb(0xf0, 0xe6, 0xa0);
 
 /// How long a drifting leaf stays in one place.
 const LEAF_STEP_MS: i64 = 400;
+/// How long a cloud stays in one place.
+const CLOUD_STEP_S: i64 = 3;
 
-/// Three small trees standing on the branch's stem line: crowns on the top
-/// row, trunks on the bottom, in half blocks like the wordmark.
-pub fn grove() -> [Vec<(&'static str, Color)>; 2] {
-    [
-        vec![
-            ("  ▟", LEAF),
-            ("●", OLIVE),
-            ("▙ ", LEAF),
-            ("▗▆▖", SAGE),
-            ("  ▟██▙", LEAF),
-        ],
-        // Each trunk under its crown's middle (the stem row starts one
-        // column further right than the crowns).
-        vec![("▀▀▐▀▀▀▐▀▀▀▀▐▌", STEM)],
-    ]
+/// The sky's width bounds: below the minimum there is no room for a tree.
+pub const SKY_MIN: usize = 12;
+pub const SKY_MAX: usize = 34;
+
+/// The sky and its clouds at a local hour.
+struct Palette {
+    sky: Color,
+    cloud: Color,
+    stars: bool,
 }
 
-/// One row, `width` cells wide, with two leaves tumbling across it while
-/// anything is working; blank otherwise.
-pub fn leaves(width: usize, now: DateTime<Utc>, working: bool) -> String {
-    let mut row = vec![' '; width];
-    if working && width > 0 {
+fn palette(hour: u32) -> Palette {
+    let (sky, cloud, stars) = match hour {
+        6..8 => (
+            Color::Rgb(0xee, 0xb8, 0xa8),
+            Color::Rgb(0xff, 0xee, 0xf0),
+            false,
+        ),
+        8..18 => (Color::Rgb(0x5f, 0xa8, 0xe0), Color::White, false),
+        18..20 => (
+            Color::Rgb(0xe0, 0x84, 0x4c),
+            Color::Rgb(0xc9, 0xb4, 0xb8),
+            false,
+        ),
+        _ => (
+            Color::Rgb(0x16, 0x20, 0x40),
+            Color::Rgb(0x4a, 0x55, 0x70),
+            true,
+        ),
+    };
+    Palette { sky, cloud, stars }
+}
+
+/// One cell of the sky; `None` is open sky.
+type Cell = Option<(char, Style)>;
+
+/// Writes `s` into `row` from column `x` on, clipped to the row; spaces are
+/// see-through.
+fn put(row: &mut [Cell], x: isize, s: &str, style: impl Fn(char) -> Style) {
+    for (i, c) in s.chars().enumerate() {
+        let at = x + i as isize;
+        if c != ' ' && at >= 0 && (at as usize) < row.len() {
+            row[at as usize] = Some((c, style(c)));
+        }
+    }
+}
+
+/// A window of sky `width` columns wide over a strip of grass `ground`
+/// wide: clouds drifting, olive trees, stars at night, and leaves blowing
+/// through while anything is working. Its colours follow the local `hour`.
+pub fn sky(
+    width: usize,
+    ground: usize,
+    hour: u32,
+    now: DateTime<Utc>,
+    working: bool,
+) -> [Line<'static>; 3] {
+    let p = palette(hour);
+    let on_sky = |fg: Color| Style::new().fg(fg).bg(p.sky);
+    let mut rows = [vec![None; width], vec![None; width]];
+    let secs = now.timestamp();
+    let w = width as isize;
+
+    // Two clouds, the small one slower and half a sky behind.
+    for (shape, speed, offset) in [([" ▄▄▄▄ ", "▀▀▀▀▀▀"], 1, 0), (["▗▄▄▖", ""], 2, w / 2)]
+    {
+        let span = w + 6;
+        let x = (secs / (CLOUD_STEP_S * speed)).rem_euclid(span as i64) as isize;
+        let x = (x + offset).rem_euclid(span) - 6;
+        for (row, part) in rows.iter_mut().zip(shape) {
+            put(row, x, part, |_| on_sky(p.cloud));
+        }
+    }
+
+    if p.stars {
+        for (i, (x, y)) in [(2, 0), (7, 1), (17, 0), (29, 0), (33, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            let twinkle = (secs / 2 + i as i64).rem_euclid(5) == 0;
+            if x < width && rows[y][x].is_none() && !twinkle {
+                rows[y][x] = Some(('✦', on_sky(STAR)));
+            }
+        }
+    }
+
+    // Olive trees stand in front of the clouds; each trunk sits under its
+    // crown's middle.
+    let mut trunks = Vec::new();
+    let big = width * 2 / 5;
+    let small = width * 3 / 4;
+    for (x, crown, leaf, trunk, fits) in [
+        (big, ["▗▟█●▙▖", "▜●██●▛"], LEAF, 2, big + 6 <= width),
+        (
+            small,
+            [" ▄▄ ", "▟●█▙"],
+            SAGE,
+            1,
+            small >= big + 7 && small + 4 <= width,
+        ),
+    ] {
+        if !fits {
+            continue;
+        }
+        for (row, part) in rows.iter_mut().zip(crown) {
+            put(row, x as isize, part, |c| match c {
+                '●' => Style::new().fg(OLIVE).bg(leaf),
+                _ => on_sky(leaf),
+            });
+        }
+        trunks.push(x + trunk);
+    }
+
+    if working {
         let step = now.timestamp_millis().div_euclid(LEAF_STEP_MS) as usize;
-        // The second leaf is half a row behind and a little slower.
-        for (x, c) in [
-            (step % width, if step.is_multiple_of(2) { '❦' } else { '❧' }),
+        for (y, x, c) in [
             (
+                1,
+                step % width,
+                if step.is_multiple_of(2) { '❦' } else { '❧' },
+            ),
+            (
+                0,
                 (step * 2 / 3 + width / 2) % width,
                 if step.is_multiple_of(3) { '❧' } else { ',' },
             ),
         ] {
-            row[x] = c;
+            if rows[y][x].is_none() {
+                rows[y][x] = Some((c, on_sky(LEAF)));
+            }
         }
     }
-    row.into_iter().collect()
+
+    let line = |row: &[Cell]| {
+        Line::from(
+            row.iter()
+                .map(|c| match c {
+                    Some((c, st)) => Span::styled(c.to_string(), *st),
+                    None => Span::styled(" ", Style::new().bg(p.sky)),
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let mut grass = vec!["▔"; ground.min(width)];
+    for x in trunks {
+        if x + 1 < grass.len() {
+            grass[x] = "▐";
+            grass[x + 1] = "▌";
+        }
+    }
+    let grass = Line::from(
+        grass
+            .into_iter()
+            .map(|c| Span::styled(c, Style::new().fg(if c == "▔" { LEAF } else { STEM })))
+            .collect::<Vec<_>>(),
+    );
+    [line(&rows[0]), line(&rows[1]), grass]
 }
 
 /// A quip shows for `QUIP_FOR` seconds every `QUIP_EVERY`.
@@ -242,30 +368,93 @@ mod tests {
         assert_eq!(got, ["0", "340", "999", "2.1k", "12k", "1.5M"]);
     }
 
-    #[test]
-    fn leaves_still_when_idle() {
-        assert_eq!(leaves(30, t(), false), " ".repeat(30));
+    fn cells(l: &Line) -> Vec<(String, Style)> {
+        l.spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect()
     }
 
     #[test]
-    fn leaves_drift() {
-        let a = leaves(30, t(), true);
-        let b = leaves(30, t() + chrono::Duration::milliseconds(400), true);
-        assert_ne!(a, b);
-        for l in [&a, &b] {
-            assert_eq!(Span::raw(l.as_str()).width(), 30, "{l:?}");
-            assert!(l.chars().any(|c| c != ' '), "{l:?}");
+    fn sky_fills_its_width_and_the_ground_its_own() {
+        for w in [SKY_MIN, 20, SKY_MAX] {
+            let rows = sky(w, w - 3, 12, t(), true);
+            assert_eq!(rows[0].width(), w);
+            assert_eq!(rows[1].width(), w);
+            assert_eq!(rows[2].width(), w - 3);
         }
-        assert_eq!(leaves(0, t(), true), "");
     }
 
     #[test]
-    fn grove_is_two_small_rows() {
-        let rows = grove();
-        for r in &rows {
-            let w: usize = r.iter().map(|(t, _)| Span::raw(*t).width()).sum();
-            assert!(w > 0 && w <= 18, "{w}");
-        }
+    fn olive_trees_and_white_clouds_by_day() {
+        let rows = sky(SKY_MAX, SKY_MAX, 12, t(), false);
+        let top = text(&rows[0]) + &text(&rows[1]);
+        assert!(top.contains("▟█●▙") && top.contains('●'), "{top}");
+        assert!(
+            cells(&rows[0])
+                .iter()
+                .chain(cells(&rows[1]).iter())
+                .any(|(c, st)| (c == "▀" || c == "▄") && st.fg == Some(Color::White)),
+            "no cloud: {top}"
+        );
+        assert!(!top.contains('✦'), "{top}");
+        assert_eq!(
+            text(&rows[2]).matches("▐▌").count(),
+            2,
+            "{}",
+            text(&rows[2])
+        );
+    }
+
+    #[test]
+    fn sky_follows_the_clock() {
+        let bg = |hour| sky(20, 20, hour, t(), false)[0].spans[0].style.bg;
+        let [dawn, day, sunset, night] = [7, 12, 19, 23].map(bg);
+        assert!(day.is_some());
+        assert!(dawn != day && day != sunset && sunset != night && night != dawn);
+        assert_eq!(bg(3), night);
+        let rows = sky(SKY_MAX, SKY_MAX, 23, t(), false);
+        assert!((text(&rows[0]) + &text(&rows[1])).contains('✦'));
+    }
+
+    #[test]
+    fn leaves_blow_only_while_working() {
+        let blown = |working| {
+            (0..6).any(|i| {
+                let at = t() + chrono::Duration::milliseconds(LEAF_STEP_MS * i);
+                let rows = sky(SKY_MAX, SKY_MAX, 12, at, working);
+                (text(&rows[0]) + &text(&rows[1])).contains(['❦', '❧', ','])
+            })
+        };
+        assert!(blown(true));
+        assert!(!blown(false));
+    }
+
+    #[test]
+    fn clouds_drift() {
+        let at = |secs| {
+            text(
+                &sky(
+                    SKY_MAX,
+                    SKY_MAX,
+                    12,
+                    t() + chrono::Duration::seconds(secs),
+                    false,
+                )[1],
+            )
+        };
+        assert_ne!(at(0), at(CLOUD_STEP_S * 2));
+    }
+
+    #[test]
+    fn small_sky_keeps_one_tree() {
+        let rows = sky(SKY_MIN, SKY_MIN, 12, t(), false);
+        assert_eq!(
+            text(&rows[2]).matches("▐▌").count(),
+            1,
+            "{}",
+            text(&rows[2])
+        );
     }
 
     #[test]
