@@ -120,7 +120,7 @@ impl Store {
     }
 
     pub fn delete_session(&self, id: &str) -> Result<()> {
-        crate::stats::remove(&self.paths, id);
+        crate::stats::prune_old(&self.paths);
         match std::fs::remove_file(self.session_file(id)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),

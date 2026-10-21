@@ -235,12 +235,23 @@ fn malformed_or_renamed_finca_file_is_an_error_row() {
 }
 
 #[test]
-fn delete_session_removes_stats() {
+fn delete_session_keeps_stats_until_old() {
     let (_d, s) = store();
     let input: crate::stats::StatusInput =
         serde_json::from_str(r#"{"cost":{"total_cost_usd":1.0}}"#).unwrap();
+    // Clearing an ended session must not take its spend out of the harvest.
     crate::stats::record(&s.paths, "s1", "work", &input).unwrap();
     s.save_session(&sess("s1", "alpha")).unwrap();
     s.delete_session("s1").unwrap();
+    assert!(crate::stats::load_all(&s.paths).contains_key("s1"));
+    // A long-idle one goes the next time any session is deleted.
+    let mut old = crate::stats::load_all(&s.paths)["s1"].clone();
+    old.updated_at = Utc::now() - chrono::Duration::days(40);
+    std::fs::write(
+        s.paths.stats.join("s1.json"),
+        serde_json::to_vec(&old).unwrap(),
+    )
+    .unwrap();
+    s.delete_session("other").unwrap();
     assert!(!crate::stats::load_all(&s.paths).contains_key("s1"));
 }

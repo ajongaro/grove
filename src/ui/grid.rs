@@ -330,14 +330,15 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     title.push(Span::raw(t.handle()).fg(dim(Color::White)));
     title.push(Span::raw(format!(" {icon} {}", t.state.label())).fg(dim(state_color(t.state))));
     title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).dark_gray());
-    if let Some(st) = &t.stats {
-        title.push(Span::raw(format!("  {st}")).dark_gray());
-    }
     if draft {
         title.push(Span::raw("  ✎ draft").fg(dim(Color::Cyan)));
     }
     if t.stale {
         title.push(Span::raw("  stale").dark_gray());
+    }
+    // Last: a narrow tile cuts the title's end, and draft/stale matter more.
+    if let Some(st) = &t.stats {
+        title.push(Span::raw(format!("  {st}")).dark_gray());
     }
     title.push(Span::raw(" "));
     let border = if selected {
@@ -420,6 +421,29 @@ fn fit(s: &str, width: usize) -> String {
 mod tests {
     use super::*;
     use crate::model::State;
+
+    #[test]
+    fn narrow_tile_keeps_stale_ahead_of_stats() {
+        let t = Tile {
+            finca: None,
+            via: None,
+            project: "api".into(),
+            name: "s1".into(),
+            session_id: Some("1".into()),
+            state: State::Working,
+            updated_at: Utc::now(),
+            window: None,
+            screen: None,
+            stale: true,
+            stats: Some("$12.34 · 56%".into()),
+        };
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 4)).unwrap();
+        term.draw(|f| draw_tile(f, &t, false, Rect::new(0, 0, 40, 4), Utc::now()))
+            .unwrap();
+        let buf = term.backend().buffer().clone();
+        let top: String = (0..40).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(top.contains("stale"), "{top}");
+    }
 
     #[test]
     fn layout_fills_wide_and_tall_screens() {

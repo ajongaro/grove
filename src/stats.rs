@@ -42,14 +42,19 @@ pub struct Workspace {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Cost {
+    #[serde(default, deserialize_with = "number")]
     pub total_cost_usd: Option<f64>,
+    #[serde(default, deserialize_with = "count")]
     pub total_duration_ms: Option<u64>,
+    #[serde(default, deserialize_with = "count")]
     pub total_lines_added: Option<u64>,
+    #[serde(default, deserialize_with = "count")]
     pub total_lines_removed: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ContextWindow {
+    #[serde(default, deserialize_with = "number")]
     pub used_percentage: Option<f64>,
 }
 
@@ -60,7 +65,21 @@ pub struct RateLimits {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Window {
+    #[serde(default, deserialize_with = "number")]
     pub used_percentage: Option<f64>,
+}
+
+/// Numbers are read leniently: a field of an unexpected type is just
+/// missing, rather than failing the whole payload and blanking the line.
+fn number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+    Ok(serde_json::Value::deserialize(d)?.as_f64())
+}
+
+/// A count sent as `10` or `10.0`.
+fn count<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.as_u64()
+        .or_else(|| v.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64)))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -194,8 +213,16 @@ pub fn load_all(paths: &Paths) -> HashMap<String, SessionStats> {
     .collect()
 }
 
-pub fn remove(paths: &Paths, key: &str) {
-    let _ = std::fs::remove_file(file(paths, key));
+/// Removes stats nobody has updated for `KEEP_DAYS`: their days are past
+/// every harvest. A deleted session's stats stay until then, so clearing
+/// ended sessions doesn't take their spend out of the day's totals.
+pub fn prune_old(paths: &Paths) {
+    let cutoff = Utc::now() - chrono::Duration::days(KEEP_DAYS);
+    for (key, s) in load_all(paths) {
+        if s.updated_at < cutoff {
+            let _ = std::fs::remove_file(file(paths, &key));
+        }
+    }
 }
 
 /// Each account's totals for `day`, by account name.
@@ -371,9 +398,19 @@ mod tests {
         let all = load_all(&p);
         assert_eq!(all["abc"].last.cost, 1.0);
         assert_eq!(all.len(), 1);
-        remove(&p, "abc");
-        remove(&p, "abc");
-        assert!(load_all(&p).is_empty());
+    }
+
+    #[test]
+    fn whole_numbers_sent_as_floats_still_parse() {
+        let v: StatusInput = serde_json::from_value(json!({
+            "cost": { "total_cost_usd": 1, "total_duration_ms": 1000.5,
+                      "total_lines_added": 10.0, "total_lines_removed": 2 }
+        }))
+        .unwrap();
+        let c = v.cost.unwrap();
+        assert_eq!(c.total_duration_ms, Some(1000));
+        assert_eq!(c.total_lines_added, Some(10));
+        assert_eq!(c.total_cost_usd, Some(1.0));
     }
 
     #[test]

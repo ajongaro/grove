@@ -162,7 +162,12 @@ fn run_with(
             if let Err(e) = stats::record(paths, &s.id, &name, &input) {
                 log::error(paths, "statusline", &format!("recording {}: {e:#}", s.id));
             }
-            (format!("{}:{}", s.project, s.name), Some((name, color)))
+            // With one account there's nothing to tell apart.
+            let several = cfg.as_ref().is_some_and(|c| !c.accounts.is_empty());
+            (
+                format!("{}:{}", s.project, s.name),
+                several.then_some((name, color)),
+            )
         }
         None => {
             let base = dir
@@ -364,13 +369,11 @@ mod tests {
         assert!(crate::stats::load_all(&p).is_empty());
     }
 
-    #[test]
-    fn grove_session_records_and_names_window() {
-        let (_d, p) = home();
+    fn save(p: &Paths, id: &str) {
         let now = chrono::Utc::now();
         Store::new(p.clone())
             .save_session(&Session {
-                id: "g1".into(),
+                id: id.into(),
                 project: "api".into(),
                 name: "s2".into(),
                 host: "local".into(),
@@ -381,6 +384,32 @@ mod tests {
                 updated_at: now,
             })
             .unwrap();
+    }
+
+    #[test]
+    fn one_account_shows_no_account_name() {
+        let (_d, p) = home();
+        save(&p, "g1");
+        let out = plain(&run_with(
+            &p,
+            "{}",
+            Some("g1".into()),
+            Some("default".into()),
+        ));
+        assert!(out.starts_with("📁 api:s2"), "{out}");
+        // But its stats are still filed under it.
+        assert_eq!(crate::stats::load_all(&p)["g1"].account, "default");
+    }
+
+    #[test]
+    fn grove_session_records_and_names_window() {
+        let (_d, p) = home();
+        save(&p, "g1");
+        std::fs::write(
+            p.config_file(),
+            "[accounts.work]\ndir = \"~/.claude-work\"\n",
+        )
+        .unwrap();
         // After /clear the payload's id is a new one; GROVE_SESSION wins.
         let stdin = json!({ "session_id": "other", "cost": { "total_cost_usd": 0.5 } });
         let out = run_with(
