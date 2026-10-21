@@ -276,7 +276,7 @@ fn reconcile_ends_vanished_and_flags_needs_you() {
         String::from_utf8(out.stdout).unwrap().trim().to_string()
     };
     // The marker is in the name so it shows under any status-bar theme.
-    assert_eq!(name(&live), "⚑ p:needy");
+    assert_eq!(name(&live), "💧 p:needy");
 
     // Leaving needs_you clears the flag.
     let mut n = s.get_session("needy").unwrap();
@@ -511,7 +511,7 @@ fn rename_session_renames_its_window_keeping_the_needs_you_mark() {
     .unwrap();
     assert_eq!(out, Outcome::Message("Renamed 1 to api work".into()));
     assert_eq!(s.get_session("1").unwrap().name, "api work");
-    assert_eq!(window_name(tm, &w), "⚑ p:api work");
+    assert_eq!(window_name(tm, &w), "💧 p:api work");
 }
 
 #[test]
@@ -549,7 +549,7 @@ fn window_title_is_project_and_name_with_the_mark_when_needed() {
     assert_eq!(window_title(&sess("a", "p", State::Working, None)), "p:a");
     assert_eq!(
         window_title(&sess("a", "p", State::NeedsYou, None)),
-        "⚑ p:a"
+        "💧 p:a"
     );
 }
 

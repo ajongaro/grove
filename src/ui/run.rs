@@ -31,7 +31,7 @@ pub enum Outcome {
 }
 
 /// Prefix on the tmux window name of a session that needs you.
-const NEEDS_YOU_MARK: &str = "⚑ ";
+const NEEDS_YOU_MARK: &str = "💧 ";
 const RECONCILE_EVERY: Duration = Duration::from_secs(2);
 const FINCA_POLL_EVERY: Duration = Duration::from_secs(30);
 const FINCA_POLL_TIMEOUT: Duration = Duration::from_secs(10);

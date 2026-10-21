@@ -61,12 +61,27 @@ fn screen(app: &App, w: u16, h: u16) -> String {
     let buf = term.backend().buffer().clone();
     (0..h)
         .map(|y| {
-            (0..w)
-                .map(|x| buf[(x, y)].symbol().to_string())
+            visible(&buf, w, y)
+                .into_iter()
+                .map(|(_, s)| s)
                 .collect::<String>()
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Row `y` as a terminal shows it: (column, symbol), skipping the cell a
+/// two-column glyph covers.
+fn visible(buf: &ratatui::buffer::Buffer, w: u16, y: u16) -> Vec<(u16, String)> {
+    let mut out = Vec::new();
+    let mut x = 0;
+    while x < w {
+        let sym = buf[(x, y)].symbol().to_string();
+        let width = ratatui::text::Span::raw(sym.as_str()).width().max(1) as u16;
+        out.push((x, sym));
+        x += width;
+    }
+    out
 }
 
 fn loaded(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, Store, App) {
@@ -664,7 +679,7 @@ fn fincas_listed_under_projects_with_counts() {
         "FINCAS",
         "homebox",
         "3 live",
-        "⚑2",
+        "💧2",
         "pi",
         "unreachable",
         "needs update",
@@ -1380,6 +1395,7 @@ fn help_fits_a_laptop_sized_window() {
         "shell: quick popup / stays open",
         "open in your editor",
         "rename",
+        "🌱 starting  🌿 working  🌳 your turn  💧 needs you  🍂 ended",
     ] {
         assert!(out.contains(k), "help lacks {k:?} at 110x32\n{out}");
     }
@@ -1407,14 +1423,14 @@ fn fg_of(app: &App, w: u16, h: u16, text: &str) -> ratatui::style::Color {
     let buf = term.backend().buffer().clone();
     let chars: Vec<char> = text.chars().collect();
     for y in 0..h {
-        let row: Vec<String> = (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect();
-        for x in 0..row.len().saturating_sub(chars.len()) {
+        let row = visible(&buf, w, y);
+        for i in 0..row.len().saturating_sub(chars.len()) {
             if chars
                 .iter()
                 .enumerate()
-                .all(|(i, c)| row[x + i] == c.to_string())
+                .all(|(j, c)| row[i + j].1 == c.to_string())
             {
-                return buf[(x as u16, y)].fg;
+                return buf[(row[i].0, y)].fg;
             }
         }
     }
@@ -1520,7 +1536,7 @@ fn todo_count_sits_after_live_sessions_and_needs_you() {
     app.reload(&s);
     let out = screen(&app, 100, 20);
     let row = project_row(&out, "alpha");
-    assert!(row.contains("● alpha  ☐1") && row.contains("⚑1"), "{out}");
+    assert!(row.contains("● alpha  ☐1") && row.contains("💧1"), "{out}");
 }
 
 /// The projects box's part of the row listing project `name`, up to and
@@ -1535,9 +1551,15 @@ fn project_row(out: &str, name: &str) -> String {
 }
 
 /// Character column of the last `pat` in project `name`'s row.
+/// The screen column `pat` last starts at in `name`'s project row.
 fn col_of(out: &str, name: &str, pat: char) -> usize {
-    let chars: Vec<char> = project_row(out, name).chars().collect();
-    chars.iter().rposition(|c| *c == pat).unwrap()
+    let row = project_row(out, name);
+    width(&row[..row.rfind(pat).unwrap()])
+}
+
+/// Display columns, as a terminal counts them (emoji take two).
+fn width(s: &str) -> usize {
+    ratatui::text::Span::raw(s).width()
 }
 
 #[test]
@@ -1554,11 +1576,11 @@ fn project_row_counts_live_sessions_by_state() {
     );
     let out = screen(&app, 100, 20);
     // Most urgent first; starting counts as working; ended isn't counted.
-    assert!(out.contains("⚑1  ●1  ●2"), "{out}");
+    assert!(out.contains("💧1  🌳1  🌿2"), "{out}");
     use ratatui::style::Color;
-    assert_eq!(fg_of(&app, 100, 20, "⚑1"), Color::Red);
-    assert_eq!(fg_of(&app, 100, 20, "●1"), Color::Yellow);
-    assert_eq!(fg_of(&app, 100, 20, "●2"), Color::Green);
+    assert_eq!(fg_of(&app, 100, 20, "💧1"), Color::Red);
+    assert_eq!(fg_of(&app, 100, 20, "🌳1"), Color::Yellow);
+    assert_eq!(fg_of(&app, 100, 20, "🌿2"), Color::Green);
 }
 
 #[test]
@@ -1574,17 +1596,14 @@ fn project_counts_line_up_at_the_right_edge() {
     let out = screen(&app, 100, 20);
     // The working slot is the same column in both rows, however long the
     // name, and sits just inside the box's right border.
-    let a = col_of(&out, "alpha", '●');
-    assert_eq!(a, col_of(&out, "longer-name", '●'), "{out}");
-    let row: Vec<char> = out
-        .lines()
-        .find(|l| l.contains("alpha"))
-        .unwrap()
-        .chars()
-        .collect();
-    assert_eq!(&row[a..a + 5].iter().collect::<String>(), "●1  │", "{out}");
+    let a = col_of(&out, "alpha", '🌿');
+    assert_eq!(a, col_of(&out, "longer-name", '🌿'), "{out}");
+    assert!(project_row(&out, "alpha").ends_with("🌿1  │"), "{out}");
     // A project without live sessions shows no slots.
-    assert!(!out.contains("⚑0") && !out.contains("●0"), "{out}");
+    assert!(
+        !out.contains("💧0") && !out.contains("🌳0") && !out.contains("🌿0"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -1595,7 +1614,7 @@ fn a_long_name_is_cut_short_to_keep_its_counts() {
         &[session("1", long, "s1", State::Working, Some("@1"))],
     );
     let out = screen(&app, 60, 20);
-    assert!(out.contains("…") && out.contains("●1"), "{out}");
+    assert!(out.contains("…") && out.contains("🌿1"), "{out}");
 }
 
 #[test]
@@ -1605,8 +1624,8 @@ fn project_row_shows_only_states_it_has() {
         &[session("1", "alpha", "s1", State::Working, Some("@1"))],
     );
     let out = screen(&app, 100, 20);
-    assert!(out.contains("●1"), "{out}");
-    assert!(!out.contains("⚑"), "{out}");
+    assert!(out.contains("🌿1"), "{out}");
+    assert!(!out.contains("💧"), "{out}");
 }
 
 #[test]
@@ -1759,7 +1778,7 @@ fn long_session_names_keep_a_gap_before_the_state() {
     assert!(s.contains("Minecraft Server  working"), "{s}");
     let col = |needle: &str| {
         s.lines()
-            .find_map(|l| l.find(needle).map(|i| l[..i].chars().count()))
+            .find_map(|l| l.find(needle).map(|i| width(&l[..i])))
             .unwrap_or_else(|| panic!("missing {needle:?}\n{s}"))
     };
     assert_eq!(col("working"), col("your turn"), "states line up\n{s}");
@@ -1972,14 +1991,14 @@ fn header_shows_the_logo_and_session_totals() {
     assert_eq!(logo.matches('●').count(), 2, "{out}");
     assert!(out.lines().nth(3).unwrap().contains("╭ "), "{out}");
     assert!(
-        top[0].contains("⚑1 needs you  ●2 your turn  ●1 working"),
+        top[0].contains("💧1 needs you  🌳2 your turn  🌿1 working"),
         "{out}"
     );
     assert!(top[1].contains("testbox"), "{out}");
     use ratatui::style::Color;
-    assert_eq!(fg_of(&app, 110, 30, "⚑1 needs"), Color::Red);
-    assert_eq!(fg_of(&app, 110, 30, "●2 your"), Color::Yellow);
-    assert_eq!(fg_of(&app, 110, 30, "●1 working"), Color::Green);
+    assert_eq!(fg_of(&app, 110, 30, "💧1 needs"), Color::Red);
+    assert_eq!(fg_of(&app, 110, 30, "🌳2 your"), Color::Yellow);
+    assert_eq!(fg_of(&app, 110, 30, "🌿1 working"), Color::Green);
 }
 
 #[test]
@@ -2283,9 +2302,9 @@ fn grid_draws_tiles_with_titles_and_screens() {
     let out = screen(&app, 110, 32);
     for want in [
         "SESSIONS · 3 live",
-        "alpha:fix ● your turn",
-        "alpha:s1 ● working",
-        "pi · blog:s2 ⚑ needs you",
+        "alpha:fix 🌳 your turn",
+        "alpha:s1 🌿 working",
+        "pi · blog:s2 💧 needs you",
         "Want me to commit?",
         "screen of s2",
         "Enter jump · i reply · x kill · Tab next waiting · hjkl move",
@@ -2868,9 +2887,9 @@ fn the_pinned_box_shows_each_pins_origin_and_number() {
     let out = screen(&app, 110, 32);
     for want in [
         "PINNED",
-        "1  ● play · beta:fix",
-        "2  ● work · acme:api",
-        "3  ⚑ pi · btt:n0",
+        "1  🌳 play · beta:fix",
+        "2  🌿 work · acme:api",
+        "3  💧 pi · btt:n0",
     ] {
         assert!(out.contains(want), "missing {want:?}:\n{out}");
     }
@@ -3162,4 +3181,20 @@ fn session_row_shows_cost_and_context() {
     app.reload(&s);
     let out = screen(&app, 120, 30);
     assert!(out.contains("$1.23 · 23%"), "{out}");
+}
+
+#[test]
+fn project_counts_align_with_wide_glyphs() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "alpha", "s2", State::YourTurn, Some("@2")),
+            session("3", "alpha", "s3", State::NeedsYou, Some("@3")),
+            session("4", "alpha", "s4", State::Working, Some("@4")),
+        ],
+    );
+    let out = screen(&app, 80, 24);
+    let row = project_row(&out, "alpha");
+    assert!(row.contains("💧1  🌳1  🌿2  │"), "{out}");
 }

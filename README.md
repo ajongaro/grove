@@ -160,12 +160,13 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 `C-g` is taken from Claude Code inside Grove, where it would open the prompt
 in your editor.
 
-Session states: **starting** → **working** ⇄ **needs you** (permission prompt)
-→ **your turn** (Claude finished) → **ended**. A session that needs you also
-gets ⚑ in front of its tmux window name. The tmux status bar lists only the
+Sessions grow through their states: 🌱 **starting** → 🌿 **working** ⇄
+💧 **needs you** (a permission prompt; it wants watering) → 🌳 **your turn**
+(Claude finished) → 🍂 **ended**. A session that needs you also gets 💧 in
+front of its tmux window name. The tmux status bar lists only the
 window you're in and the windows that need you (in red); the dashboard has the
 rest. Each project row counts its live
-sessions by state: red ⚑ needs you, yellow ● your turn, green ● working.
+sessions by state: 💧 needs you, 🌳 your turn, 🌿 working.
 
 While the dashboard runs, it sends a **desktop alert** when a session needs
 you, here or on a finca, unless that session's window is already on screen
@@ -321,7 +322,7 @@ default account.
 
 A **finca** is another machine running its own Grove, such as a home
 server or a Raspberry Pi. Your local dashboard lists them under **FINCAS**.
-Each row shows live sessions and ⚑ needs-you, polled over SSH every 30s, and
+Each row shows live sessions and 💧 needs-you, polled over SSH every 30s, and
 the footer counts remote sessions that need you.
 
 - **Enter** on a finca opens that machine's own Grove dashboard. Every key

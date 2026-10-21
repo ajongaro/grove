@@ -13,9 +13,9 @@ use crate::model::State;
 /// Focus: the focused pane's border and the selected row.
 /// Keys in the help popup.
 pub(super) const KEY_COLOR: Color = Color::Rgb(0xe0, 0xaf, 0x68);
-/// Width of each session-state count on a project row: glyph, two digits,
-/// a space.
-const SLOT_W: usize = 4;
+/// Width of each session-state count on a project row: a two-column glyph,
+/// two digits, a space.
+const SLOT_W: usize = 5;
 pub(super) const ACCENT: Color = Color::Rgb(102, 187, 106);
 /// Each pane's title word keeps its color whatever has focus (green and
 /// red stay free for focus and needs-you). Account boxes use the account's.
@@ -314,23 +314,19 @@ fn render_projects(
                     .count()
             };
             let slots = [
-                ("⚑", State::NeedsYou, count(&[State::NeedsYou])),
-                ("●", State::YourTurn, count(&[State::YourTurn])),
-                (
-                    "●",
-                    State::Working,
-                    count(&[State::Working, State::Starting]),
-                ),
+                (State::NeedsYou, count(&[State::NeedsYou])),
+                (State::YourTurn, count(&[State::YourTurn])),
+                (State::Working, count(&[State::Working, State::Starting])),
             ];
             let mut name = p.name.clone();
             let mut right = Vec::new();
-            if slots.iter().any(|(_, _, n)| *n > 0) {
+            if slots.iter().any(|(_, n)| *n > 0) {
                 right = slots
                     .iter()
-                    .map(|&(glyph, state, n)| match n {
+                    .map(|&(state, n)| match n {
                         0 => Span::raw(" ".repeat(SLOT_W)),
                         n => Span::styled(
-                            format!("{glyph}{n:<w$}", w = SLOT_W - 1),
+                            format!("{}{n:<w$}", state.glyph(), w = SLOT_W - 2),
                             Style::new().fg(state_color(state)),
                         ),
                     })
@@ -393,7 +389,11 @@ fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
                     let mut v = vec![Span::styled("● ", Style::new().fg(color)), name];
                     v.push(Span::raw(format!("  {} live", st.live)).dark_gray());
                     if st.needs_you > 0 {
-                        v.push(Span::raw(format!("  ⚑{}", st.needs_you)).red().bold());
+                        v.push(
+                            Span::raw(format!("  {}{}", State::NeedsYou.glyph(), st.needs_you))
+                                .red()
+                                .bold(),
+                        );
                     }
                     v
                 }
@@ -488,7 +488,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                 let color = state_color(s.state);
                 lines.push(mark(
                     Line::from(vec![
-                        Span::styled("  ● ", Style::new().fg(color)),
+                        Span::styled(format!("  {} ", s.state.glyph()), Style::new().fg(color)),
                         Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                         Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                         Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
@@ -567,7 +567,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         .map(|s| {
             let color = state_color(s.state);
             let mut spans = vec![
-                Span::styled("● ", Style::new().fg(color)),
+                Span::styled(format!("{} ", s.state.glyph()), Style::new().fg(color)),
                 Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                 Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                 Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).dark_gray(),
@@ -716,7 +716,8 @@ fn render_help(frame: &mut Frame) {
         .title(Line::from(vec![
             Span::raw(" Keys ").fg(ACCENT).bold(),
             Span::raw("(any key closes) ").dark_gray(),
-        ]));
+        ]))
+        .title_bottom(state_legend());
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let [l, r] =
@@ -740,10 +741,13 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             format!("({}) ", remote.join(", "))
         };
         spans.push(
-            Span::raw(format!(" ⚑ {n} needs you {detail}"))
-                .white()
-                .on_red()
-                .bold(),
+            Span::raw(format!(
+                " {} {n} needs you {detail}",
+                State::NeedsYou.glyph()
+            ))
+            .white()
+            .on_red()
+            .bold(),
         );
         spans.push(Span::raw(" "));
     }
@@ -822,21 +826,20 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             .filter(|s| want.contains(&s.state))
             .count()
     };
-    let total = |glyph: &str, n: usize, label: &str, state: State| {
+    let total = |n: usize, label: &str, state: State| {
         let style = if n > 0 {
             Style::new().fg(state_color(state))
         } else {
             Style::new().dark_gray()
         };
-        Span::styled(format!("{glyph}{n} {label}"), style)
+        Span::styled(format!("{}{n} {label}", state.glyph()), style)
     };
     let totals = Line::from(vec![
-        total("⚑", count(&[State::NeedsYou]), "needs you", State::NeedsYou),
+        total(count(&[State::NeedsYou]), "needs you", State::NeedsYou),
         Span::raw("  "),
-        total("●", count(&[State::YourTurn]), "your turn", State::YourTurn),
+        total(count(&[State::YourTurn]), "your turn", State::YourTurn),
         Span::raw("  "),
         total(
-            "●",
             count(&[State::Working, State::Starting]),
             "working",
             State::Working,
@@ -857,6 +860,30 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(vec![totals, place]).alignment(ratatui::layout::Alignment::Right),
         area,
     );
+}
+
+/// What each session glyph means, in its colour.
+fn state_legend() -> Line<'static> {
+    let mut spans = vec![Span::raw(" ")];
+    for s in [
+        State::Starting,
+        State::Working,
+        State::YourTurn,
+        State::NeedsYou,
+        State::Ended,
+    ] {
+        spans.push(Span::raw(format!("{} {}  ", s.glyph(), s.label())).fg(state_color(s)));
+    }
+    spans.pop();
+    spans.push(
+        Span::raw(format!(
+            "{} {} ",
+            State::Ended.glyph(),
+            State::Ended.label()
+        ))
+        .dark_gray(),
+    );
+    Line::from(spans)
 }
 
 pub(super) fn state_color(s: State) -> Color {
@@ -951,11 +978,7 @@ fn render_pinned(
             } else {
                 (state_color(r.state), r.state.label())
             };
-            let icon = if r.state == State::NeedsYou {
-                "⚑"
-            } else {
-                "●"
-            };
+            let icon = r.state.glyph();
             let origin_color = match (&r.finca, &r.account) {
                 _ if r.unreachable => Color::DarkGray,
                 (Some(_), _) => FINCAS_COLOR,

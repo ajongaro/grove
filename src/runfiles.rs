@@ -86,11 +86,11 @@ set -s set-clipboard on
 set -g status-left "#[bold] GROVE "
 set -g status-left-length 12
 # The dashboard lists every session, so the bar shows only the window you're
-# in and those that need you (⚑, ui/run.rs). Hidden windows render empty, so
+# in and those that need you (💧, ui/run.rs). Hidden windows render empty, so
 # the spacing lives in the formats rather than the separator.
 setw -g window-status-separator ""
 setw -g window-status-current-format "#[reverse] #I #W #[default]"
-setw -g window-status-format "#{?#{m:⚑ *,#W},#[fg=red#,bold] #I #W #[default],}"
+setw -g window-status-format "#{?#{m:💧 *,#W},#[fg=red#,bold] #I #W #[default],}"
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
 bind -n C-g select-window -t :=dashboard
@@ -474,7 +474,7 @@ mod tests {
             "-t",
             "grove:",
             "-n",
-            "⚑ p:needy",
+            "💧 p:needy",
             "sleep 30",
         ]);
         run(&[
@@ -498,7 +498,7 @@ mod tests {
         assert!(!list.is_empty());
         let rendered = rendered.replace('\n', "");
         assert!(rendered.contains(" 0 dashboard "), "{rendered}");
-        assert!(rendered.contains(" 1 ⚑ p:needy "), "{rendered}");
+        assert!(rendered.contains(" 1 💧 p:needy "), "{rendered}");
         assert!(!rendered.contains("quiet"), "{rendered}");
     }
 

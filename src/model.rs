@@ -41,6 +41,17 @@ impl State {
             State::Ended => "ended",
         }
     }
+
+    /// The state as a stage of growth; needs you is a thirsty plant.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            State::Starting => "🌱",
+            State::Working => "🌿",
+            State::YourTurn => "🌳",
+            State::NeedsYou => "💧",
+            State::Ended => "🍂",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -74,6 +85,19 @@ pub fn slugify(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glyphs_are_growth_stages() {
+        let all = [
+            State::Starting,
+            State::Working,
+            State::YourTurn,
+            State::NeedsYou,
+            State::Ended,
+        ];
+        let glyphs: Vec<_> = all.iter().map(|s| s.glyph()).collect();
+        assert_eq!(glyphs, ["🌱", "🌿", "🌳", "💧", "🍂"]);
+    }
 
     #[test]
     fn slugify_collapses_and_trims() {

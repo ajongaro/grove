@@ -224,10 +224,18 @@ pub fn render_grid(
         spans.push(Span::raw(format!(" · showing {}–{}", shown.start + 1, shown.end)).dark_gray());
     }
     for (icon, n, c) in [
-        ("⚑", count(&|s| s == State::NeedsYou), Color::Red),
-        ("●", count(&|s| s == State::YourTurn), Color::Yellow),
         (
-            "●",
+            State::NeedsYou.glyph(),
+            count(&|s| s == State::NeedsYou),
+            Color::Red,
+        ),
+        (
+            State::YourTurn.glyph(),
+            count(&|s| s == State::YourTurn),
+            Color::Yellow,
+        ),
+        (
+            State::Working.glyph(),
             count(&|s| matches!(s, State::Working | State::Starting)),
             Color::Green,
         ),
@@ -317,11 +325,7 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
         Some(s) => (s.lines().collect(), false),
         None => (Vec::new(), false),
     };
-    let icon = if t.state == State::NeedsYou {
-        "⚑"
-    } else {
-        "●"
-    };
+    let icon = t.state.glyph();
     let mut title = vec![Span::raw(" ")];
     if let Some((_, name)) = &t.finca {
         title.push(Span::raw(name.clone()).fg(dim(FINCAS_COLOR)));
