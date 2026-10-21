@@ -27,6 +27,9 @@ pub struct Config {
     /// Desktop alerts from the dashboard when a session needs you (here or
     /// on a finca). Turn off on a finca nobody sits at.
     pub alerts: bool,
+    /// Grove's status line in its sessions (statusline.rs). Off leaves your
+    /// own Claude Code status line.
+    pub statusline: bool,
 }
 
 impl Default for Config {
@@ -40,6 +43,7 @@ impl Default for Config {
             editor: String::new(),
             claude_args: Vec::new(),
             alerts: true,
+            statusline: true,
         }
     }
 }
@@ -284,6 +288,13 @@ mod tests {
         assert_eq!(c.claude_config_dir, "~/.claude");
         assert_eq!(c.tmux_session, "grove");
         assert!(c.claude_args.is_empty());
+    }
+
+    #[test]
+    fn statusline_defaults_on() {
+        assert!(Config::default().statusline);
+        let c: Config = toml::from_str("statusline = false").unwrap();
+        assert!(!c.statusline);
     }
 
     #[test]

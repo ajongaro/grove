@@ -24,7 +24,10 @@ pub const HOOK_EVENTS: [&str; 9] = [
 
 /// Settings file passed to every session with `--settings`. Exec form
 /// (`command` + `args`) so a binary path with spaces needs no quoting.
-pub fn hooks_json(grove_bin: &Path) -> serde_json::Value {
+/// Every hook goes to `grove hook`; with `statusline`, Grove's status line
+/// too. Command-line settings outrank the user's, so it only applies inside
+/// Grove.
+pub fn hooks_json(grove_bin: &Path, statusline: bool) -> serde_json::Value {
     let handler = json!([{ "hooks": [{
         "type": "command",
         "command": grove_bin.to_string_lossy(),
@@ -35,7 +38,17 @@ pub fn hooks_json(grove_bin: &Path) -> serde_json::Value {
         .iter()
         .map(|e| (e.to_string(), handler.clone()))
         .collect();
-    json!({ "hooks": hooks })
+    let mut v = json!({ "hooks": hooks });
+    if statusline {
+        // A shell command line, unlike the hooks' exec form.
+        let bin = grove_bin.to_string_lossy().replace('\'', r"'\''");
+        v["statusLine"] = json!({
+            "type": "command",
+            "command": format!("'{bin}' statusline"),
+            "padding": 2,
+        });
+    }
+    v
 }
 
 pub fn mcp_json(grove_bin: &Path) -> serde_json::Value {
@@ -162,11 +175,11 @@ fn brew_opt_path(exe: &Path) -> Option<PathBuf> {
     Some(p)
 }
 
-pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str) -> Result<()> {
+pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str, statusline: bool) -> Result<()> {
     let pretty = |v: serde_json::Value| serde_json::to_string_pretty(&v).map(String::into_bytes);
     write_atomic(
         &paths.run.join("hooks.json"),
-        &pretty(hooks_json(grove_bin))?,
+        &pretty(hooks_json(grove_bin, statusline))?,
     )?;
     write_atomic(&paths.run.join("mcp.json"), &pretty(mcp_json(grove_bin))?)?;
     write_atomic(
@@ -218,7 +231,7 @@ mod tests {
     #[test]
     fn hooks_json_registers_every_event_in_exec_form() {
         let bin = Path::new("/Apps/My Tools/grove");
-        let v = hooks_json(bin);
+        let v = hooks_json(bin, true);
         let hooks = v["hooks"].as_object().unwrap();
         assert_eq!(hooks.len(), HOOK_EVENTS.len());
         for ev in HOOK_EVENTS {
@@ -227,6 +240,25 @@ mod tests {
             assert_eq!(h["command"], "/Apps/My Tools/grove", "{ev}");
             assert_eq!(h["args"], serde_json::json!(["hook"]), "{ev}");
         }
+    }
+
+    #[test]
+    fn hooks_json_sets_the_status_line() {
+        let v = hooks_json(Path::new("/Apps/My Tools/grove"), true);
+        let s = &v["statusLine"];
+        assert_eq!(s["type"], "command");
+        // A shell string, unlike hooks' exec form: the space must be quoted.
+        assert_eq!(s["command"], "'/Apps/My Tools/grove' statusline");
+        assert_eq!(s["padding"], 2);
+        let odd = hooks_json(Path::new("/it's/grove"), true);
+        assert_eq!(odd["statusLine"]["command"], r"'/it'\''s/grove' statusline");
+    }
+
+    #[test]
+    fn status_line_opt_out() {
+        let v = hooks_json(Path::new("/b/grove"), false);
+        assert!(v.get("statusLine").is_none());
+        assert!(v["hooks"].is_object());
     }
 
     #[test]
@@ -474,7 +506,7 @@ mod tests {
     fn write_all_writes_valid_files_under_spaced_home() {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path().join("my grove"));
-        write_all(&paths, Path::new("/b/grove"), "grove").unwrap();
+        write_all(&paths, Path::new("/b/grove"), "grove", true).unwrap();
         for f in ["hooks.json", "mcp.json"] {
             let text = std::fs::read_to_string(paths.run.join(f)).unwrap();
             serde_json::from_str::<serde_json::Value>(&text).unwrap();

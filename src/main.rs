@@ -412,7 +412,7 @@ fn start(paths: &Paths) -> Result<()> {
     let cfg = preflight(paths)?;
     paths.ensure()?;
     let exe = runfiles::grove_exe()?;
-    runfiles::write_all(paths, &exe, &cfg.tmux_session)?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline)?;
 
     let tmux = grove_tmux(paths);
     let session = &cfg.tmux_session;
