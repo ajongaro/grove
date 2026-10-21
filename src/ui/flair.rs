@@ -56,6 +56,64 @@ pub fn leaves(width: usize, now: DateTime<Utc>, working: bool) -> String {
     row.into_iter().collect()
 }
 
+/// A quip shows for `QUIP_FOR` seconds every `QUIP_EVERY`.
+pub const QUIP_EVERY: i64 = 240;
+const QUIP_FOR: i64 = 25;
+
+pub const QUIPS: &[&str] = &[
+    "the olives are listening",
+    "photosynthesis: pending",
+    "no trees were harmed in this commit",
+    "roots: deep. context: deeper",
+    "a watched session never finishes",
+    "the grove does not judge your diffs",
+    "somewhere, a tree is compiling",
+    "leaves fall. tests pass. mostly.",
+    "it's always olive season somewhere",
+    "every session was once a seed",
+    "bark is worse than its bite",
+    "the trees have opinions on tabs",
+    "nothing grows in a merge conflict",
+    "patience. sap moves slowly.",
+    "a grove is just a forest with a plan",
+    "the wind carries no tokens",
+    "shade is free. compute is not.",
+    "this branch is going places",
+    "moss grows on idle sessions",
+    "the soil remembers every rebase",
+];
+
+/// The footer's quip at `now`, if one is due.
+pub fn quip(now: DateTime<Utc>) -> Option<&'static str> {
+    let t = now.timestamp();
+    (t.rem_euclid(QUIP_EVERY) < QUIP_FOR)
+        .then(|| QUIPS[t.div_euclid(QUIP_EVERY) as usize % QUIPS.len()])
+}
+
+/// What the Sessions pane shows when nothing is running anywhere here.
+pub fn quiet_grove() -> Vec<Line<'static>> {
+    let row = |runs: &[(&'static str, Color)]| {
+        Line::from(
+            runs.iter()
+                .map(|(t, c)| Span::styled(*t, Style::new().fg(*c)))
+                .collect::<Vec<_>>(),
+        )
+    };
+    vec![
+        row(&[("      ▄▆▄          ", LEAF), ("▗▄▖", SAGE)]),
+        row(&[
+            ("     ▟█", LEAF),
+            ("●", OLIVE),
+            ("█▙   ", LEAF),
+            ("▗▆▖", SAGE),
+            ("  ▟███▙", SAGE),
+        ]),
+        row(&[("       ▐▌     ▐▌    ▐▌", STEM)]),
+        row(&[("   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔", STEM)]),
+        Line::from(Span::raw("     the grove is quiet").dark_gray()),
+    ]
+}
+
 /// 340 → "340", 2100 → "2.1k", 12000 → "12k".
 pub fn short_count(n: u64) -> String {
     let short = |v: f64, unit: &str| {
@@ -249,6 +307,26 @@ mod tests {
             text(&harvest_line(&one, &Config::default(), 12)),
             "🧺 $14.20"
         );
+    }
+
+    #[test]
+    fn quip_shows_briefly_every_few_minutes() {
+        let at = |secs: i64| Utc.timestamp_opt(secs, 0).unwrap();
+        let base = 1_800_000_000 - 1_800_000_000 % QUIP_EVERY;
+        assert!(quip(at(base)).is_some());
+        assert!(quip(at(base + 24)).is_some());
+        assert!(quip(at(base + 30)).is_none());
+        assert_ne!(quip(at(base)), quip(at(base + QUIP_EVERY)));
+        assert!(QUIPS.len() >= 15);
+        assert!(QUIPS.iter().all(|q| q.chars().count() <= 40), "{QUIPS:?}");
+    }
+
+    #[test]
+    fn quiet_grove_is_small() {
+        let scene = quiet_grove();
+        assert!(scene.len() <= 6);
+        assert!(scene.iter().all(|l| l.width() <= 34));
+        assert!(scene.iter().any(|l| text(l).contains("the grove is quiet")));
     }
 
     #[test]

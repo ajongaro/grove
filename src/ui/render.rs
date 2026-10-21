@@ -91,7 +91,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         None => render_sessions(frame, app, right, now),
     }
-    render_footer(frame, app, footer);
+    render_footer(frame, app, footer, now);
 
     match &app.mode {
         Mode::Prompt { kind, input } => {
@@ -546,8 +546,19 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         } else {
             ""
         };
+        let mut lines = Vec::new();
+        // Nothing running here at all: the grove rests above the hint.
+        let scene = flair::quiet_grove();
+        let idle = app.sessions.iter().all(|s| s.state == State::Ended);
+        if idle && block.inner(area).height as usize >= scene.len() + 3 {
+            lines.extend(scene);
+            lines.push(Line::raw(""));
+        }
+        lines.push(Line::raw(hint));
         frame.render_widget(
-            Paragraph::new(hint).wrap(Wrap { trim: true }).block(block),
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: false })
+                .block(block),
             area,
         );
         return;
@@ -726,7 +737,7 @@ fn render_help(frame: &mut Frame) {
     frame.render_widget(Paragraph::new(right), r);
 }
 
-fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
+fn render_footer(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let mut spans = Vec::new();
     let n = app.needs_you_count();
     if n > 0 {
@@ -760,9 +771,20 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         None if app.pane == Pane::Todo => spans.push(
             Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
         ),
-        None => spans.push(
-            Span::raw("enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
-        ),
+        None => {
+            spans.push(
+                Span::raw("enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach").dark_gray(),
+            );
+            // Now and then, when nothing else needs saying, the grove speaks.
+            if let Some(q) = flair::quip(now).filter(|_| n == 0) {
+                let used: usize = spans.iter().map(Span::width).sum();
+                let pad = (area.width as usize).saturating_sub(used + q.chars().count() + 1);
+                if pad >= 2 {
+                    spans.push(Span::raw(" ".repeat(pad)));
+                    spans.push(Span::raw(q).dark_gray().italic());
+                }
+            }
+        }
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }

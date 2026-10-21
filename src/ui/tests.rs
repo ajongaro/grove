@@ -3219,3 +3219,61 @@ fn header_shows_grove_and_harvest() {
     assert!(rows[0].contains("needs you"), "{out}");
     assert!(rows[2].contains("🧺 $2.50"), "{out}");
 }
+
+#[test]
+fn quiet_grove_when_nothing_runs() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("the grove is quiet"), "{out}");
+    assert!(out.contains("press Enter to start one"), "{out}");
+}
+
+#[test]
+fn no_quiet_grove_when_another_project_is_busy() {
+    let (_d, _s, app) = loaded(
+        &["alpha", "beta"],
+        &[session("1", "beta", "s1", State::Working, Some("@1"))],
+    );
+    let mut app = app;
+    // beta comes first (it has live sessions); look at alpha's empty pane.
+    handle_key(&mut app, ch('j'));
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("No sessions"), "{out}");
+    assert!(!out.contains("the grove is quiet"), "{out}");
+}
+
+/// A time when the footer has a quip to show.
+fn quip_time() -> chrono::DateTime<Utc> {
+    let mut t = t0();
+    while super::flair::quip(t).is_none() {
+        t += Duration::seconds(10);
+    }
+    t
+}
+
+#[test]
+fn quip_never_covers_a_message() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.footer = Some("saved".into());
+    let now = quip_time();
+    let out = screen_at(&app, 200, 30, now);
+    let footer = out.lines().last().unwrap();
+    assert!(footer.contains("saved"), "{footer}");
+    assert!(
+        !footer.contains(super::flair::quip(now).unwrap()),
+        "{footer}"
+    );
+}
+
+#[test]
+fn quip_in_idle_footer() {
+    let (_d, _s, app) = loaded(&["alpha"], &[]);
+    let now = quip_time();
+    let out = screen_at(&app, 200, 30, now);
+    let footer = out.lines().last().unwrap();
+    assert!(
+        footer.contains(super::flair::quip(now).unwrap()),
+        "{footer}"
+    );
+    assert!(footer.contains("? help"), "{footer}");
+}
