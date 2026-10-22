@@ -68,6 +68,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             app.mode = Mode::Normal;
             Action::None
         }
+        Mode::Search { query, sel } => search_key(app, query, sel, key),
         Mode::Normal => normal_key(app, key),
         Mode::Grid { sel, reply } => grid_key(app, sel, reply, key),
         Mode::GridKill {
@@ -113,6 +114,50 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             }
         }
     }
+}
+
+/// Typing in the `/` search: letters narrow it, arrows (or C-j / C-k)
+/// move, Enter goes to the selected session, Esc closes.
+fn search_key(app: &mut App, mut query: String, mut sel: usize, key: KeyEvent) -> Action {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let n = super::search::search(app, &query).len();
+    match key.code {
+        KeyCode::Esc => {
+            app.mode = Mode::Normal;
+            return Action::None;
+        }
+        KeyCode::Enter => {
+            app.mode = Mode::Normal;
+            let hits = super::search::search(app, &query);
+            return match hits.get(sel).map(super::search::enter) {
+                Some(Ok(action)) => action,
+                Some(Err(why)) => {
+                    app.footer = Some(why);
+                    Action::None
+                }
+                None => Action::None,
+            };
+        }
+        KeyCode::Up => sel = sel.saturating_sub(1),
+        KeyCode::Char('k' | 'p') if ctrl => sel = sel.saturating_sub(1),
+        KeyCode::Down => sel = (sel + 1).min(n.saturating_sub(1)),
+        KeyCode::Char('j' | 'n') if ctrl => sel = (sel + 1).min(n.saturating_sub(1)),
+        KeyCode::Char('u') if ctrl => {
+            query.clear();
+            sel = 0;
+        }
+        KeyCode::Backspace => {
+            query.pop();
+            sel = 0;
+        }
+        KeyCode::Char(c) if !ctrl => {
+            query.push(c);
+            sel = 0;
+        }
+        _ => {}
+    }
+    app.mode = Mode::Search { query, sel };
+    Action::None
 }
 
 fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent) -> Action {
@@ -246,6 +291,13 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         app.mode = Mode::Grid {
             sel: 0,
             reply: None,
+        };
+        return Action::None;
+    }
+    if key.code == KeyCode::Char('/') {
+        app.mode = Mode::Search {
+            query: String::new(),
+            sel: 0,
         };
         return Action::None;
     }

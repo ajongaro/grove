@@ -136,6 +136,23 @@ pub fn kill_session_remote(
     run_on_finca(f, dest, "kill-session", session_id, None, "kill sessions")
 }
 
+/// Resumes an ended finca session with `grove resume-session`; its new
+/// window on success.
+pub fn resume_session_remote(
+    f: &crate::finca::Finca,
+    dest: &str,
+    session_id: &str,
+) -> Result<String, String> {
+    run_on_finca(
+        f,
+        dest,
+        "resume-session",
+        session_id,
+        None,
+        "resume sessions",
+    )
+}
+
 /// Runs `grove <cmd> <session_id>` on a finca, `input` on stdin. Its last
 /// line of output, or of its error. `doing` finishes "too old to … from
 /// here" for a Grove without the command.
@@ -466,6 +483,21 @@ mod tests {
             err.contains("too old") && err.contains("grove finca update"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn resume_session_remote_returns_the_new_window() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "[ \"$1\" = resume-session ] || { echo \"error: unrecognized subcommand '$1'\" >&2; exit 2; }; if [ \"$2\" = sid ]; then echo '@12'; else echo \"nothing to resume: s4 never saved a conversation\" >&2; exit 1; fi",
+        );
+        let f = finca_at(&bin);
+        let ok = via_fake_ssh(d.path(), || resume_session_remote(&f, "me@pi", "sid"));
+        assert_eq!(ok, Ok("@12".into()));
+        let err = via_fake_ssh(d.path(), || resume_session_remote(&f, "me@pi", "zz")).unwrap_err();
+        assert!(err.contains("nothing to resume"), "{err}");
     }
 
     #[test]

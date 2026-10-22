@@ -8,6 +8,7 @@ pub mod help;
 pub mod input;
 pub mod render;
 pub mod run;
+pub mod search;
 
 #[cfg(test)]
 mod tests;

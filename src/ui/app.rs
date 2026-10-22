@@ -50,6 +50,11 @@ pub enum Mode {
     Normal,
     /// The `?` key list; any key closes it.
     Help,
+    /// `/`: finding a session anywhere; `sel` indexes `search::search`.
+    Search {
+        query: String,
+        sel: usize,
+    },
     /// The session grid (`v`): `sel` indexes `grid::tiles`; `reply` is the
     /// reply line's text while it's open.
     Grid {
@@ -149,6 +154,12 @@ pub enum Action {
     Resume {
         session_id: String,
     },
+    /// Resume an ended session on a finca, then connect into it.
+    FincaResume {
+        slug: String,
+        via: Option<String>,
+        session_id: String,
+    },
     EditProject {
         slug: String,
     },
@@ -245,6 +256,8 @@ pub struct App {
     pub sessions: Vec<Session>,
     /// What each session's status line last recorded, by session id.
     pub stats: HashMap<String, crate::stats::SessionStats>,
+    /// Each local session's conversation title (titles.rs), by session id.
+    pub titles: HashMap<String, String>,
     pub pane: Pane,
     pub proj_idx: usize,
     pub sess_idx: usize,
@@ -334,6 +347,7 @@ impl App {
             fincas: Vec::new(),
             sessions: Vec::new(),
             stats: HashMap::new(),
+            titles: HashMap::new(),
             pane: Pane::Projects,
             proj_idx: 0,
             sess_idx: 0,
@@ -431,6 +445,15 @@ impl App {
             })
             .collect();
         self.sessions = store.list_sessions(None);
+        self.titles = self
+            .sessions
+            .iter()
+            .filter_map(|s| {
+                let p = self.projects.iter().find(|p| p.slug == s.project)?;
+                let t = crate::titles::for_session(&store.paths, &self.cfg, &p.path, s)?;
+                Some((s.id.clone(), t))
+            })
+            .collect();
         // Box order (each box's projects one contiguous run), then most live
         // sessions first; the sort is stable, so ties stay alphabetical.
         let groups = self.groups();

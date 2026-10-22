@@ -120,6 +120,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             render_completions(frame, app, area);
         }
         Mode::Help => render_help(frame),
+        Mode::Search { query, sel } => render_search(frame, app, query, *sel, now),
         Mode::Confirm { label, .. } => kill_popup(frame, label),
         Mode::ConfirmShell { label, .. } => {
             confirm_popup(frame, &format!("Close shell {label}?  y / n"))
@@ -663,6 +664,85 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 /// The key list in two columns, sections kept whole, so it fits a laptop.
+/// The `/` popup: the query, then each match on two rows, its handle and
+/// machine, then what it's about; matched letters stand out.
+fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: DateTime<Utc>) {
+    let hits = super::search::search(app, query);
+    let screen = frame.area();
+    let rows = (hits.len().max(1) * 2 + 4) as u16;
+    let mut area = popup(screen, 80, rows.min(screen.height.saturating_sub(2)));
+    area.width = area.width.max(screen.width.min(60));
+    area.x = screen.x + (screen.width - area.width) / 2;
+    frame.render_widget(Clear, area);
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let fits = (area.height.saturating_sub(4) / 2).max(1) as usize;
+    let first = sel.saturating_sub(fits - 1);
+    let lit = |text: &str, hl: &[usize], base: Style| -> Vec<Span<'static>> {
+        text.chars()
+            .enumerate()
+            .map(|(i, c)| {
+                let style = if hl.contains(&i) {
+                    base.fg(ACCENT).bold()
+                } else {
+                    base
+                };
+                Span::styled(c.to_string(), style)
+            })
+            .collect()
+    };
+    let mut lines = vec![
+        Line::from(vec![
+            Span::raw(" / ").fg(ACCENT).bold(),
+            Span::raw(format!("{query}█")),
+        ]),
+        Line::raw(""),
+    ];
+    if hits.is_empty() {
+        lines.push(Line::raw("   no sessions match").dark_gray());
+    }
+    for (i, h) in hits.iter().enumerate().skip(first).take(fits) {
+        let it = &h.item;
+        let ended = it.state == State::Ended;
+        let base = if ended {
+            Style::new().dark_gray()
+        } else {
+            Style::new()
+        };
+        let mut top = vec![
+            Span::raw(if i == sel { " ▸ " } else { "   " }).fg(ACCENT),
+            Span::raw(format!("{} ", it.state.glyph())),
+        ];
+        top.extend(lit(&it.handle, &h.handle_hl, base));
+        let right = format!("{} · {} ", it.host, format_age(it.updated_at, now));
+        let used: usize = top.iter().map(Span::width).sum();
+        top.push(Span::raw(
+            " ".repeat(inner_w.saturating_sub(used + right.chars().count())),
+        ));
+        top.push(Span::raw(right).dark_gray());
+        let mut top = Line::from(top);
+        if i == sel {
+            top = top.bg(Color::Rgb(0x2a, 0x2f, 0x3a));
+        }
+        lines.push(top);
+        let about = it.about.as_deref().unwrap_or("");
+        let room = inner_w.saturating_sub(7);
+        let about: String = about.chars().take(room).collect();
+        let mut bottom = vec![Span::raw("      ")];
+        bottom.extend(lit(&about, &h.about_hl, Style::new().dark_gray()));
+        lines.push(Line::from(bottom));
+    }
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .title(" Find a session ")
+                .title_bottom(" Enter jump / resume · ↑↓ move · Esc close ")
+                .border_style(Style::new().fg(ACCENT)),
+        ),
+        area,
+    );
+}
+
 fn render_help(frame: &mut Frame) {
     let sections: Vec<Vec<Line>> = super::help::SECTIONS
         .iter()

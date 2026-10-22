@@ -137,6 +137,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
 | `Enter` | session | jump to its window; on an ended one, resume its conversation |
+| `/` | dashboard | find a session, here or on a finca, live or ended |
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
@@ -173,6 +174,13 @@ reopens it in a new window with `claude --resume`, picking up its last
 conversation (Grove follows it through `/clear` and `/resume`). It keeps its
 name, unless a live session has taken it since, and its cost keeps adding
 to the same row.
+
+**`/` finds a session anywhere**: here and on every finca, live or ended.
+Type part of its project, name or machine, or of what it's about (Claude's
+title for the conversation, else its first prompt), fzf-style: `gaschema`
+finds a session about a GA schema even if it's called `s3`. Several words
+must all match. Enter jumps to a live one, connecting to its finca if
+need be, and resumes an ended one there.
 
 While the dashboard runs, it sends a **desktop alert** when a session needs
 you, here or on a finca, unless that session's window is already on screen
@@ -419,6 +427,7 @@ sessions/<uuid>.json      one per session: state, window, message
 stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
+                          (titles/ caches what each conversation is about)
 grove.log                 errors from hooks / MCP
 ```
 
@@ -447,6 +456,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/hook.rs` | `grove hook`: applies events, prints session-start context |
 | `src/statusline.rs` | `grove statusline`: the status line in Grove's sessions |
 | `src/stats.rs` | what each status line saw: per-session and per-day, per-account totals |
+| `src/titles.rs` | what each conversation is about, from its transcript, for `/` |
 | `src/store.rs` | all disk reads/writes (atomic) |
 | `src/config.rs` | `config.toml`, accounts and which folder picks which |
 | `src/launch.rs` | builds the `claude` command + window env |
@@ -458,7 +468,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
-| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the sky, olive trees, harvest and quips, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
+| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the sky, olive trees, harvest and quips, `search.rs` finding a session (`/`), `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
 | `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |

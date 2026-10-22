@@ -252,7 +252,7 @@ pub fn resume_with_bin(
     };
     let conversation = old.conversation_id().to_string();
     let account = account_dir(&cfg.account_for(&project.path))?;
-    if !transcript_saved(&account, &conversation) {
+    if crate::titles::transcript(&account, &conversation).is_none() {
         bail!("nothing to resume: {} never saved a conversation", old.name);
     }
     let mut session = old.clone();
@@ -283,17 +283,6 @@ pub fn resume_with_bin(
         return Err(e);
     }
     Ok(session)
-}
-
-/// Whether Claude saved conversation `id` under account folder `account`:
-/// transcripts live at `projects/<folder>/<id>.jsonl`.
-fn transcript_saved(account: &std::path::Path, id: &str) -> bool {
-    let file = format!("{id}.jsonl");
-    std::fs::read_dir(account.join("projects"))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|d| d.path().join(&file).is_file())
 }
 
 /// Opens `spec`'s window for `session`, tags it, and records the window.

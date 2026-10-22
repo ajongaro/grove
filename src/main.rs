@@ -19,6 +19,7 @@ mod stats;
 mod status;
 mod statusline;
 mod store;
+mod titles;
 mod tmux;
 mod todo;
 mod transfer;
@@ -117,6 +118,10 @@ enum Cmd {
     /// machine).
     #[command(hide = true)]
     KillSession { session: String },
+    /// Internal: resume an ended session and print its window (finding a
+    /// session, from another machine).
+    #[command(hide = true)]
+    ResumeSession { session: String },
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
@@ -221,6 +226,13 @@ fn main() {
                 }
             }
         }
+        Some(Cmd::ResumeSession { session }) => match resume_session(&paths, &session) {
+            Ok(window) => println!("{window}"),
+            Err(e) => {
+                eprintln!("{e:#}");
+                std::process::exit(1);
+            }
+        },
         Some(Cmd::Screens { lines, .. }) => {
             let st = screens::local(
                 &Store::new(paths.clone()),
@@ -464,6 +476,18 @@ fn type_prompt(paths: &Paths, id: &str, text: &str) -> std::result::Result<Strin
         .map(|p| cfg.account_for(&p.path).name)
         .unwrap_or_default();
     prompt::type_into(&grove_tmux(paths), &s, &account, text)
+}
+
+/// Resumes ended session `id` here; the new window's id.
+fn resume_session(paths: &Paths, id: &str) -> Result<String> {
+    let store = Store::new(paths.clone());
+    let Some(s) = store.get_session(id) else {
+        anyhow::bail!("no session {id}");
+    };
+    let cfg = load_config(paths)?;
+    let project = store.get_project(&s.project)?;
+    let s = launch::resume(&grove_tmux(paths), &store, &cfg, &project, id)?;
+    Ok(s.tmux_window.unwrap_or_default())
 }
 
 fn print_status(paths: &Paths, json: bool) {

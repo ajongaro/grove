@@ -581,6 +581,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             message: Some("Permission needed: Bash".into()),
             updated_at: t0(),
             window: Some(format!("@1{i}")),
+            title: None,
         });
     }
     for i in 0..working {
@@ -591,6 +592,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             message: None,
             updated_at: t0(),
             window: Some(format!("@2{i}")),
+            title: None,
         });
     }
     Status {
@@ -603,6 +605,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             name: "btt".into(),
             slug: "btt".into(),
             sessions,
+            ended: vec![],
         }],
     }
 }
@@ -3358,4 +3361,144 @@ fn quiet_grove_skipped_in_a_narrow_pane() {
     let out = screen(&app, 38, 30);
     assert!(!out.contains("▟█●█▙"), "{out}");
     assert!(out.contains("No sessions"), "{out}");
+}
+
+// ---------- find a session (/) ----------
+
+fn type_text(app: &mut App, text: &str) {
+    for c in text.chars() {
+        handle_key(app, ch(c));
+    }
+}
+
+fn found(app: &App) -> Vec<String> {
+    let Mode::Search { query, .. } = &app.mode else {
+        panic!("not searching: {:?}", app.mode);
+    };
+    super::search::search(app, query)
+        .into_iter()
+        .map(|h| h.item.handle)
+        .collect()
+}
+
+#[test]
+fn slash_finds_sessions_by_name_as_you_type() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha", "beta"],
+        &[
+            session("1", "alpha", "s1", State::Working, Some("@1")),
+            session("2", "beta", "keno", State::Ended, None),
+        ],
+    );
+    handle_key(&mut app, ch('/'));
+    assert_eq!(found(&app).len(), 2);
+    type_text(&mut app, "bkn");
+    assert_eq!(found(&app), ["beta:keno"]);
+    let out = screen(&app, 120, 30);
+    assert!(
+        out.contains("Find a session") && out.contains("beta:keno"),
+        "{out}"
+    );
+    handle_key(&mut app, key(KeyCode::Backspace));
+    handle_key(&mut app, key(KeyCode::Backspace));
+    handle_key(&mut app, key(KeyCode::Backspace));
+    assert_eq!(found(&app).len(), 2);
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn search_matches_what_a_session_is_about() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::YourTurn, Some("@1")),
+            session("2", "alpha", "s2", State::YourTurn, Some("@2")),
+        ],
+    );
+    app.titles
+        .insert("2".into(), "GA schema for iOS and Web".into());
+    handle_key(&mut app, ch('/'));
+    type_text(&mut app, "ga schema");
+    assert_eq!(found(&app), ["alpha:s2"]);
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("GA schema for iOS and Web"), "{out}");
+}
+
+#[test]
+fn empty_search_lists_waiting_sessions_first() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "old", State::Ended, None),
+            session("2", "alpha", "busy", State::Working, Some("@2")),
+            session("3", "alpha", "needy", State::NeedsYou, Some("@3")),
+        ],
+    );
+    handle_key(&mut app, ch('/'));
+    assert_eq!(found(&app), ["alpha:needy", "alpha:busy", "alpha:old"]);
+}
+
+#[test]
+fn enter_in_search_jumps_to_live_and_resumes_ended() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "live", State::Working, Some("@7")),
+            session("2", "alpha", "gone", State::Ended, None),
+        ],
+    );
+    handle_key(&mut app, ch('/'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@7".into()
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+    handle_key(&mut app, ch('/'));
+    handle_key(&mut app, key(KeyCode::Down));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Resume {
+            session_id: "2".into()
+        }
+    );
+}
+
+#[test]
+fn search_reaches_finca_sessions_live_and_ended() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    let mut st = remote_status("homebox", 0, 1);
+    st.projects[0].ended.push(SessionStatus {
+        id: Some("old-id".into()),
+        name: "migrate".into(),
+        state: State::Ended,
+        message: None,
+        updated_at: t0(),
+        window: None,
+        title: Some("schema migration for events".into()),
+    });
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    handle_key(&mut app, ch('/'));
+    type_text(&mut app, "migration");
+    assert_eq!(found(&app), ["btt:migrate"]);
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaResume {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            session_id: "old-id".into(),
+        }
+    );
+    handle_key(&mut app, ch('/'));
+    type_text(&mut app, "w0");
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            window: "@20".into(),
+        }
+    );
 }

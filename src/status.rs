@@ -24,6 +24,10 @@ pub struct ProjectStatus {
     pub name: String,
     pub slug: String,
     pub sessions: Vec<SessionStatus>,
+    /// Recent sessions that have ended, newest first, for finding and
+    /// resuming them from another machine. Older Groves don't send it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ended: Vec<SessionStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,7 +45,13 @@ pub struct SessionStatus {
     /// don't send it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<String>,
+    /// What the conversation is about (titles.rs). Older Groves don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
+
+/// Ended sessions reported per project.
+const ENDED_PER_PROJECT: usize = 20;
 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
@@ -53,6 +63,7 @@ pub enum ParseError {
 /// `live_windows` count: session files can say needs_you long after a
 /// reboot or a dead tmux server.
 pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
+    let cfg = crate::config::load_config(&store.paths).unwrap_or_default();
     let sessions = store.list_sessions(None);
     let projects: Vec<ProjectStatus> = store
         .list_projects()
@@ -60,25 +71,38 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
         .filter_map(Result::ok)
         .map(|p| {
             let slug = p.slug();
-            ProjectStatus {
-                sessions: sessions
-                    .iter()
-                    .filter(|s| s.project == slug && s.state != State::Ended)
-                    .filter(|s| {
-                        s.tmux_window
+            let report = |s: &crate::model::Session, live: bool| SessionStatus {
+                id: Some(s.id.clone()),
+                name: s.name.clone(),
+                state: if live { s.state } else { State::Ended },
+                message: if live { s.message.clone() } else { None },
+                updated_at: s.updated_at,
+                window: if live { s.tmux_window.clone() } else { None },
+                title: crate::titles::for_session(&store.paths, &cfg, &p.path, s),
+            };
+            let (live, ended): (Vec<_>, Vec<_>) = sessions
+                .iter()
+                .filter(|s| s.project == slug)
+                .partition(|s| {
+                    s.state != State::Ended
+                        && s.tmux_window
                             .as_ref()
                             .is_some_and(|w| live_windows.contains(w))
-                    })
-                    .map(|s| SessionStatus {
-                        id: Some(s.id.clone()),
-                        name: s.name.clone(),
-                        state: s.state,
-                        message: s.message.clone(),
-                        updated_at: s.updated_at,
-                        window: s.tmux_window.clone(),
-                    })
+                });
+            // A session with no window yet is still starting, not ended.
+            let mut ended: Vec<_> = ended
+                .into_iter()
+                .filter(|s| s.state == State::Ended || s.tmux_window.is_some())
+                .collect();
+            ended.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
+            ProjectStatus {
+                sessions: live.into_iter().map(|s| report(s, true)).collect(),
+                ended: ended
+                    .into_iter()
+                    .take(ENDED_PER_PROJECT)
+                    .map(|s| report(s, false))
                     .collect(),
-                name: p.name,
+                name: p.name.clone(),
                 slug,
             }
         })
@@ -192,6 +216,37 @@ mod tests {
         assert!(alpha.sessions.iter().all(|x| x.state != State::Ended));
         let beta = st.projects.iter().find(|p| p.slug == "beta").unwrap();
         assert!(beta.sessions.is_empty());
+    }
+
+    #[test]
+    fn ended_sessions_are_listed_apart_newest_first() {
+        let (_d, s) = store();
+        // Live by its file, but its window has gone: ended too.
+        let mut dead = s.get_session("2").unwrap();
+        dead.tmux_window = Some("@9".into());
+        dead.updated_at = chrono::Utc::now();
+        s.save_session(&dead).unwrap();
+        let st = build(&s, "pi", &live());
+        let alpha = st.projects.iter().find(|p| p.slug == "alpha").unwrap();
+        let ended: Vec<_> = alpha
+            .ended
+            .iter()
+            .map(|x| x.id.as_deref().unwrap())
+            .collect();
+        assert_eq!(ended, ["2", "3"]);
+        assert!(
+            alpha
+                .ended
+                .iter()
+                .all(|x| x.state == State::Ended && x.window.is_none())
+        );
+        assert_eq!(st.live, 1);
+        // Nothing ended: the field stays out of the JSON, for older Groves.
+        let beta = serde_json::to_value(&st.projects[1]).unwrap();
+        assert!(beta.get("ended").is_none(), "{beta}");
+        let old: ProjectStatus =
+            serde_json::from_str(r#"{"name":"b","slug":"b","sessions":[]}"#).unwrap();
+        assert!(old.ended.is_empty());
     }
 
     #[test]

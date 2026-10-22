@@ -438,7 +438,9 @@ fn observe_names_local_and_finca_sessions() {
                 message: None,
                 updated_at: chrono::Utc::now(),
                 window: None,
+                title: None,
             }],
+            ended: vec![],
         }],
     };
     let _ = &t;

@@ -62,6 +62,18 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             ctx.tmux.select_window(&window)?;
             Outcome::Nothing
         }
+        Action::FincaResume {
+            slug,
+            via,
+            session_id,
+        } => {
+            let f = store.get_finca(&slug)?;
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            let dest = via.as_deref().unwrap_or(&f.ssh);
+            let window = crate::screens::resume_session_remote(&f, dest, &session_id)
+                .map_err(|e| anyhow::anyhow!("{}: {e}", f.name))?;
+            return perform(ctx, Action::FincaJump { slug, via, window });
+        }
         Action::Resume { session_id } => {
             let Some(old) = store.get_session(&session_id) else {
                 return Ok(Outcome::Nothing);
@@ -629,6 +641,10 @@ fn event_loop(
             let action = handle_key(app, key);
             let was_reply = matches!(action, Action::GridReply { .. });
             let was_kill = matches!(action, Action::GridKill { .. });
+            if matches!(action, Action::FincaResume { .. }) {
+                app.footer = Some("resuming…".into());
+                terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
+            }
             let was_shell = matches!(action, Action::NewShell { .. } | Action::CloseShell { .. });
             if was_reply || was_kill {
                 app.footer = Some(
