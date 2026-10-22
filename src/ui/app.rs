@@ -145,6 +145,10 @@ pub enum Action {
     Kill {
         session_id: String,
     },
+    /// Reopen an ended session's last conversation in a new window.
+    Resume {
+        session_id: String,
+    },
     EditProject {
         slug: String,
     },

@@ -190,3 +190,17 @@ fn unknown_grove_session_env_falls_back_to_stdin_id() {
     run_hook_in_window(&home(&dir), &fixture("stop"), "not-a-real-session");
     assert_eq!(session(&dir)["state"], "your_turn");
 }
+
+#[test]
+fn hooks_follow_the_conversation_through_clear() {
+    let dir = setup("your_turn");
+    let ev =
+        |id: &str, name: &str| format!(r#"{{"session_id":"{id}","hook_event_name":"{name}"}}"#);
+    // /clear: the new conversation's SessionStart, then its first prompt.
+    run_hook_in_window(&home(&dir), &ev("conv-2", "SessionStart"), SID);
+    assert_eq!(session(&dir)["conversation"], "conv-2");
+    run_hook_in_window(&home(&dir), &ev("conv-3", "UserPromptSubmit"), SID);
+    let s = session(&dir);
+    assert_eq!(s["conversation"], "conv-3");
+    assert_eq!(s["state"], "working");
+}

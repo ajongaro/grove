@@ -23,6 +23,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         tmux_window: window.map(str::to_string),
         state,
         message: None,
+        conversation: None,
         created_at: t0(),
         updated_at: t0(),
     }
@@ -211,6 +212,21 @@ fn enter_on_project_starts_session() {
 }
 
 #[test]
+fn enter_on_an_ended_session_resumes_it() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Ended, None)],
+    );
+    app.pane = Pane::Sessions;
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Resume {
+            session_id: "1".into()
+        }
+    );
+}
+
+#[test]
 fn enter_on_session_jumps_to_its_window() {
     let (_d, _s, mut app) = loaded(
         &["alpha"],
@@ -223,16 +239,6 @@ fn enter_on_session_jumps_to_its_window() {
             window: "@7".into()
         }
     );
-}
-
-#[test]
-fn enter_on_ended_session_does_nothing() {
-    let (_d, _s, mut app) = loaded(
-        &["alpha"],
-        &[session("1", "alpha", "s1", State::Ended, Some("@7"))],
-    );
-    app.pane = Pane::Sessions;
-    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
 }
 
 #[test]

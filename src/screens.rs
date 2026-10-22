@@ -276,6 +276,7 @@ mod tests {
             tmux_window: window.map(str::to_string),
             state,
             message: None,
+            conversation: None,
             created_at: t,
             updated_at: t,
         }

@@ -144,6 +144,7 @@ mod tests {
             tmux_window: Some("@1".into()),
             state,
             message: msg.map(str::to_string),
+            conversation: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

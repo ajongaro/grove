@@ -128,6 +128,7 @@ mod tests {
             tmux_window: None,
             state,
             message: None,
+            conversation: None,
             created_at: t,
             updated_at: t,
         }

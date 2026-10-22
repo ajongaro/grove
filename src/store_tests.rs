@@ -26,6 +26,7 @@ fn sess(id: &str, project: &str) -> Session {
         tmux_window: Some("@3".into()),
         state: State::Starting,
         message: None,
+        conversation: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

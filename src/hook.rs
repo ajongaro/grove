@@ -26,22 +26,40 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
         .and_then(|id| store.get_session(&id))
         .or_else(|| store.get_session(&ev.session_id))?;
 
+    // Which conversation to resume once the window has gone.
+    let follow = session.conversation_id() != ev.session_id;
+    if follow {
+        session.conversation = Some(ev.session_id.clone());
+    }
+
     if ev.hook_event_name == "SessionStart" {
+        if follow {
+            save(store, &mut session);
+        }
         return Some(session_context(store, &session.project));
     }
 
-    let (state, message) = state::next(session.state, &ev)?;
-    session.state = state;
-    session.message = message;
+    match state::next(session.state, &ev) {
+        Some((state, message)) => {
+            session.state = state;
+            session.message = message;
+        }
+        None if !follow => return None,
+        None => {}
+    }
+    save(store, &mut session);
+    None
+}
+
+fn save(store: &Store, session: &mut crate::model::Session) {
     session.updated_at = chrono::Utc::now();
-    if let Err(e) = store.save_session(&session) {
+    if let Err(e) = store.save_session(session) {
         log::error(
             &store.paths,
             "hook",
             &format!("saving session {}: {e:#}", session.id),
         );
     }
-    None
 }
 
 /// A few lines Claude Code adds to the new session's context: the project

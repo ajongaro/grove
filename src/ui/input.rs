@@ -339,7 +339,10 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 Some(w) => Action::Jump { window: w.clone() },
                 None => Action::None,
             },
-            _ => Action::None,
+            Some(s) => Action::Resume {
+                session_id: s.id.clone(),
+            },
+            None => Action::None,
         },
         KeyCode::Char('r') => {
             if let Some(s) = app

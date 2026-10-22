@@ -442,6 +442,7 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         tmux_window: window.map(str::to_string),
         state,
         message: None,
+        conversation: None,
         created_at: now,
         updated_at: now,
     };

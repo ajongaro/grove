@@ -151,6 +151,7 @@ fn next_session_name_skips_live_names() {
         tmux_window: None,
         state,
         message: None,
+        conversation: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -463,4 +464,145 @@ fn start_refuses_a_name_a_live_session_has() {
     let first = first.unwrap();
     assert!(format!("{:#}", second.unwrap_err()).contains("fix"));
     assert_eq!(marked.as_deref(), Some(first.id.as_str()));
+}
+
+/// An ended session `name` whose last conversation was `conversation`, with
+/// that conversation's transcript saved when `saved`.
+fn ended(e: &Env, store: &Store, id: &str, name: &str, conversation: &str, saved: bool) {
+    let now = chrono::Utc::now();
+    store
+        .save_session(&Session {
+            id: id.into(),
+            project: "my-proj".into(),
+            name: name.into(),
+            host: "local".into(),
+            tmux_window: Some("@99".into()),
+            state: State::Ended,
+            message: None,
+            conversation: Some(conversation.into()),
+            created_at: now,
+            updated_at: now,
+        })
+        .unwrap();
+    if saved {
+        let dir = e.claude_dir.join("projects").join("-my-proj");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{conversation}.jsonl")), "{}\n").unwrap();
+    }
+}
+
+/// A stand-in `claude` that writes its arguments to the returned file.
+fn recording_stub(e: &Env) -> (PathBuf, PathBuf) {
+    let stub = e.proj_dir.join("fake claude");
+    let args_file = e.proj_dir.join("args");
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 30\n",
+            args_file.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    (stub, args_file)
+}
+
+fn read_args(args_file: &std::path::Path) -> String {
+    for _ in 0..100 {
+        if args_file.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::fs::read_to_string(args_file).unwrap_or_default()
+}
+
+#[test]
+fn resume_reopens_the_last_conversation() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-resume", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    ended(&e, &store, "grove-id", "s1", "conv-2", true);
+    let (stub, args_file) = recording_stub(&e);
+    let s = resume_with_bin(
+        &tmux,
+        &store,
+        &cfg(&e),
+        &project(&e),
+        "grove-id",
+        stub.to_str().unwrap(),
+    );
+    let args = read_args(&args_file);
+    let windows = tmux.list_windows("grove").unwrap_or_default();
+    tmux.kill_server();
+    let s = s.unwrap();
+    let args: Vec<&str> = args.lines().collect();
+    let at = args
+        .iter()
+        .position(|a| *a == "--resume")
+        .expect("--resume");
+    assert_eq!(args[at + 1], "conv-2", "{args:?}");
+    assert!(!args.contains(&"--session-id"), "{args:?}");
+    assert_eq!((s.id.as_str(), s.name.as_str()), ("grove-id", "s1"));
+    assert_eq!(s.state, State::Starting);
+    assert_ne!(s.tmux_window.as_deref(), Some("@99"));
+    assert!(windows.contains(s.tmux_window.as_ref().unwrap()));
+    assert_eq!(store.get_session("grove-id").unwrap(), s);
+}
+
+#[test]
+fn resume_takes_a_free_name_when_its_own_is_in_use() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-resumename", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    ended(&e, &store, "old", "s1", "conv-old", true);
+    let (stub, _) = recording_stub(&e);
+    let live = start_with_bin(
+        &tmux,
+        &store,
+        &cfg(&e),
+        &project(&e),
+        None,
+        None,
+        stub.to_str().unwrap(),
+    );
+    let s = resume_with_bin(
+        &tmux,
+        &store,
+        &cfg(&e),
+        &project(&e),
+        "old",
+        stub.to_str().unwrap(),
+    );
+    tmux.kill_server();
+    assert_eq!(live.unwrap().name, "s1");
+    assert_eq!(s.unwrap().name, "s2");
+}
+
+#[test]
+fn resume_needs_a_saved_conversation() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-resumenone", std::process::id()));
+    ended(&e, &store, "grove-id", "s1", "conv-2", false);
+    let err = resume(&tmux, &store, &cfg(&e), &project(&e), "grove-id").unwrap_err();
+    assert!(err.to_string().contains("nothing to resume"), "{err}");
+    assert_eq!(store.get_session("grove-id").unwrap().state, State::Ended);
+}
+
+#[test]
+fn resume_leaves_live_sessions_alone() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-resumelive", std::process::id()));
+    ended(&e, &store, "grove-id", "s1", "conv-2", true);
+    let mut s = store.get_session("grove-id").unwrap();
+    s.state = State::Working;
+    store.save_session(&s).unwrap();
+    assert!(resume(&tmux, &store, &cfg(&e), &project(&e), "grove-id").is_err());
+    assert_eq!(store.get_session("grove-id").unwrap(), s);
 }

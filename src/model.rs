@@ -65,8 +65,19 @@ pub struct Session {
     pub tmux_window: Option<String>,
     pub state: State,
     pub message: Option<String>,
+    /// The Claude conversation the session last ran, as its hooks report
+    /// it: /clear and /resume start a new one in the same window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl Session {
+    /// The conversation to resume: the first one has the session's own id.
+    pub fn conversation_id(&self) -> &str {
+        self.conversation.as_deref().unwrap_or(&self.id)
+    }
 }
 
 /// Lowercase; every run of non-alphanumerics becomes one `-`; trimmed.
@@ -97,6 +108,29 @@ mod tests {
         ];
         let glyphs: Vec<_> = all.iter().map(|s| s.glyph()).collect();
         assert_eq!(glyphs, ["🌱", "🌿", "🌳", "💧", "🍂"]);
+    }
+
+    #[test]
+    fn conversation_defaults_to_the_session_id() {
+        // Sessions saved before Grove recorded conversations.
+        let s: Session = serde_json::from_str(
+            r#"{"id":"abc","project":"p","name":"s1","host":"local","tmux_window":null,
+               "state":"ended","message":null,
+               "created_at":"2026-10-06T10:00:00Z","updated_at":"2026-10-06T10:00:00Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(s.conversation, None);
+        assert_eq!(s.conversation_id(), "abc");
+        let s = Session {
+            conversation: Some("def".into()),
+            ..s
+        };
+        assert_eq!(s.conversation_id(), "def");
+        assert!(
+            serde_json::to_string(&s)
+                .unwrap()
+                .contains(r#""conversation":"def""#)
+        );
     }
 
     #[test]

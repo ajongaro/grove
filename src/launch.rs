@@ -43,6 +43,22 @@ fn build_with_bin(
     prompt: Option<&str>,
     bin: &str,
 ) -> Result<LaunchSpec> {
+    build_spec(cfg, paths, project, session_id, None, name, prompt, bin)
+}
+
+/// `resume` names the conversation to reopen; without it, a new one starts
+/// with the session's own id.
+#[allow(clippy::too_many_arguments)]
+fn build_spec(
+    cfg: &Config,
+    paths: &Paths,
+    project: &Project,
+    session_id: &str,
+    resume: Option<&str>,
+    name: &str,
+    prompt: Option<&str>,
+    bin: &str,
+) -> Result<LaunchSpec> {
     let account = cfg.account_for(&project.path);
     let account_path = account_dir(&account)?;
     if !project.path.is_dir() {
@@ -56,8 +72,13 @@ fn build_with_bin(
     let lossy = |p: PathBuf| p.to_string_lossy().into_owned();
     let mut argv = vec![
         bin.to_string(),
-        "--session-id".into(),
-        session_id.into(),
+        if resume.is_some() {
+            "--resume"
+        } else {
+            "--session-id"
+        }
+        .into(),
+        resume.unwrap_or(session_id).into(),
         "--settings".into(),
         lossy(paths.run.join("hooks.json")),
         "--mcp-config".into(),
@@ -191,24 +212,106 @@ pub fn start_with_bin(
         tmux_window: None,
         state: State::Starting,
         message: None,
+        conversation: None,
         created_at: now,
         updated_at: now,
     };
     // Written before the window exists so the first hook finds it.
     store.save_session(&session)?;
-    let window = match tmux.new_window(
+    if let Err(e) = open_window(tmux, store, cfg, project, &spec, &mut session) {
+        let _ = store.delete_session(&session.id);
+        return Err(e);
+    }
+    Ok(session)
+}
+
+/// Reopens ended session `id` in a new window, resuming its last
+/// conversation. It keeps its id, so its history and stats carry on, and
+/// its name unless a live session has taken it.
+pub fn resume(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    id: &str,
+) -> Result<Session> {
+    resume_with_bin(tmux, store, cfg, project, id, &claude_bin())
+}
+
+/// `resume` with the program to run swapped out (tests use a stand-in).
+pub fn resume_with_bin(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    id: &str,
+    bin: &str,
+) -> Result<Session> {
+    let Some(old) = store.get_session(id).filter(|s| s.state == State::Ended) else {
+        bail!("only an ended session can be resumed");
+    };
+    let conversation = old.conversation_id().to_string();
+    let account = account_dir(&cfg.account_for(&project.path))?;
+    if !transcript_saved(&account, &conversation) {
+        bail!("nothing to resume: {} never saved a conversation", old.name);
+    }
+    let mut session = old.clone();
+    if store
+        .list_sessions(Some(&old.project))
+        .iter()
+        .any(|s| s.state != State::Ended && s.name == old.name)
+    {
+        session.name = next_session_name(store, &old.project);
+    }
+    let spec = build_spec(
+        cfg,
+        &store.paths,
+        project,
+        id,
+        Some(&conversation),
+        &session.name,
+        None,
+        bin,
+    )?;
+    session.state = State::Starting;
+    session.message = None;
+    session.tmux_window = None;
+    session.updated_at = chrono::Utc::now();
+    store.save_session(&session)?;
+    if let Err(e) = open_window(tmux, store, cfg, project, &spec, &mut session) {
+        let _ = store.save_session(&old);
+        return Err(e);
+    }
+    Ok(session)
+}
+
+/// Whether Claude saved conversation `id` under account folder `account`:
+/// transcripts live at `projects/<folder>/<id>.jsonl`.
+fn transcript_saved(account: &std::path::Path, id: &str) -> bool {
+    let file = format!("{id}.jsonl");
+    std::fs::read_dir(account.join("projects"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|d| d.path().join(&file).is_file())
+}
+
+/// Opens `spec`'s window for `session`, tags it, and records the window.
+fn open_window(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    spec: &LaunchSpec,
+    session: &mut Session,
+) -> Result<()> {
+    let window = tmux.new_window(
         &cfg.tmux_session,
         &spec.window_name,
         &spec.cwd,
         &spec.env,
         &spec.argv,
-    ) {
-        Ok(w) => w,
-        Err(e) => {
-            let _ = store.delete_session(&session.id);
-            return Err(e);
-        }
-    };
+    )?;
     if let Some(color) = &project.color {
         let _ = tmux.set_window_option(&window, "window-status-style", &format!("fg={color}"));
     }
@@ -223,11 +326,11 @@ pub fn start_with_bin(
     );
     // Re-read: a hook may already have moved the state on.
     if let Some(latest) = store.get_session(&session.id) {
-        session = latest;
+        *session = latest;
     }
     session.tmux_window = Some(window);
-    store.save_session(&session)?;
-    Ok(session)
+    store.save_session(session)?;
+    Ok(())
 }
 
 /// Makes sure the Grove tmux session exists with the dashboard in window 0,

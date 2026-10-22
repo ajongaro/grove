@@ -44,6 +44,7 @@ fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session 
         tmux_window: window.map(str::to_string),
         state,
         message: None,
+        conversation: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }

@@ -136,7 +136,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
-| `Enter` | session | jump to its window |
+| `Enter` | session | jump to its window; on an ended one, resume its conversation |
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
@@ -167,6 +167,12 @@ front of its tmux window name. The tmux status bar lists only the
 window you're in and the windows that need you (in red); the dashboard has the
 rest. Each project row counts its live
 sessions by state: 💧 needs you, 🌳 your turn, 🌿 working.
+
+An ended session stays listed until you clear it (`c`). **Enter** on one
+reopens it in a new window with `claude --resume`, picking up its last
+conversation (Grove follows it through `/clear` and `/resume`). It keeps its
+name, unless a live session has taken it since, and its cost keeps adding
+to the same row.
 
 While the dashboard runs, it sends a **desktop alert** when a session needs
 you, here or on a finca, unless that session's window is already on screen

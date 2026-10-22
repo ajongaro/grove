@@ -517,6 +517,7 @@ mod tests {
                 tmux_window: None,
                 state: State::Working,
                 message: None,
+                conversation: None,
                 created_at: now,
                 updated_at: now,
             })

@@ -62,6 +62,18 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             ctx.tmux.select_window(&window)?;
             Outcome::Nothing
         }
+        Action::Resume { session_id } => {
+            let Some(old) = store.get_session(&session_id) else {
+                return Ok(Outcome::Nothing);
+            };
+            let project = store.get_project(&old.project)?;
+            let cfg = load_config(&store.paths)?;
+            let s = launch::resume(&ctx.tmux, store, &cfg, &project, &session_id)?;
+            if let Some(w) = &s.tmux_window {
+                ctx.tmux.select_window(w)?;
+            }
+            Outcome::Message(format!("Resumed {} in {}", s.name, project.name))
+        }
         Action::Kill { session_id } => {
             let name = store.get_session(&session_id).map(|s| s.name);
             match crate::launch::kill(&ctx.tmux, store, &session_id)? {
