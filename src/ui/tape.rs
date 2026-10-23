@@ -24,10 +24,11 @@ fn label(symbol: &str) -> &str {
     }
 }
 
+/// Up, down or flat as it shows, to one decimal.
 fn change(pct: f64) -> Span<'static> {
-    if pct >= 0.005 {
+    if pct >= 0.05 {
         Span::styled(format!("▲{pct:.1}%"), Style::new().fg(UP))
-    } else if pct <= -0.005 {
+    } else if pct <= -0.05 {
         Span::styled(format!("▼{:.1}%", -pct), Style::new().fg(DOWN))
     } else {
         Span::raw("·0.0%").dark_gray()
@@ -153,7 +154,7 @@ mod tests {
             indexes: vec![
                 q("SPY", 500.0, 0.4),
                 q("DIA", 420.0, -0.2),
-                q("QQQ", 480.0, 0.0),
+                q("QQQ", 480.0, 0.03),
             ],
             symbols: [
                 "AAPL", "AMD", "AMZN", "ANET", "ASML", "BE", "GME", "GOOG", "GS",

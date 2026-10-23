@@ -1404,7 +1404,7 @@ fn help_fits_a_laptop_sized_window() {
     for k in [
         "C-g",
         "open a shell there",
-        "shell: quick popup / stays open",
+        "shell: popup / stays (pins too)",
         "open in your editor",
         "rename",
         "🌱 starting  🌿 working  🌳 your turn  💧 needs you  🍂 ended",
@@ -2860,6 +2860,50 @@ fn the_pinned_pane_moves_jumps_unpins_and_kills() {
             session_id: "a1".into()
         }
     );
+}
+
+#[test]
+fn s_on_a_pin_opens_a_shell_on_its_machine() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1"), pin(Some("pi"), "pi-n0")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    // Local: its project's shells, popup or window.
+    assert_eq!(
+        handle_key(&mut app, ch('s')),
+        Action::ProjectShell {
+            slug: "alpha".into()
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('S')),
+        Action::NewShell {
+            slug: "alpha".into()
+        }
+    );
+    // A finca's: a shell there, by the destination that last answered.
+    app.pin_idx = 1;
+    for c in ['s', 'S'] {
+        assert_eq!(
+            handle_key(&mut app, ch(c)),
+            Action::FincaShell {
+                slug: "pi".into(),
+                via: Some("me@pi".into()),
+            }
+        );
+    }
+    // Not answering: says so.
+    poll(
+        &mut app,
+        "pi",
+        Reach::Unreachable {
+            error: "timeout".into(),
+        },
+        t0(),
+    );
+    assert_eq!(handle_key(&mut app, ch('s')), Action::None);
+    assert!(app.footer.as_deref().unwrap().contains("isn't answering"));
 }
 
 #[test]

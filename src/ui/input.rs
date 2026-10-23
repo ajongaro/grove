@@ -2,7 +2,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use super::app::{Action, App, FincaItem, Mode, Pane, PromptKind, Reply, state_is_live};
+use super::app::{Action, App, FincaItem, Mode, Pane, PinRow, PromptKind, Reply, state_is_live};
 use super::complete::{complete_path, complete_ssh_host};
 use crate::model::State;
 use crate::todo::Effect;
@@ -848,6 +848,31 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     }
                     Action::None
                 }
+                // A shell on its machine: its project's here, or the finca's.
+                KeyCode::Char(c @ ('s' | 'S')) => match row {
+                    Some(r) if r.unreachable => {
+                        let name = r.finca.as_ref().map_or("it", |f| f.1.as_str());
+                        app.footer = Some(format!("{name} isn't answering"));
+                        Action::None
+                    }
+                    Some(PinRow {
+                        finca: Some((slug, _, via)),
+                        ..
+                    }) => Action::FincaShell {
+                        slug: slug.clone(),
+                        via: via.clone(),
+                    },
+                    Some(r) => match app.sessions.iter().find(|s| s.id == r.pin.id) {
+                        Some(s) if c == 's' => Action::ProjectShell {
+                            slug: s.project.clone(),
+                        },
+                        Some(s) => Action::NewShell {
+                            slug: s.project.clone(),
+                        },
+                        None => Action::None,
+                    },
+                    None => Action::None,
+                },
                 // Keys that work anywhere on the dashboard pass through;
                 // session and project keys don't apply here.
                 KeyCode::Char('q' | '?' | 'R' | 'F' | 'a' | 't' | 'h' | 'l')

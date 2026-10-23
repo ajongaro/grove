@@ -30,7 +30,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("Enter", "start a session"),
             ("n", "start a named session"),
-            ("s S", "shell: quick popup / stays open"),
+            ("s S", "shell: popup / stays (pins too)"),
             ("e", "edit the project file"),
             ("c", "clear ended sessions"),
             ("d", "remove from Grove (folder kept)"),

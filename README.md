@@ -143,6 +143,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `e` | dashboard | edit the project file in `$EDITOR` (popup) |
 | `s` | dashboard | a quick shell in the project's folder (popup; `exit` closes it) |
 | `S` | dashboard | a shell in the project's folder that stays open (see [Shells](#shells)) |
+| `s` `S` | Pinned | the same for a pinned session's project, or a shell on its finca |
 | `r` | session | rename it, or a shell (tmux window too) |
 | `x` | session | kill it, or close a shell (asks first) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
