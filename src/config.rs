@@ -30,6 +30,8 @@ pub struct Config {
     /// Grove's status line in its sessions (statusline.rs). Off leaves your
     /// own Claude Code status line.
     pub statusline: bool,
+    /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
+    pub ticker: TickerConfig,
 }
 
 impl Default for Config {
@@ -44,7 +46,45 @@ impl Default for Config {
             claude_args: Vec::new(),
             alerts: true,
             statusline: true,
+            ticker: TickerConfig::default(),
         }
+    }
+}
+
+/// `[ticker]` in config.toml.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TickerConfig {
+    /// A Finnhub API key (finnhub.io, free). Empty means `$FINNHUB_API_KEY`;
+    /// with neither, there's no ticker.
+    pub key: String,
+    /// Shown first on every page, change only. SPY, DIA and QQQ show as
+    /// S&P, Dow and Nasdaq, whose ETFs they are.
+    pub indexes: Vec<String>,
+    /// The rest, a page at a time.
+    pub symbols: Vec<String>,
+}
+
+impl Default for TickerConfig {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            indexes: ["SPY", "DIA", "QQQ"].map(String::from).to_vec(),
+            symbols: Vec::new(),
+        }
+    }
+}
+
+impl TickerConfig {
+    /// The key to fetch with, if any: the config's, else `$FINNHUB_API_KEY`.
+    pub fn key(&self) -> Option<String> {
+        self.key_or(std::env::var("FINNHUB_API_KEY").ok())
+    }
+
+    fn key_or(&self, env: Option<String>) -> Option<String> {
+        Some(self.key.trim().to_string())
+            .filter(|k| !k.is_empty())
+            .or_else(|| env.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()))
     }
 }
 
@@ -348,6 +388,29 @@ mod tests {
         assert_eq!(derive_account_name("~/.claude-work/"), "work");
         assert_eq!(derive_account_name("~/.claude"), "default");
         assert_eq!(derive_account_name("/srv/acme"), "acme");
+    }
+
+    #[test]
+    fn ticker_is_off_without_a_key() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert_eq!(cfg.ticker.key_or(None), None);
+        assert_eq!(cfg.ticker.indexes, ["SPY", "DIA", "QQQ"]);
+        assert!(cfg.ticker.symbols.is_empty());
+        // The environment's key will do.
+        assert_eq!(
+            cfg.ticker.key_or(Some(" k1 ".into())).as_deref(),
+            Some("k1")
+        );
+        assert_eq!(cfg.ticker.key_or(Some("".into())), None);
+        let cfg: Config = toml::from_str(
+            "[ticker]\nkey = \"k2\"\nsymbols = [\"AAPL\", \"BRK.B\"]\nindexes = []\n",
+        )
+        .unwrap();
+        // The config's wins.
+        assert_eq!(cfg.ticker.key_or(Some("k1".into())).as_deref(), Some("k2"));
+        assert_eq!(cfg.ticker.symbols, ["AAPL", "BRK.B"]);
+        assert!(cfg.ticker.indexes.is_empty());
+        assert!(toml::from_str::<Config>("[ticker]\nsymbol = []\n").is_err());
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub mod input;
 pub mod render;
 pub mod run;
 pub mod search;
+mod tape;
 
 #[cfg(test)]
 mod tests;

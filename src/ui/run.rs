@@ -595,9 +595,10 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     app.host = short_host();
     app.cfg = ctx.cfg.clone();
     app.reload(&ctx.store);
+    let ticker = crate::ticker::Ticker::start(ctx.store.paths.clone());
 
     let mut terminal = ratatui::init();
-    let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller);
+    let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller, &ticker);
     ratatui::restore();
     result
 }
@@ -609,6 +610,7 @@ fn event_loop(
     rx: &mpsc::Receiver<()>,
     finca_rx: &mpsc::Receiver<()>,
     poller: &crate::finca::Poller,
+    ticker: &crate::ticker::Ticker,
 ) -> Result<()> {
     let mut flagged = HashMap::new();
     let mut alerts = crate::alert::Alerts::default();
@@ -685,6 +687,13 @@ fn event_loop(
         }
         while let Ok(r) = poller.results.try_recv() {
             app.apply_poll(r);
+        }
+        while let Ok(u) = ticker.results.try_recv() {
+            match u {
+                crate::ticker::Update::Off => app.ticker = None,
+                crate::ticker::Update::Prices(tape) => app.ticker = Some(tape),
+                crate::ticker::Update::Failed(e) => app.footer = Some(format!("ticker: {e}")),
+            }
         }
         if finca_rx.try_recv().is_ok() {
             while finca_rx.try_recv().is_ok() {}

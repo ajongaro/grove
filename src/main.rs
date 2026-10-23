@@ -19,6 +19,7 @@ mod stats;
 mod status;
 mod statusline;
 mod store;
+mod ticker;
 mod titles;
 mod tmux;
 mod todo;

@@ -214,6 +214,32 @@ follow your clock, from dawn to a starry night, and its weather follows your
 sessions: leaves blow through while they work, it rains while one needs you,
 and the sun (or moon) comes out when all is calm.
 
+### Stock ticker
+
+An optional line over the footer shows stock prices: the S&P, Dow and
+Nasdaq, then your own symbols a page at a time, turning every 8 seconds.
+
+```
+ S&P ▲0.4%  Dow ▲0.2%  Nasdaq ▼0.1% │ AAPL 231.40 ▲1.2%  NVDA 118.05 ▼0.8%  2/4
+```
+
+It's off until you give it a free [Finnhub](https://finnhub.io) key, in
+`config.toml` or as `$FINNHUB_API_KEY`:
+
+```toml
+[ticker]
+key = "…"
+symbols = ["AAPL", "NVDA", "BRK.B"]
+# indexes = ["SPY", "DIA", "QQQ"]     # the default; these three show as S&P, Dow, Nasdaq
+```
+
+Prices come every 2 minutes (every 15 while the market's closed) and
+are kept in `run/ticker.json`, so a restarted dashboard shows them at
+once. The indexes are their ETFs, since Finnhub's free plan quotes US
+stocks. Outside trading hours the line says pre-market, after hours or
+closed. If it can't fetch, the footer says why. Changes to `[ticker]`
+show within half a minute, no restart needed.
+
 Each new session starts knowing its project's name, folder and summary.
 Claude can update the summary, and see much more, through Grove's MCP
 tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp)).
@@ -427,7 +453,8 @@ sessions/<uuid>.json      one per session: state, window, message
 stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
-                          (titles/ caches what each conversation is about)
+                          (titles/ caches what each conversation is about,
+                          ticker.json the ticker's last prices)
 grove.log                 errors from hooks / MCP
 ```
 
@@ -439,6 +466,7 @@ editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
 statusline = true                      # Grove's status line in its sessions
+# [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
 
@@ -457,6 +485,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/statusline.rs` | `grove statusline`: the status line in Grove's sessions |
 | `src/stats.rs` | what each status line saw: per-session and per-day, per-account totals |
 | `src/titles.rs` | what each conversation is about, from its transcript, for `/` |
+| `src/ticker.rs` | the stock ticker's prices from Finnhub, fetched in the background |
 | `src/store.rs` | all disk reads/writes (atomic) |
 | `src/config.rs` | `config.toml`, accounts and which folder picks which |
 | `src/launch.rs` | builds the `claude` command + window env |
@@ -468,7 +497,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
 | `src/todo.rs` | to-do lists and their vim keys (pure) |
-| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the sky, olive trees, harvest and quips, `search.rs` finding a session (`/`), `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
+| `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the sky, olive trees, harvest and quips, `search.rs` finding a session (`/`), `tape.rs` the ticker line, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
 | `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |

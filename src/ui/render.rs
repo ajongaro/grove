@@ -32,9 +32,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     } else {
         0
     };
-    let [header, main, footer] = Layout::vertical([
+    // The ticker takes a row over the footer when there's room for one.
+    let ticker = app
+        .ticker
+        .as_ref()
+        .filter(|_| frame.area().height >= TICKER_MIN_HEIGHT)
+        .and_then(|t| super::tape::line(t, frame.area().width as usize, now));
+    let [header, main, tape, footer] = Layout::vertical([
         Constraint::Length(header_h),
         Constraint::Min(1),
+        Constraint::Length(u16::from(ticker.is_some())),
         Constraint::Length(1),
     ])
     .areas(frame.area());
@@ -48,7 +55,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     };
     if let Some((sel, reply)) = grid {
         let area = Rect {
-            height: main.height + footer.height,
+            height: main.height + tape.height + footer.height,
             ..main
         };
         super::grid::render_grid(frame, app, sel, reply, area, now);
@@ -90,6 +97,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             render_todos(frame, app, todo);
         }
         None => render_sessions(frame, app, right, now),
+    }
+    if let Some(line) = ticker {
+        frame.render_widget(Paragraph::new(line), tape);
     }
     render_footer(frame, app, footer, now);
 
@@ -894,6 +904,8 @@ fn highlight(focused: bool) -> Style {
 /// the window height below which it's hidden.
 const HEADER_ROWS: u16 = 3;
 const HEADER_MIN_HEIGHT: u16 = 24;
+/// The window height below which the ticker gives its row back.
+const TICKER_MIN_HEIGHT: u16 = 16;
 
 use super::flair;
 

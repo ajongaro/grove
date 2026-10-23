@@ -3502,3 +3502,35 @@ fn search_reaches_finca_sessions_live_and_ended() {
         }
     );
 }
+
+fn tape() -> crate::ticker::Tape {
+    let q = |symbol: &str, price, change_pct| crate::ticker::Quote {
+        symbol: symbol.into(),
+        price,
+        change_pct,
+    };
+    crate::ticker::Tape {
+        indexes: vec![q("SPY", 500.0, 0.4)],
+        symbols: vec![q("AAPL", 231.4, 1.2), q("NVDA", 118.05, -0.8)],
+        market: crate::ticker::Market::Open,
+        at: t0(),
+    }
+}
+
+#[test]
+fn the_ticker_sits_over_the_footer() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    let out = screen(&app, 120, 30);
+    assert!(!out.contains("S&P"), "{out}");
+    app.ticker = Some(tape());
+    let out = screen(&app, 120, 30);
+    let lines: Vec<&str> = out.lines().collect();
+    let row = lines[lines.len() - 2];
+    assert!(
+        row.starts_with(" S&P ▲0.4% │ AAPL 231.40 ▲1.2%  NVDA 118.05 ▼0.8%"),
+        "{row}"
+    );
+    assert!(lines[lines.len() - 1].contains("? help"));
+    // A short window gives the row back to the lists.
+    assert!(!screen(&app, 120, 15).contains("S&P"));
+}
