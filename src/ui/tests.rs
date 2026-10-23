@@ -1370,7 +1370,8 @@ fn help_lists_prompt_and_editing_keys() {
         "clear the line",
         "back to projects",
         "prefix r",
-        "send the clipboard to a finca",
+        "finca: back / send the clipboard",
+        "move between pinned desk columns",
     ] {
         assert!(out.contains(k), "help lacks {k:?}\n{out}");
     }

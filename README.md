@@ -133,6 +133,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | Key | Where | Does |
 |---|---|---|
 | `C-g` | anywhere | back to the dashboard |
+| `C-h` `C-j` `C-k` `C-l` | pinned desk | move between columns |
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
@@ -259,8 +260,9 @@ that isn't answering keeps its pins, dimmed, until it does. Pins live in
 
 `V` opens the **pinned desk**: every pinned session side by side, each
 column the live session itself (a finca's over ssh), so you can type in
-any of them and stay there. Click a column, or use your tmux prefix and an
-arrow, to move between them; `C-g` goes back to the dashboard and `V`
+any of them and stay there. `C-h` `C-j` `C-k` `C-l` move between columns
+(at the desk's edge the key reaches Claude as usual), as do a click or
+your tmux prefix and an arrow; `C-g` goes back to the dashboard and `V`
 returns to the desk as you left it. The sessions keep their own windows,
 so closing the desk ends nothing. Pin or unpin and the desk is rebuilt the
 next time you open it; a column closes when its session ends. Columns

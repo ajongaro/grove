@@ -107,8 +107,21 @@ unbind -n C-y
         "run-shell -b \"'{}' paste --session '#{{session_name}}' --pane '#{{pane_id}}' >/dev/null 2>&1\"",
         exe.replace(['\'', '"'], "")
     );
+    // On the pinned desk, C-h/j/k/l move between columns; at its edge, or
+    // anywhere else (a column's own session included), the key reaches the
+    // program, so Claude keeps C-j for a newline.
+    let desk_moves: String = [("h", "L", "left"), ("j", "D", "bottom"), ("k", "U", "top"), ("l", "R", "right")]
+        .iter()
+        .map(|(key, dir, edge)| {
+            format!(
+                "bind -n C-{key} if -F \"#{{&&:#{{==:#{{session_name}},{desk}}},#{{?pane_at_{edge},0,1}}}}\" \"select-pane -{dir}\" \"send-keys C-{key}\"\n",
+                desk = crate::desk::SESSION
+            )
+        })
+        .collect();
     format!(
         "{base}bind -n C-g switch-client -t ={session}:=dashboard\n\
+         {desk_moves}\
          bind -T grove-finca C-q switch-client -t ={session}\n\
          bind -T grove-shell C-q switch-client -t ={session}\n\
          # C-v in a finca window sends this Mac's clipboard file or image there (transfer.rs).\n\
@@ -284,7 +297,6 @@ mod tests {
             "split-window",
             "mode-keys",
             "set -g base-index",
-            "select-pane",
             "is_vim",
             "copy-mode",
         ] {
@@ -294,6 +306,10 @@ mod tests {
             );
         }
         assert!(c.contains("set -s escape-time 0"), "{c}");
+        // Pane moves only on the pinned desk, never everywhere.
+        for l in c.lines().filter(|l| l.contains("select-pane")) {
+            assert!(l.contains("#{session_name},desk}"), "{l}");
+        }
     }
 
     #[test]
@@ -307,6 +323,14 @@ mod tests {
         // C-y belongs to Claude (yank); Grove only takes C-g, and releases
         // the C-y older Groves bound (re-sourcing a config never unbinds).
         assert!(c.contains("unbind -n C-y"), "{c}");
+        // C-h/j/k/l move between desk columns, and pass through at its edges.
+        assert!(
+            c.contains("bind -n C-j if -F \"#{&&:#{==:#{session_name},desk},#{?pane_at_bottom,0,1}}\" \"select-pane -D\" \"send-keys C-j\""),
+            "{c}"
+        );
+        for k in ["C-h", "C-k", "C-l"] {
+            assert!(c.contains(&format!("bind -n {k} if -F ")), "{k}: {c}");
+        }
         assert!(!c.lines().any(|l| l.starts_with("bind -n C-y")), "{c}");
         assert!(
             c.contains("bind -T grove-finca C-q switch-client -t =g2"),
