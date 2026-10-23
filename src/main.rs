@@ -1,5 +1,6 @@
 mod alert;
 mod config;
+mod desk;
 mod doctor;
 mod finca;
 mod hook;
@@ -85,6 +86,9 @@ enum Cmd {
     /// attach (another Grove connecting to this finca) lands in it.
     #[command(hide = true)]
     Focus { window: String },
+    /// Internal: a column of the pinned desk (desk.rs) showing a session.
+    #[command(hide = true)]
+    DeskAttach { session: String },
     /// Internal: C-v in a finca window (sends the clipboard, pastes the path).
     #[command(hide = true)]
     Paste {
@@ -249,9 +253,33 @@ fn main() {
         }
         Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
+        Some(Cmd::DeskAttach { session }) => desk_attach(&paths, &session),
         Some(Cmd::Finca(cmd)) => exit_on_err(finca_cmd(&paths, cmd)),
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),
+    }
+}
+
+/// `grove desk-attach`: attaches to the session's column until it closes,
+/// then tidies up. A failure waits for Enter, so the column can be read.
+fn desk_attach(paths: &Paths, id: &str) {
+    let tmux = grove_tmux(paths);
+    match desk::prepare(&tmux, &Store::new(paths.clone()), id) {
+        Ok(name) => {
+            // A tmux client inside one of this server's panes: TMUX would
+            // make it refuse.
+            let _ = tmux
+                .cmd()
+                .args(["attach-session", "-t", &format!("={name}")])
+                .env_remove("TMUX")
+                .status();
+            let _ = tmux.kill_session(&name);
+        }
+        Err(e) => {
+            eprintln!("{e:#}\n\n(Enter closes this column)");
+            let _ = std::io::stdin().read_line(&mut String::new());
+            std::process::exit(1);
+        }
     }
 }
 

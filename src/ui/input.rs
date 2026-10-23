@@ -287,13 +287,20 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     {
         return Action::None;
     }
-    if let KeyCode::Char(c @ ('v' | 'V')) = key.code {
-        app.grid_pinned = c == 'V';
+    if key.code == KeyCode::Char('v') {
         app.mode = Mode::Grid {
             sel: 0,
             reply: None,
         };
         return Action::None;
+    }
+    if key.code == KeyCode::Char('V') {
+        let pins = app
+            .pinned_rows()
+            .into_iter()
+            .map(|r| (r.pin, r.finca.and_then(|f| f.2)))
+            .collect();
+        return Action::OpenDesk { pins };
     }
     if key.code == KeyCode::Char('/') {
         app.mode = Mode::Search {
@@ -704,22 +711,8 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> A
     let cols = app.grid_cols.get();
     let mut action = Action::None;
     match key.code {
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('v') => {
             app.mode = Mode::Normal;
-            return Action::None;
-        }
-        // Its own key closes a view; the other's switches to it.
-        KeyCode::Char(c @ ('v' | 'V')) => {
-            let pinned = c == 'V';
-            app.mode = if app.grid_pinned == pinned {
-                Mode::Normal
-            } else {
-                app.grid_pinned = pinned;
-                Mode::Grid {
-                    sel: 0,
-                    reply: None,
-                }
-            };
             return Action::None;
         }
         KeyCode::Char('?') => {
@@ -890,7 +883,7 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 },
                 // Keys that work anywhere on the dashboard pass through;
                 // session and project keys don't apply here.
-                KeyCode::Char('q' | '?' | 'R' | 'F' | 'a' | 't' | 'h' | 'l')
+                KeyCode::Char('q' | '?' | 'R' | 'F' | 'a' | 't' | 'h' | 'l' | 'v' | 'V')
                 | KeyCode::Tab
                 | KeyCode::BackTab
                 | KeyCode::Left

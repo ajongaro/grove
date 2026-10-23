@@ -762,6 +762,13 @@ pub fn connect_argv(f: &Finca, dest: &str) -> Vec<String> {
     vec!["sh".into(), "-c".into(), ssh_script(f, dest, Some(&remote))]
 }
 
+/// Like `connect_argv`, running `cmd` (quoted for a shell) there instead
+/// of the dashboard.
+pub fn remote_argv(f: &Finca, dest: &str, cmd: &str) -> Vec<String> {
+    let remote = login_shell_cmd(cmd);
+    vec!["sh".into(), "-c".into(), ssh_script(f, dest, Some(&remote))]
+}
+
 /// Like `connect_argv`, but with no remote command: ssh starts the remote
 /// user's login shell.
 pub fn shell_argv(f: &Finca, dest: &str) -> Vec<String> {

@@ -152,7 +152,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
 | `v` | dashboard | session grid: every live session's screen |
-| `V` | dashboard | the grid of just your pinned sessions, as columns side by side |
+| `V` | dashboard | the pinned desk: your pinned sessions, live, side by side |
 | `R` | dashboard | restart on a new Grove, after upgrading |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
@@ -257,6 +257,15 @@ unpins and `x` kills. A pin goes away when its session ends; a finca
 that isn't answering keeps its pins, dimmed, until it does. Pins live in
 `~/.grove/pins.json`.
 
+`V` opens the **pinned desk**: every pinned session side by side, each
+column the live session itself (a finca's over ssh), so you can type in
+any of them and stay there. Click a column, or use your tmux prefix and an
+arrow, to move between them; `C-g` goes back to the dashboard and `V`
+returns to the desk as you left it. The sessions keep their own windows,
+so closing the desk ends nothing. Pin or unpin and the desk is rebuilt the
+next time you open it; a column closes when its session ends. Columns
+narrower than 60 characters tile instead.
+
 ### Shells
 
 `s` opens a quick shell in a popup over the dashboard: handy for one
@@ -282,12 +291,6 @@ waiting for its next message without leaving the grid, and `x` kills one
 are answered in the session itself. A finca's tiles dim and say `stale`
 when it stops answering; one running an older Grove shows states without
 screens until you `grove finca update`.
-
-`V` shows just your [pinned sessions](#pinned-sessions), in pin order, as
-full-height columns side by side, so you can watch a few closely. The keys
-are the grid's; `v` and `V` switch between the two, and a view's own key
-(or `Esc`) closes it. When the window is too narrow for a column each, they
-wrap onto more rows.
 
 ### Updating
 
@@ -493,6 +496,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/statusline.rs` | `grove statusline`: the status line in Grove's sessions |
 | `src/stats.rs` | what each status line saw: per-session and per-day, per-account totals |
 | `src/titles.rs` | what each conversation is about, from its transcript, for `/` |
+| `src/desk.rs` | the pinned desk (`V`): a live column per pinned session |
 | `src/ticker.rs` | the stock ticker's prices from Finnhub, fetched in the background |
 | `src/store.rs` | all disk reads/writes (atomic) |
 | `src/config.rs` | `config.toml`, accounts and which folder picks which |

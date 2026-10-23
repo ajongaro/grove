@@ -93,7 +93,7 @@ setw -g window-status-current-format "#[reverse] #I #W #[default]"
 setw -g window-status-format "#{?#{m:💧 *,#W},#[fg=red#,bold] #I #W #[default],}"
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
-bind -n C-g select-window -t :=dashboard
+# (Its session by name too, so C-g works from the pinned desk.)
 # Older Groves took C-y (Claude's yank); re-sourcing never unbinds it.
 unbind -n C-y
 "##;
@@ -108,7 +108,8 @@ unbind -n C-y
         exe.replace(['\'', '"'], "")
     );
     format!(
-        "{base}bind -T grove-finca C-q switch-client -t ={session}\n\
+        "{base}bind -n C-g switch-client -t ={session}:=dashboard\n\
+         bind -T grove-finca C-q switch-client -t ={session}\n\
          bind -T grove-shell C-q switch-client -t ={session}\n\
          # C-v in a finca window sends this Mac's clipboard file or image there (transfer.rs).\n\
          bind -T grove-finca C-v {paste}\n\
@@ -300,7 +301,7 @@ mod tests {
         let (_d, p) = paths();
         let c = tmux_conf("g2", &p, None);
         assert!(
-            c.contains("bind -n C-g select-window -t :=dashboard"),
+            c.contains("bind -n C-g switch-client -t =g2:=dashboard"),
             "{c}"
         );
         // C-y belongs to Claude (yank); Grove only takes C-g, and releases
@@ -440,7 +441,7 @@ mod tests {
         assert!(
             keys.lines().any(|l| l.contains("-T root")
                 && l.split_whitespace().any(|w| w == "C-g")
-                && l.ends_with("select-window -t :=dashboard")),
+                && l.ends_with("switch-client -t =grove:=dashboard")),
             "{keys}"
         );
     }

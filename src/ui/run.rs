@@ -186,6 +186,12 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 .switch_client(&format!("={}", crate::finca::shell_session_name(&slug)))?;
             Outcome::Nothing
         }
+        Action::OpenDesk { pins } => {
+            let exe = crate::runfiles::grove_exe()?;
+            let columns = crate::desk::columns(store, &pins, &exe.to_string_lossy())?;
+            crate::desk::open(&ctx.tmux, &columns, &store.paths.home)?;
+            Outcome::Nothing
+        }
         Action::FincaShell { slug, via } => {
             let f = store.get_finca(&slug)?;
             let via = via.filter(|v| f.destinations().any(|d| d == v));

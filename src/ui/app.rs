@@ -183,6 +183,11 @@ pub enum Action {
         /// `project:name`, for the footer.
         label: String,
     },
+    /// The pinned desk (desk.rs): each pin with its finca's destination
+    /// that last answered.
+    OpenDesk {
+        pins: Vec<(crate::pins::Pin, Option<String>)>,
+    },
     /// A login shell on the finca, at `via` like `ConnectFinca`.
     FincaShell {
         slug: String,
@@ -297,8 +302,6 @@ pub struct App {
     pub grid_cols: std::cell::Cell<usize>,
     /// Pinned sessions in pin order (pins.json, pruned on reload).
     pub pins: Vec<crate::pins::Pin>,
-    /// The grid shows only the pinned sessions, as columns (`V`).
-    pub grid_pinned: bool,
     /// The ticker's last prices (ticker.rs), if it's on.
     pub ticker: Option<crate::ticker::Tape>,
     /// Selected row of the Pinned pane.
@@ -376,7 +379,6 @@ impl App {
             grid_cols: std::cell::Cell::new(1),
             pins: Vec::new(),
             pin_idx: 0,
-            grid_pinned: false,
             ticker: None,
         }
     }

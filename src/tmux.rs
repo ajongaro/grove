@@ -110,14 +110,74 @@ impl Tmux {
     /// Windows on screen in a client whose terminal has focus (tmux tracks
     /// focus through `focus-events`, which Grove's tmux.conf turns on).
     pub fn focused_windows(&self) -> Vec<String> {
-        let out = self
-            .run(&["list-clients", "-F", "#{window_id} #{client_flags}"])
+        let clients = self
+            .run(&[
+                "list-clients",
+                "-F",
+                "#{window_id} #{client_flags} #{session_name}",
+            ])
             .unwrap_or_default();
-        out.lines()
-            .filter_map(|l| l.split_once(' '))
-            .filter(|(_, flags)| flags.split(',').any(|f| f == "focused"))
-            .map(|(w, _)| w.to_string())
-            .collect()
+        let windows = self
+            .run(&["list-windows", "-a", "-F", "#{session_name} #{window_id}"])
+            .unwrap_or_default();
+        focused(&clients, &windows)
+    }
+
+    /// Creates a detached session with one window running `argv` and
+    /// returns that window's id.
+    pub fn new_session_window(&self, name: &str, argv: &[&str]) -> Result<String> {
+        let mut args = vec!["new-session", "-d", "-P", "-F", "#{window_id}", "-s", name];
+        args.extend(argv);
+        Ok(self.run(&args)?.trim().to_string())
+    }
+
+    /// Shows window `src` in `session` too, at its next free index.
+    pub fn link_window(&self, src: &str, session: &str) -> Result<()> {
+        self.run(&[
+            "link-window",
+            "-d",
+            "-s",
+            src,
+            "-t",
+            &format!("={session}:"),
+        ])
+        .map(|_| ())
+    }
+
+    /// Splits `target` side by side, running `argv` in the new pane.
+    pub fn split_window(&self, target: &str, cwd: &Path, argv: &[String]) -> Result<()> {
+        let mut c = self.cmd();
+        c.args(["split-window", "-h", "-d", "-t", target, "-c"])
+            .arg(cwd)
+            .args(argv);
+        let out = c.stdin(Stdio::null()).output().context("running tmux")?;
+        check(&out, &["split-window"]).map(|_| ())
+    }
+
+    pub fn select_layout(&self, target: &str, layout: &str) -> Result<()> {
+        self.run(&["select-layout", "-t", target, layout])
+            .map(|_| ())
+    }
+
+    pub fn pane_count(&self, target: &str) -> usize {
+        self.run(&["list-panes", "-t", target, "-F", "#{pane_id}"])
+            .map_or(0, |o| o.lines().count())
+    }
+
+    /// Session names on the server.
+    pub fn list_sessions(&self) -> Vec<String> {
+        self.run(&["list-sessions", "-F", "#{session_name}"])
+            .map(|o| o.lines().map(str::to_string).collect())
+            .unwrap_or_default()
+    }
+
+    /// The width of the client this runs under, if any.
+    pub fn client_width(&self) -> Option<u16> {
+        self.run(&["display-message", "-p", "#{client_width}"])
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
     }
 
     pub fn select_window(&self, target: &str) -> Result<()> {
@@ -265,6 +325,35 @@ impl Tmux {
     }
 }
 
+/// The windows focused clients show, from `list-clients` lines (window,
+/// flags, session) and `list-windows -a` lines (session, window). A desk
+/// column's client (desk.rs) is inside the desk, so the desk's focus is
+/// what counts: every window its columns show is on screen.
+fn focused(clients: &str, windows: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in clients.lines() {
+        let mut f = l.split(' ');
+        let (Some(window), Some(flags), Some(session)) = (f.next(), f.next(), f.next()) else {
+            continue;
+        };
+        if crate::desk::is_column(session) || !flags.split(',').any(|f| f == "focused") {
+            continue;
+        }
+        if session == crate::desk::SESSION {
+            out.extend(
+                windows
+                    .lines()
+                    .filter_map(|l| l.split_once(' '))
+                    .filter(|(s, _)| crate::desk::is_column(s))
+                    .map(|(_, w)| w.to_string()),
+            );
+        } else {
+            out.push(window.to_string());
+        }
+    }
+    out
+}
+
 fn check(out: &Output, args: &[&str]) -> Result<String> {
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -326,6 +415,20 @@ mod tests {
     }
     fn sh(cmd: &str) -> Vec<String> {
         vec!["sh".into(), "-c".into(), cmd.into()]
+    }
+
+    #[test]
+    fn the_desks_focus_counts_for_every_window_it_shows() {
+        let windows = "grove @1\ngrove @5\ngrove @6\ndesk @9\ndesk-aaaa @5\ndesk-bbbb @6\n";
+        // On the dashboard: its window. The desk columns' own clients
+        // never count, focused or not.
+        let clients = "@1 attached,focused grove\n@5 attached,focused desk-aaaa\n";
+        assert_eq!(focused(clients, windows), ["@1"]);
+        // On the desk: every window in a column.
+        let clients = "@9 attached,focused desk\n@5 attached desk-aaaa\n@6 attached desk-bbbb\n";
+        assert_eq!(focused(clients, windows), ["@5", "@6"]);
+        // The desk in an unfocused terminal: nothing.
+        assert!(focused("@9 attached desk\n", windows).is_empty());
     }
 
     #[test]
