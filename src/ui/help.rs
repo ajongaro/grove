@@ -18,7 +18,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Tab h l", "switch pane"),
             ("1–9", "jump to a pin"),
             ("t", "to-do list"),
-            ("v /", "session grid / find a session"),
+            ("v V /", "session grid: all / pinned; find"),
             ("a", "add a project"),
             ("R", "update Grove (after upgrading)"),
             ("?", "this help"),
@@ -52,7 +52,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("Enter", "jump to its window"),
             ("i", "reply to a waiting session"),
             ("x", "kill it (asks first)"),
-            ("v Esc", "back to the dashboard"),
+            ("v V Esc", "all / pinned / back to dashboard"),
         ],
     ),
     (

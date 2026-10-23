@@ -287,7 +287,8 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     {
         return Action::None;
     }
-    if key.code == KeyCode::Char('v') {
+    if let KeyCode::Char(c @ ('v' | 'V')) = key.code {
+        app.grid_pinned = c == 'V';
         app.mode = Mode::Grid {
             sel: 0,
             reply: None,
@@ -703,8 +704,22 @@ fn grid_key(app: &mut App, sel: usize, reply: Option<Reply>, key: KeyEvent) -> A
     let cols = app.grid_cols.get();
     let mut action = Action::None;
     match key.code {
-        KeyCode::Esc | KeyCode::Char('v') => {
+        KeyCode::Esc => {
             app.mode = Mode::Normal;
+            return Action::None;
+        }
+        // Its own key closes a view; the other's switches to it.
+        KeyCode::Char(c @ ('v' | 'V')) => {
+            let pinned = c == 'V';
+            app.mode = if app.grid_pinned == pinned {
+                Mode::Normal
+            } else {
+                app.grid_pinned = pinned;
+                Mode::Grid {
+                    sel: 0,
+                    reply: None,
+                }
+            };
             return Action::None;
         }
         KeyCode::Char('?') => {

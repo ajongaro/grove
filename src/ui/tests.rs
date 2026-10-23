@@ -3578,3 +3578,81 @@ fn the_ticker_sits_over_the_footer() {
     // A short window gives the row back to the lists.
     assert!(!screen(&app, 120, 15).contains("S&P"));
 }
+
+#[test]
+fn big_v_shows_the_pinned_sessions_side_by_side() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(Some("pi"), "pi-n0"), pin(None, "a1")]).unwrap();
+    app.reload(&s);
+    app.local_screens
+        .insert("a1".into(), "line one\nline two".into());
+    handle_key(&mut app, ch('V'));
+    assert!(app.grid_pinned);
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("PINNED · 2"), "{out}");
+    // One row of columns, in pin order; the unpinned a2 isn't there.
+    let row = out
+        .lines()
+        .find(|l| l.contains("btt:n0"))
+        .unwrap_or_else(|| panic!("{out}"));
+    let (finca, local) = (row.find("btt:n0").unwrap(), row.find("alpha:s1"));
+    assert!(local.is_some_and(|l| l > finca), "{row}");
+    assert!(!out.contains("alpha:s2"), "{out}");
+    assert!(out.contains("line two"), "{out}");
+    assert_eq!(app.grid_cols.get(), 2);
+    // Enter jumps to the selected column's session, wherever it is.
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump { .. }
+    ));
+    handle_key(&mut app, ch('l'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@1".into()
+        }
+    );
+}
+
+#[test]
+fn v_and_big_v_switch_between_all_and_pinned() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1")]).unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('V'));
+    assert!(app.grid_pinned && matches!(app.mode, Mode::Grid { .. }));
+    handle_key(&mut app, ch('v'));
+    assert!(!app.grid_pinned && matches!(app.mode, Mode::Grid { .. }));
+    assert!(screen(&app, 120, 30).contains("SESSIONS"));
+    handle_key(&mut app, ch('V'));
+    assert!(app.grid_pinned);
+    handle_key(&mut app, ch('V'));
+    assert_eq!(app.mode, Mode::Normal);
+    handle_key(&mut app, ch('V'));
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn pinned_columns_wrap_when_the_window_is_narrow() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(
+        &s.paths,
+        &[pin(None, "a1"), pin(None, "a2"), pin(Some("pi"), "pi-n0")],
+    )
+    .unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('V'));
+    screen(&app, 120, 30);
+    assert_eq!(app.grid_cols.get(), 3);
+    screen(&app, 70, 30);
+    assert_eq!(app.grid_cols.get(), 2);
+}
+
+#[test]
+fn no_pins_says_how_to_pin() {
+    let (_d, _s, mut app) = pinned_app();
+    handle_key(&mut app, ch('V'));
+    let out = screen(&app, 120, 30);
+    assert!(out.contains("No pinned sessions"), "{out}");
+}

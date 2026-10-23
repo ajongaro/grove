@@ -152,6 +152,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `t` | dashboard | jump to the project's to-do list |
 | `v` | dashboard | session grid: every live session's screen |
+| `V` | dashboard | the grid of just your pinned sessions, as columns side by side |
 | `R` | dashboard | restart on a new Grove, after upgrading |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
@@ -281,6 +282,12 @@ waiting for its next message without leaving the grid, and `x` kills one
 are answered in the session itself. A finca's tiles dim and say `stale`
 when it stops answering; one running an older Grove shows states without
 screens until you `grove finca update`.
+
+`V` shows just your [pinned sessions](#pinned-sessions), in pin order, as
+full-height columns side by side, so you can watch a few closely. The keys
+are the grid's; `v` and `V` switch between the two, and a view's own key
+(or `Esc`) closes it. When the window is too narrow for a column each, they
+wrap onto more rows.
 
 ### Updating
 

@@ -1,5 +1,6 @@
 //! The session grid (`v`): every live session as a tile showing the bottom
-//! of its screen. Layout and movement are pure; drawing is at the bottom.
+//! of its screen; or (`V`) just the pinned ones, as columns side by side.
+//! Layout and movement are pure; drawing is at the bottom.
 
 use chrono::{DateTime, Utc};
 use ratatui::Frame;
@@ -42,9 +43,29 @@ impl Tile {
     }
 }
 
-/// Every live session: this machine's (projects in pane order, oldest
-/// first), then each finca's in the Fincas pane order.
+/// The grid's tiles: every live session, or in the pinned view the pinned
+/// ones in pin order.
 pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
+    let all = all_tiles(app, now);
+    if !app.grid_pinned {
+        return all.into_iter().map(|(_, t)| t).collect();
+    }
+    app.pins
+        .iter()
+        .filter_map(|pin| {
+            all.iter().find_map(|(id, t)| {
+                (id.as_deref() == Some(pin.id.as_str())
+                    && t.finca.as_ref().map(|f| &f.0) == pin.finca.as_ref())
+                .then(|| t.clone())
+            })
+        })
+        .collect()
+}
+
+/// Every live session, with its id even where the tile can't act on it:
+/// this machine's (projects in pane order, oldest first), then each
+/// finca's in the Fincas pane order.
+fn all_tiles(app: &App, now: DateTime<Utc>) -> Vec<(Option<String>, Tile)> {
     let mut out = Vec::new();
     for p in &app.projects {
         for s in app
@@ -52,19 +73,22 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
             .iter()
             .filter(|s| s.project == p.slug && s.state != State::Ended)
         {
-            out.push(Tile {
-                finca: None,
-                via: None,
-                project: s.project.clone(),
-                name: s.name.clone(),
-                session_id: Some(s.id.clone()),
-                state: s.state,
-                updated_at: s.updated_at,
-                window: s.tmux_window.clone(),
-                screen: Some(app.local_screens.get(&s.id).cloned().unwrap_or_default()),
-                stale: false,
-                stats: app.stats.get(&s.id).map(super::render::stats_label),
-            });
+            out.push((
+                Some(s.id.clone()),
+                Tile {
+                    finca: None,
+                    via: None,
+                    project: s.project.clone(),
+                    name: s.name.clone(),
+                    session_id: Some(s.id.clone()),
+                    state: s.state,
+                    updated_at: s.updated_at,
+                    window: s.tmux_window.clone(),
+                    screen: Some(app.local_screens.get(&s.id).cloned().unwrap_or_default()),
+                    stale: false,
+                    stats: app.stats.get(&s.id).map(super::render::stats_label),
+                },
+            ));
         }
     }
     for f in &app.fincas {
@@ -76,19 +100,22 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
         if let Some((at, screens)) = screens {
             let stale = (now - *at).num_seconds() > STALE_SECS;
             for s in &screens.sessions {
-                out.push(Tile {
-                    finca: finca.clone(),
-                    via: f.via.clone(),
-                    project: s.project.clone(),
-                    name: s.name.clone(),
-                    session_id: Some(s.id.clone()),
-                    state: s.state,
-                    updated_at: s.updated_at,
-                    window: s.window.clone(),
-                    screen: Some(s.screen.clone()),
-                    stale,
-                    stats: None,
-                });
+                out.push((
+                    Some(s.id.clone()),
+                    Tile {
+                        finca: finca.clone(),
+                        via: f.via.clone(),
+                        project: s.project.clone(),
+                        name: s.name.clone(),
+                        session_id: Some(s.id.clone()),
+                        state: s.state,
+                        updated_at: s.updated_at,
+                        window: s.window.clone(),
+                        screen: Some(s.screen.clone()),
+                        stale,
+                        stats: None,
+                    },
+                ));
             }
         } else if let Some(st) = f
             .last_status
@@ -98,19 +125,22 @@ pub fn tiles(app: &App, now: DateTime<Utc>) -> Vec<Tile> {
         {
             for p in &st.projects {
                 for s in p.sessions.iter().filter(|s| s.state != State::Ended) {
-                    out.push(Tile {
-                        finca: finca.clone(),
-                        via: f.via.clone(),
-                        project: p.slug.clone(),
-                        name: s.name.clone(),
-                        session_id: None,
-                        state: s.state,
-                        updated_at: s.updated_at,
-                        window: s.window.clone(),
-                        screen: None,
-                        stale: false,
-                        stats: None,
-                    });
+                    out.push((
+                        s.id.clone(),
+                        Tile {
+                            finca: finca.clone(),
+                            via: f.via.clone(),
+                            project: p.slug.clone(),
+                            name: s.name.clone(),
+                            session_id: None,
+                            state: s.state,
+                            updated_at: s.updated_at,
+                            window: s.window.clone(),
+                            screen: None,
+                            stale: false,
+                            stats: None,
+                        },
+                    ));
                 }
             }
         }
@@ -135,6 +165,24 @@ pub struct Layout {
 /// scroll rather than shrink.
 pub fn layout(n: usize, width: u16, height: u16) -> Layout {
     let cols = usize::from(width / MIN_W).clamp(1, n.max(1));
+    let rows = n
+        .div_ceil(cols)
+        .clamp(1, usize::from(height / MIN_H).max(1));
+    Layout {
+        cols,
+        rows,
+        tile_w: width / cols as u16,
+        tile_h: height / rows as u16,
+    }
+}
+
+/// The narrowest pinned column (border included).
+pub const COLUMN_MIN_W: u16 = 30;
+
+/// The pinned view: one full-height column each, side by side; as many
+/// rows as it takes when they don't fit.
+pub fn columns(n: usize, width: u16, height: u16) -> Layout {
+    let cols = usize::from(width / COLUMN_MIN_W).clamp(1, n.max(1));
     let rows = n
         .div_ceil(cols)
         .clamp(1, usize::from(height / MIN_H).max(1));
@@ -208,7 +256,11 @@ pub fn render_grid(
         Constraint::Length(if reply.is_some() { 2 } else { 1 }),
     ])
     .areas(area);
-    let l = layout(tiles.len(), body.width, body.height);
+    let l = if app.grid_pinned {
+        columns(tiles.len(), body.width, body.height)
+    } else {
+        layout(tiles.len(), body.width, body.height)
+    };
     app.grid_cols.set(l.cols);
     let sel = sel.min(tiles.len().saturating_sub(1));
     let first = first_row(sel, l.cols, l.rows);
@@ -216,10 +268,17 @@ pub fn render_grid(
 
     // Top line: totals, what's shown, unreachable fincas, the way back.
     let count = |f: &dyn Fn(State) -> bool| tiles.iter().filter(|t| f(t.state)).count();
-    let mut spans = vec![
-        Span::raw(" SESSIONS").fg(SESSIONS_COLOR),
-        Span::raw(format!(" · {} live", tiles.len())),
-    ];
+    let mut spans = if app.grid_pinned {
+        vec![
+            Span::raw(" PINNED").fg(SESSIONS_COLOR),
+            Span::raw(format!(" · {}", tiles.len())),
+        ]
+    } else {
+        vec![
+            Span::raw(" SESSIONS").fg(SESSIONS_COLOR),
+            Span::raw(format!(" · {} live", tiles.len())),
+        ]
+    };
     if shown.len() < tiles.len() {
         spans.push(Span::raw(format!(" · showing {}–{}", shown.start + 1, shown.end)).dark_gray());
     }
@@ -249,18 +308,23 @@ pub fn render_grid(
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), top);
     frame.render_widget(
-        Paragraph::new("v back · ? help ")
-            .alignment(Alignment::Right)
-            .dark_gray(),
+        Paragraph::new(if app.grid_pinned {
+            "V back · v all · ? help "
+        } else {
+            "v back · V pinned · ? help "
+        })
+        .alignment(Alignment::Right)
+        .dark_gray(),
         top,
     );
 
     if tiles.is_empty() {
-        frame.render_widget(
-            Paragraph::new(" No live sessions. Esc back, then Enter on a project to start one.")
-                .dark_gray(),
-            body,
-        );
+        let empty = if app.grid_pinned {
+            " No pinned sessions. Esc back, then p on a session to pin it."
+        } else {
+            " No live sessions. Esc back, then Enter on a project to start one."
+        };
+        frame.render_widget(Paragraph::new(empty).dark_gray(), body);
     }
     for (k, i) in shown.clone().enumerate() {
         let (r, c) = ((k / l.cols) as u16, (k % l.cols) as u16);
