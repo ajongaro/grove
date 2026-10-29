@@ -127,8 +127,11 @@ grove mcp setup                 # how to give every Claude session Grove's tools
 
 Grove runs on its **own tmux server** (`tmux -L grove`), so its key bindings
 never touch your normal tmux, and your `~/.tmux.conf` doesn't apply there.
-Grove keeps stock tmux keys and adds only its own. Put your own setup
-(prefix, splits, theme) in `~/.grove/tmux.local.conf`, which is loaded last.
+Grove's keys are vim-style: C-h/j/k/l move between panes (below), copy
+mode (prefix `[`) uses vi keys with `v` to select and `y` to copy, and
+splits (prefix `"` and `%`) open in the pane's folder. The prefix stays
+tmux's C-b. Put your own setup (prefix, theme, anything Grove's keys get
+wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 
 | Key | Where | Does |
 |---|---|---|

@@ -83,6 +83,18 @@ set -g mouse on
 set -g focus-events on
 # Copies also reach the outer terminal's clipboard (OSC 52), e.g. from a finca.
 set -s set-clipboard on
+# Vim-style copy mode (prefix [): v selects, y copies, also to the clipboard
+# command when one is set; C-h/j/k/l still move between panes.
+setw -g mode-keys vi
+bind -T copy-mode-vi v send-keys -X begin-selection
+bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel
+bind -T copy-mode-vi C-h select-pane -L
+bind -T copy-mode-vi C-j select-pane -D
+bind -T copy-mode-vi C-k select-pane -U
+bind -T copy-mode-vi C-l select-pane -R
+# Splits open in the pane's folder rather than the session's.
+bind '"' split-window -v -c "#{pane_current_path}"
+bind % split-window -h -c "#{pane_current_path}"
 set -g status-left "#[bold] GROVE "
 set -g status-left-length 12
 # The dashboard lists every session, so the bar shows only the window you're
@@ -302,16 +314,15 @@ mod tests {
     }
 
     #[test]
-    fn tmux_conf_leaves_stock_tmux_keys_alone() {
+    fn tmux_conf_leaves_personal_taste_alone() {
         let (_d, p) = paths();
         let c = tmux_conf("grove", &p, Some("pbcopy"));
+        // Movement is vim-style by default; prefix and numbering are yours.
         for personal in [
-            "prefix",
-            "split-window",
-            "mode-keys",
+            "set -g prefix",
+            "unbind C-b",
             "set -g base-index",
-            "is_vim",
-            "copy-mode",
+            "renumber-windows",
         ] {
             assert!(
                 !c.contains(personal),
@@ -319,6 +330,59 @@ mod tests {
             );
         }
         assert!(c.contains("set -s escape-time 0"), "{c}");
+    }
+
+    #[test]
+    fn copy_mode_is_vi_and_splits_keep_the_folder() {
+        use crate::tmux::Tmux;
+        let t = Tmux::new(format!("grove-test-{}-vi", std::process::id()));
+        let (_d, p) = paths();
+        std::fs::create_dir_all(&p.home).unwrap();
+        let conf = p.home.join("tmux.conf");
+        std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"))).unwrap();
+        let tmux = |args: &[&str]| {
+            let out = t.cmd().args(args).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        tmux(&[
+            "-f",
+            conf.to_str().unwrap(),
+            "new",
+            "-d",
+            "-s",
+            "grove",
+            "sleep 60",
+        ]);
+        let shown = (
+            tmux(&["show", "-gwv", "mode-keys"]),
+            tmux(&["list-keys", "-T", "copy-mode-vi"]),
+            tmux(&["list-keys", "-T", "prefix"]),
+        );
+        t.kill_server();
+        let (mode, copy, prefix) = shown;
+        assert_eq!(mode, "vi");
+        for (key, does) in [
+            ("v", "begin-selection"),
+            ("y", "copy-pipe-and-cancel"),
+            ("C-h", "select-pane -L"),
+            ("C-l", "select-pane -R"),
+        ] {
+            assert!(
+                copy.lines()
+                    .any(|l| l.split_whitespace().nth(3) == Some(key) && l.contains(does)),
+                "{key}: {copy}"
+            );
+        }
+        // list-keys escapes both: \" and \%.
+        for key in ["\\\"", "\\%"] {
+            assert!(
+                prefix
+                    .lines()
+                    .any(|l| l.split_whitespace().nth(3) == Some(key)
+                        && l.contains("#{pane_current_path}")),
+                "{key}: {prefix}"
+            );
+        }
     }
 
     #[test]
