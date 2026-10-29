@@ -107,6 +107,13 @@ unbind -n C-y
         "run-shell -b \"'{}' paste --session '#{{session_name}}' --pane '#{{pane_id}}' >/dev/null 2>&1\"",
         exe.replace(['\'', '"'], "")
     );
+    // A shell below the session (side.rs). On the desk the key goes on to
+    // the column, whose own session opens it under the session shown.
+    let side = format!(
+        "bind -n 'C-\\' if -F \"#{{==:#{{session_name}},{desk}}}\" \"send-keys 'C-\\\\'\" \"run-shell -b \\\"'{exe}' side-shell --pane '#{{pane_id}}' >/dev/null 2>&1\\\"\"\n",
+        desk = crate::desk::SESSION,
+        exe = exe.replace(['\'', '"'], "")
+    );
     // On the pinned desk, C-h/j/k/l move between columns; at its edge, or
     // anywhere else (a column's own session included), the key reaches the
     // program, so Claude keeps C-j for a newline.
@@ -122,6 +129,7 @@ unbind -n C-y
     format!(
         "{base}bind -n C-g switch-client -t ={session}:=dashboard\n\
          {desk_moves}\
+         {side}\
          bind -T grove-finca C-q switch-client -t ={session}\n\
          bind -T grove-shell C-q switch-client -t ={session}\n\
          # C-v in a finca window sends this Mac's clipboard file or image there (transfer.rs).\n\
@@ -327,6 +335,16 @@ mod tests {
         assert!(
             c.contains("bind -n C-j if -F \"#{&&:#{==:#{session_name},desk},#{?pane_at_bottom,0,1}}\" \"select-pane -D\" \"send-keys C-j\""),
             "{c}"
+        );
+        // C-\ opens a shell below the session; on the desk, in the column.
+        let side = c
+            .lines()
+            .find(|l| l.starts_with("bind -n 'C-\\' "))
+            .unwrap_or_else(|| panic!("C-\\: {c}"));
+        assert!(
+            side.contains("\"send-keys 'C-\\\\'\"")
+                && side.contains("side-shell --pane '#{pane_id}'"),
+            "{side}"
         );
         for k in ["C-h", "C-k", "C-l"] {
             assert!(c.contains(&format!("bind -n {k} if -F ")), "{k}: {c}");

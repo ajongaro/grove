@@ -15,6 +15,7 @@ mod runfiles;
 mod screens;
 mod setup;
 mod shells;
+mod side;
 mod state;
 mod stats;
 mod status;
@@ -89,6 +90,12 @@ enum Cmd {
     /// Internal: a column of the pinned desk (desk.rs) showing a session.
     #[command(hide = true)]
     DeskAttach { session: String },
+    /// Internal: C-\ in a session's window (a shell below it).
+    #[command(hide = true)]
+    SideShell {
+        #[arg(long)]
+        pane: String,
+    },
     /// Internal: C-v in a finca window (sends the clipboard, pastes the path).
     #[command(hide = true)]
     Paste {
@@ -251,6 +258,7 @@ fn main() {
             let _ = paths.ensure();
             transfer::paste(&paths, &grove_tmux(&paths), &session, &pane);
         }
+        Some(Cmd::SideShell { pane }) => side::run(&grove_tmux(&paths), &pane),
         Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
         Some(Cmd::DeskAttach { session }) => desk_attach(&paths, &session),

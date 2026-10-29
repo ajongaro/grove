@@ -1369,7 +1369,7 @@ fn help_lists_prompt_and_editing_keys() {
         "pick a match",
         "clear the line",
         "back to projects",
-        "prefix r",
+        "shell under a session (again: swap)",
         "finca: back / send the clipboard",
         "move between pinned desk columns",
     ] {

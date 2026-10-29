@@ -134,6 +134,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 |---|---|---|
 | `C-g` | anywhere | back to the dashboard |
 | `C-h` `C-j` `C-k` `C-l` | pinned desk | move between columns |
+| `C-\` | session | a shell below it, in its folder; again to switch between them, `exit` closes it |
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
@@ -515,6 +516,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |
 | `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |
+| `src/side.rs` | the shell below a session (`C-\`) |
 | `src/pins.rs` | pinned sessions: `~/.grove/pins.json` |
 
 ```sh

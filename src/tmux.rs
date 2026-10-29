@@ -159,6 +159,71 @@ impl Tmux {
             .map(|_| ())
     }
 
+    /// Splits pane `target`, running `argv` below it in `height` (`35%`);
+    /// returns the new pane's id (`%N`), which takes the focus.
+    pub fn split_below(
+        &self,
+        target: &str,
+        cwd: &Path,
+        height: &str,
+        argv: &[String],
+    ) -> Result<String> {
+        let mut c = self.cmd();
+        c.args(["split-window", "-v", "-l", height, "-P", "-F", "#{pane_id}"])
+            .args(["-t", target, "-c"])
+            .arg(cwd)
+            .args(argv);
+        let out = c.stdin(Stdio::null()).output().context("running tmux")?;
+        Ok(check(&out, &["split-window"])?.trim().to_string())
+    }
+
+    /// `format` expanded for `target`.
+    pub fn display(&self, target: &str, format: &str) -> Result<String> {
+        Ok(self
+            .run(&["display-message", "-p", "-t", target, format])?
+            .trim_end_matches('\n')
+            .to_string())
+    }
+
+    /// One line per pane in window `target`, in tmux `format`.
+    pub fn list_panes_as(&self, target: &str, format: &str) -> Result<Vec<String>> {
+        let out = self.run(&["list-panes", "-t", target, "-F", format])?;
+        Ok(out.lines().map(str::to_string).collect())
+    }
+
+    pub fn select_pane(&self, target: &str) -> Result<()> {
+        self.run(&["select-pane", "-t", target]).map(|_| ())
+    }
+
+    #[cfg(test)]
+    pub fn kill_pane(&self, target: &str) -> Result<()> {
+        self.run(&["kill-pane", "-t", target]).map(|_| ())
+    }
+
+    pub fn set_pane_option(&self, target: &str, option: &str, value: &str) -> Result<()> {
+        self.run(&["set-option", "-p", "-t", target, option, value])
+            .map(|_| ())
+    }
+
+    /// The pane Grove reads and types into for window `target` (`@N`): its
+    /// first that isn't a side shell (side.rs), whichever has the focus.
+    /// Other targets are already panes.
+    pub fn main_pane(&self, target: &str) -> String {
+        if !target.starts_with('@') {
+            return target.to_string();
+        }
+        let format = format!("#{{pane_id}}\t#{{{}}}", crate::side::TAG);
+        self.list_panes_as(target, &format)
+            .ok()
+            .and_then(|panes| {
+                panes.iter().find_map(|l| match l.split_once('\t') {
+                    Some((id, "")) => Some(id.to_string()),
+                    _ => None,
+                })
+            })
+            .unwrap_or_else(|| target.to_string())
+    }
+
     pub fn pane_count(&self, target: &str) -> usize {
         self.run(&["list-panes", "-t", target, "-F", "#{pane_id}"])
             .map_or(0, |o| o.lines().count())
@@ -272,11 +337,13 @@ impl Tmux {
     /// wrapped lines joined.
     pub fn capture(&self, target: &str, lines: usize) -> Result<String> {
         let start = format!("-{lines}");
-        self.run(&["capture-pane", "-p", "-J", "-t", target, "-S", &start])
+        let target = self.main_pane(target);
+        self.run(&["capture-pane", "-p", "-J", "-t", &target, "-S", &start])
     }
 
     pub fn send_keys(&self, target: &str, keys: &[&str]) -> Result<()> {
-        let mut args = vec!["send-keys", "-t", target];
+        let target = self.main_pane(target);
+        let mut args = vec!["send-keys", "-t", &target];
         args.extend_from_slice(keys);
         self.run(&args).map(|_| ())
     }
@@ -302,8 +369,16 @@ impl Tmux {
             .context("tmux stdin")?
             .write_all(text.as_bytes())?;
         check(&child.wait_with_output()?, &["load-buffer"])?;
-        self.run(&["paste-buffer", "-p", "-d", "-b", &buf, "-t", target])
-            .map(|_| ())
+        self.run(&[
+            "paste-buffer",
+            "-p",
+            "-d",
+            "-b",
+            &buf,
+            "-t",
+            &self.main_pane(target),
+        ])
+        .map(|_| ())
     }
 
     pub fn display_message(&self, target: &str, msg: &str) {
