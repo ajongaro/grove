@@ -7,7 +7,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("C-g", "back to the dashboard"),
             ("C-\\", "shell under a session (again: swap)"),
-            ("C-hjkl", "move between pinned desk columns"),
+            ("C-hjkl", "move between panes and desk columns"),
             ("C-q C-v", "finca: back / send the clipboard"),
         ],
     ),

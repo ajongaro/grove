@@ -1371,7 +1371,7 @@ fn help_lists_prompt_and_editing_keys() {
         "back to projects",
         "shell under a session (again: swap)",
         "finca: back / send the clipboard",
-        "move between pinned desk columns",
+        "move between panes and desk columns",
     ] {
         assert!(out.contains(k), "help lacks {k:?}\n{out}");
     }

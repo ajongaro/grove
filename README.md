@@ -133,7 +133,7 @@ Grove keeps stock tmux keys and adds only its own. Put your own setup
 | Key | Where | Does |
 |---|---|---|
 | `C-g` | anywhere | back to the dashboard |
-| `C-h` `C-j` `C-k` `C-l` | pinned desk | move between columns |
+| `C-h` `C-j` `C-k` `C-l` | anywhere | move between panes: a session and its shell, the desk's columns. With no pane that way, on the dashboard, or in vim or fzf, the key goes to the program as usual |
 | `C-\` | session | a shell below it, in its folder; again to switch between them, `exit` closes it |
 | `j` `k` `↑` `↓` | dashboard | move |
 | `Tab` `h` `l` | dashboard | switch pane |
@@ -261,9 +261,10 @@ that isn't answering keeps its pins, dimmed, until it does. Pins live in
 
 `V` opens the **pinned desk**: every pinned session side by side, each
 column the live session itself (a finca's over ssh), so you can type in
-any of them and stay there. `C-h` `C-j` `C-k` `C-l` move between columns
-(at the desk's edge the key reaches Claude as usual), as do a click or
-your tmux prefix and an arrow; `C-g` goes back to the dashboard and `V`
+any of them and stay there. `C-h` `C-j` `C-k` `C-l` move between columns,
+and at the desk's edge go into the column (C-j/C-k between a session and
+its shell, or on to Claude), as do a click or your tmux prefix and an
+arrow; `C-g` goes back to the dashboard and `V`
 returns to the desk as you left it. The sessions keep their own windows,
 so closing the desk ends nothing. Pin or unpin and the desk is rebuilt the
 next time you open it; a column closes when its session ends. Columns

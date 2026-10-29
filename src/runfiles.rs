@@ -114,21 +114,22 @@ unbind -n C-y
         desk = crate::desk::SESSION,
         exe = exe.replace(['\'', '"'], "")
     );
-    // On the pinned desk, C-h/j/k/l move between columns; at its edge, or
-    // anywhere else (a column's own session included), the key reaches the
-    // program, so Claude keeps C-j for a newline.
-    let desk_moves: String = [("h", "L", "left"), ("j", "D", "bottom"), ("k", "U", "top"), ("l", "R", "right")]
+    // C-h/j/k/l move between panes: a session and its shell, the desk's
+    // columns. The key reaches the program instead when there's no pane
+    // that way (so Claude keeps C-j and C-l in a window of its own), on the
+    // dashboard, and in vim or fzf. On the desk, a column at the edge gets
+    // the key, and its own session moves between the panes it shows.
+    let moves: String = [("h", "L", "left"), ("j", "D", "bottom"), ("k", "U", "top"), ("l", "R", "right")]
         .iter()
         .map(|(key, dir, edge)| {
             format!(
-                "bind -n C-{key} if -F \"#{{&&:#{{==:#{{session_name}},{desk}}},#{{?pane_at_{edge},0,1}}}}\" \"select-pane -{dir}\" \"send-keys C-{key}\"\n",
-                desk = crate::desk::SESSION
+                "bind -n C-{key} if -F \"#{{||:#{{pane_at_{edge}}},#{{==:#{{window_name}},dashboard}}}}\" {{ send-keys C-{key} }} {{ if-shell \"{VIM}\" {{ send-keys C-{key} }} {{ select-pane -{dir} }} }}\n"
             )
         })
         .collect();
     format!(
         "{base}bind -n C-g switch-client -t ={session}:=dashboard\n\
-         {desk_moves}\
+         {moves}\
          {side}\
          bind -T grove-finca C-q switch-client -t ={session}\n\
          bind -T grove-shell C-q switch-client -t ={session}\n\
@@ -144,6 +145,10 @@ unbind -n C-y
         local_path.display(),
     )
 }
+
+/// Whether the pane runs vim or fzf, which take C-h/j/k/l themselves (as
+/// vim-tmux-navigator checks).
+const VIM: &str = r"ps -o state= -o comm= -t '#{pane_tty}' | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|l?n?vim?x?|fzf)(diff)?$'";
 
 /// The window's Claude account (window options set at launch, launch.rs) in
 /// front of status-right, whatever status-right your own setup chose. `-F`
@@ -314,10 +319,123 @@ mod tests {
             );
         }
         assert!(c.contains("set -s escape-time 0"), "{c}");
-        // Pane moves only on the pinned desk, never everywhere.
-        for l in c.lines().filter(|l| l.contains("select-pane")) {
-            assert!(l.contains("#{session_name},desk}"), "{l}");
+    }
+
+    #[test]
+    fn ctrl_hjkl_move_between_panes_and_pass_through_at_the_edges() {
+        use crate::tmux::Tmux;
+        struct Server(Tmux);
+        impl Drop for Server {
+            fn drop(&mut self) {
+                self.0.kill_server();
+            }
         }
+        let tag = std::process::id();
+        let t = Server(Tmux::new(format!("grove-test-{tag}-hjkl")));
+        let client = Server(Tmux::new(format!("grove-test-{tag}-hjkl-client")));
+        let (_d, p) = paths();
+        let conf = p.home.join("tmux.conf");
+        std::fs::create_dir_all(&p.home).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None)).unwrap();
+        let tmux = |args: &[&str]| {
+            let out = t.0.cmd().args(args).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        // The terminal echoes what reaches each pane: C-l as ^L, C-j as a
+        // new line.
+        let cat = |_: &str| "cat".to_string();
+        tmux(&[
+            "-f",
+            conf.to_str().unwrap(),
+            "new",
+            "-d",
+            "-s",
+            "grove",
+            "-n",
+            "dashboard",
+            "-x",
+            "120",
+            "-y",
+            "40",
+            &cat("dash"),
+        ]);
+        // A session and the shell under it.
+        let w = tmux(&[
+            "new-window",
+            "-P",
+            "-F",
+            "#{window_id}",
+            "-t",
+            "=grove:",
+            "-n",
+            "alpha:fix",
+            &cat("claude"),
+        ]);
+        tmux(&["split-window", "-v", "-d", "-t", &w, &cat("shell")]);
+        let socket = t.0.socket.clone().unwrap();
+        let attach = format!("env -u TMUX tmux -L '{socket}' attach -t '=grove:{w}'");
+        client
+            .0
+            .cmd()
+            .args([
+                "-f",
+                "/dev/null",
+                "new",
+                "-d",
+                "-x",
+                "120",
+                "-y",
+                "40",
+                &attach,
+            ])
+            .output()
+            .unwrap();
+        let press = |key: &str| {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            client.0.cmd().args(["send-keys", key]).output().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        };
+        let active = || tmux(&["display", "-p", "-t", &w, "#{pane_index}"]);
+        let line = |pane: &str| tmux(&["display", "-p", "-t", pane, "#{cursor_y}"]);
+        let screen = |pane: &str| tmux(&["capture-pane", "-p", "-t", pane]);
+        let (claude, shell) = (format!("{w}.0"), format!("{w}.1"));
+        press("C-j");
+        assert_eq!(active(), "1", "C-j moves down to the shell");
+        let before = line(&shell);
+        press("C-j");
+        assert_ne!(
+            line(&shell),
+            before,
+            "at the bottom C-j reaches the program"
+        );
+        press("C-k");
+        assert_eq!(active(), "0", "C-k moves back up");
+        press("C-l");
+        assert!(
+            screen(&claude).contains("^L"),
+            "nothing to the right: C-l reaches Claude"
+        );
+        // The dashboard takes the keys itself.
+        tmux(&["select-window", "-t", "=grove:=dashboard"]);
+        tmux(&[
+            "split-window",
+            "-v",
+            "-d",
+            "-t",
+            "=grove:=dashboard",
+            "sleep 60",
+        ]);
+        let before = line("=grove:=dashboard.0");
+        press("C-j");
+        assert_ne!(
+            line("=grove:=dashboard.0"),
+            before,
+            "the dashboard gets C-j"
+        );
+        assert_eq!(
+            tmux(&["display", "-p", "-t", "=grove:=dashboard", "#{pane_index}"]),
+            "0"
+        );
     }
 
     #[test]
@@ -331,11 +449,6 @@ mod tests {
         // C-y belongs to Claude (yank); Grove only takes C-g, and releases
         // the C-y older Groves bound (re-sourcing a config never unbinds).
         assert!(c.contains("unbind -n C-y"), "{c}");
-        // C-h/j/k/l move between desk columns, and pass through at its edges.
-        assert!(
-            c.contains("bind -n C-j if -F \"#{&&:#{==:#{session_name},desk},#{?pane_at_bottom,0,1}}\" \"select-pane -D\" \"send-keys C-j\""),
-            "{c}"
-        );
         // C-\ opens a shell below the session; on the desk, in the column.
         let side = c
             .lines()
