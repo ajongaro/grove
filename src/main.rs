@@ -90,6 +90,10 @@ enum Cmd {
     /// Internal: a column of the pinned desk (desk.rs) showing a session.
     #[command(hide = true)]
     DeskAttach { session: String },
+    /// Internal: after an update, rewrites Grove's run files and reloads a
+    /// running Grove's tmux config and dashboard (finca update runs it).
+    #[command(hide = true)]
+    Refresh,
     /// Internal: C-\ in a session's window (a shell below it).
     #[command(hide = true)]
     SideShell {
@@ -258,6 +262,7 @@ fn main() {
             let _ = paths.ensure();
             transfer::paste(&paths, &grove_tmux(&paths), &session, &pane);
         }
+        Some(Cmd::Refresh) => exit_on_err(refresh(&paths)),
         Some(Cmd::SideShell { pane }) => side::run(&grove_tmux(&paths), &pane),
         Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
@@ -448,6 +453,24 @@ fn preflight(paths: &Paths) -> Result<Config> {
         }
     }
     Ok(cfg)
+}
+
+/// `grove refresh`: what starting Grove does to a running one, without
+/// attaching; says whether it was running.
+fn refresh(paths: &Paths) -> Result<()> {
+    let cfg = load_config(paths)?;
+    paths.ensure()?;
+    let exe = runfiles::grove_exe()?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline)?;
+    let conf = paths.run.join("tmux.conf");
+    let running = launch::reload_running(
+        &grove_tmux(paths),
+        &cfg.tmux_session,
+        &conf,
+        &launch::build_stamp(&exe),
+    )?;
+    println!("{}", if running { "reloaded" } else { "not running" });
+    Ok(())
 }
 
 /// `grove`: create or attach the Grove tmux session (dashboard in window 0).
@@ -743,6 +766,18 @@ fn update_one(f: &finca::Finca, exe: &std::path::Path) -> Result<String> {
         ),
     };
     let v = finca::install_grove(dest, &facts, &f.grove_bin, how, finca::login_shell_cmd)?;
-    let how = label;
-    Ok(format!("{v} ({how}, via {dest})"))
+    // A running Grove there picks up the new tmux config and dashboard.
+    let refresh = format!("{} refresh", finca::sh_quote(&f.grove_bin));
+    let reload = match finca::run_remote(dest, &finca::login_shell_cmd(&refresh)) {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .last()
+            .map_or_else(String::new, |l| format!(", {}", l.trim())),
+        Ok(o) => format!(
+            ", not reloaded: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        ),
+        Err(e) => format!(", not reloaded: {e:#}"),
+    };
+    Ok(format!("{v} ({label}, via {dest}{reload})"))
 }

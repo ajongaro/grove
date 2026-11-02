@@ -386,6 +386,34 @@ fn stale_dashboard_is_restarted_and_fresh_one_left_alone() {
 }
 
 #[test]
+fn an_update_reloads_a_running_grove_and_leaves_a_stopped_one_alone() {
+    let e = env();
+    let conf = e.paths.run.join("tmux.conf");
+    std::fs::write(&conf, "set -g @grove_conf old\n").unwrap();
+    let tmux = Tmux::new(format!("grove-test-{}-reload", std::process::id()));
+    // Not running: nothing started.
+    assert!(!reload_running(&tmux, "grove", &conf, "build-1").unwrap());
+    assert!(!tmux.has_session("grove"));
+    let argv = vec!["sleep".to_string(), "30".to_string()];
+    ensure_dashboard(&tmux, "grove", &e.proj_dir, &argv).unwrap();
+    std::fs::write(&conf, "set -g @grove_conf new\n").unwrap();
+    assert!(reload_running(&tmux, "grove", &conf, "build-1").unwrap());
+    let out = tmux
+        .cmd()
+        .args(["show", "-gv", "@grove_conf"])
+        .output()
+        .unwrap();
+    let dash = tmux.window_option(&dashboard_target("grove"), "@grove_build");
+    tmux.kill_server();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "new");
+    assert_eq!(
+        dash.as_deref(),
+        Some("build-1"),
+        "the dashboard runs the new build"
+    );
+}
+
+#[test]
 fn build_stamp_changes_when_the_binary_is_replaced() {
     let dir = tempfile::tempdir().unwrap();
     let bin = dir.path().join("grove");

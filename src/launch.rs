@@ -1,6 +1,6 @@
 //! Builds and starts a Claude Code session in its own tmux window.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
@@ -403,6 +403,18 @@ pub fn ensure_fresh_dashboard(tmux: &Tmux, session: &str, stamp: &str) -> Result
     }
     tmux.respawn_window(&target)?;
     tmux.set_window_option(&target, "@grove_build", stamp)?;
+    Ok(true)
+}
+
+/// After an update (`grove refresh`): a running Grove reloads its tmux
+/// config from `conf` and restarts its dashboard if `stamp` is a new build.
+/// False when Grove isn't running, which stays so.
+pub fn reload_running(tmux: &Tmux, session: &str, conf: &Path, stamp: &str) -> Result<bool> {
+    if !tmux.has_session(session) {
+        return Ok(false);
+    }
+    tmux.source_file(conf)?;
+    ensure_fresh_dashboard(tmux, session, stamp)?;
     Ok(true)
 }
 

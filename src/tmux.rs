@@ -191,6 +191,17 @@ impl Tmux {
         Ok(out.lines().map(str::to_string).collect())
     }
 
+    pub fn source_file(&self, path: &Path) -> Result<()> {
+        let out = self
+            .cmd()
+            .arg("source-file")
+            .arg(path)
+            .stdin(Stdio::null())
+            .output()
+            .context("running tmux")?;
+        check(&out, &["source-file"]).map(|_| ())
+    }
+
     pub fn select_pane(&self, target: &str) -> Result<()> {
         self.run(&["select-pane", "-t", target]).map(|_| ())
     }
