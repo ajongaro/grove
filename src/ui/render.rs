@@ -639,7 +639,7 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let block = pane_block(vec![Span::raw("TO-DO").fg(TODO_COLOR)], focused);
     let t = &app.todos;
     if t.items.is_empty() {
-        let p = Paragraph::new("No to-dos — press o to add one (t or Tab to get here).")
+        let p = Paragraph::new("No to-dos — press o (or a) to add one (t or Tab to get here).")
             .wrap(Wrap { trim: true })
             .dark_gray()
             .block(block);

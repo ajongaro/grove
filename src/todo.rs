@@ -168,6 +168,8 @@ impl Todos {
     /// Edits the item under the cursor, or with `add` a blank one below (1)
     /// or above (0) it; `clear` empties the text first.
     fn begin_insert(&mut self, add: Option<usize>, clear: bool) -> Effect {
+        // An empty list has nothing to edit: a/i/cc start its first item.
+        let add = add.or(self.items.is_empty().then_some(0));
         let before = (self.items.clone(), self.idx);
         let new = add.is_some();
         if let Some(offset) = add {

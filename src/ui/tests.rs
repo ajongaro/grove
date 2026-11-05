@@ -1246,7 +1246,7 @@ fn todo_list_sits_below_the_sessions() {
 #[test]
 fn todo_pane_shows_insert_mode_and_an_empty_hint() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
-    assert!(screen(&app, 100, 20).contains("No to-dos — press o to add one"));
+    assert!(screen(&app, 100, 20).contains("No to-dos — press o (or a) to add one"));
     handle_key(&mut app, ch('t'));
     type_keys(&mut app, "omilk");
     let out = screen(&app, 100, 20);

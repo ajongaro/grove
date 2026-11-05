@@ -351,3 +351,20 @@ fn text_with_a_line_break_is_refused() {
     assert!(apply_ops(&start, &[Op::Add("x\n- [x] y".into())]).is_err());
     assert!(apply_ops(&start, &[Op::Reword(1, "x\ry".into())]).is_err());
 }
+
+#[test]
+fn a_i_and_cc_in_an_empty_list_start_the_first_item() {
+    for start in ["a", "A", "i", "cc"] {
+        let mut t = loaded("");
+        keys(&mut t, start);
+        assert!(t.inserting(), "{start}");
+        keys(&mut t, "buy milk");
+        assert_eq!(press(&mut t, KeyCode::Enter), Effect::Changed, "{start}");
+        assert_eq!(t.serialize(), "- [ ] buy milk\n", "{start}");
+        // Nothing typed: nothing added.
+        let mut t = loaded("");
+        keys(&mut t, start);
+        assert_eq!(press(&mut t, KeyCode::Esc), Effect::Nothing, "{start}");
+        assert!(t.items.is_empty(), "{start}");
+    }
+}
