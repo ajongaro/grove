@@ -4,6 +4,7 @@ mod desk;
 mod doctor;
 mod finca;
 mod hook;
+mod kill;
 mod launch;
 mod log;
 mod mcp;
@@ -74,6 +75,14 @@ enum Cmd {
     Rm { project: String },
     /// Check tmux, claude, accounts, projects and fincas; lists every problem.
     Doctor,
+    /// Quit Grove completely: its tmux, the dashboard and every session and
+    /// shell in it (q on the dashboard only detaches). Asks first when
+    /// Claude sessions would end.
+    Kill {
+        /// Don't ask.
+        #[arg(short, long)]
+        yes: bool,
+    },
     /// Manage fincas: other machines running their own Grove.
     #[command(subcommand)]
     Finca(FincaCmd),
@@ -263,6 +272,7 @@ fn main() {
             transfer::paste(&paths, &grove_tmux(&paths), &session, &pane);
         }
         Some(Cmd::Refresh) => exit_on_err(refresh(&paths)),
+        Some(Cmd::Kill { yes }) => exit_on_err(kill_cmd(&paths, yes)),
         Some(Cmd::SideShell { pane }) => side::run(&grove_tmux(&paths), &pane),
         Some(Cmd::Send { finca, file }) => exit_on_err(send_cmd(&paths, finca, file)),
         Some(Cmd::Focus { window }) => exit_on_err(grove_tmux(&paths).select_window(&window)),
@@ -271,6 +281,41 @@ fn main() {
         Some(Cmd::Dashboard) => exit_on_err(dashboard(paths)),
         None => exit_on_err(start(&paths)),
     }
+}
+
+/// `grove kill`.
+fn kill_cmd(paths: &Paths, yes: bool) -> Result<()> {
+    use std::io::{BufRead, IsTerminal, Write};
+    let store = Store::new(paths.clone());
+    let tmux = grove_tmux(paths);
+    if !tmux.server_running() {
+        println!("Grove isn't running");
+        return Ok(());
+    }
+    let live = kill::live_sessions(&store);
+    if let Some(q) = kill::question(&live)
+        && !yes
+    {
+        if !std::io::stdin().is_terminal() {
+            bail!("{q} Run `grove kill --yes` to go ahead");
+        }
+        print!("{q} [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().lock().read_line(&mut answer)?;
+        if !answer.trim().eq_ignore_ascii_case("y") {
+            bail!("Grove is still running");
+        }
+    }
+    if kill::kill(&tmux, &store, &live)? {
+        match live.len() {
+            0 => println!("Grove stopped"),
+            n => println!(
+                "Grove stopped; {n} session(s) ended (their conversations are saved: resume them from the dashboard)"
+            ),
+        }
+    }
+    Ok(())
 }
 
 /// `grove desk-attach`: attaches to the session's column until it closes,

@@ -122,6 +122,7 @@ grove                           # open the dashboard
 grove add ~/code/some-project   # add a project
 grove rm some-project           # forget it (the folder is kept)
 grove doctor                    # check tmux, claude, accounts, projects, fincas
+grove kill                      # quit Grove completely (q only detaches); asks if sessions would end
 grove mcp setup                 # how to give every Claude session Grove's tools
 ```
 

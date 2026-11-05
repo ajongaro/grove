@@ -397,7 +397,11 @@ impl Tmux {
         let _ = self.run(&["display-message", "-d", "4000", "-t", target, &literal(msg)]);
     }
 
-    #[cfg(test)]
+    /// Whether this server is up (has any session).
+    pub fn server_running(&self) -> bool {
+        self.run(&["list-sessions"]).is_ok()
+    }
+
     /// Kills the server and removes its socket file (tmux leaves it behind).
     pub fn kill_server(&self) {
         let socket = self.run(&["display-message", "-p", "#{socket_path}"]).ok();
