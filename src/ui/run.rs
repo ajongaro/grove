@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use ratatui::crossterm::event::{self, Event};
 
-use super::app::{Action, App, Mode, mark_missing};
+use super::app::{Action, App, Mode, Pane, mark_missing};
 use super::input::handle_key;
 use super::render::render;
 use crate::config::{Config, editor, expand_tilde, load_config};
@@ -609,6 +609,11 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     result
 }
 
+/// How long the dashboard waits for a key before redrawing anyway.
+const TICK: Duration = Duration::from_millis(250);
+/// How long a burst of hook writes gets to finish before one reload.
+const HOOK_SETTLE: Duration = Duration::from_millis(150);
+
 fn event_loop(
     ctx: &Ctx,
     app: &mut App,
@@ -624,6 +629,8 @@ fn event_loop(
     // The grid's finca screens, fetched only while it's open.
     let mut fetcher: Option<crate::screens::Fetcher> = None;
     let mut last_capture = Instant::now() - Duration::from_secs(1);
+    // When hook writes are due to be read.
+    let mut reload_at: Option<Instant> = None;
     loop {
         if ctx.cfg.alerts {
             let watched = || ctx.tmux.focused_windows();
@@ -643,10 +650,23 @@ fn event_loop(
         refresh_grid(ctx, app, &mut fetcher, &mut last_capture);
         terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
 
-        if event::poll(Duration::from_millis(250))?
-            && let Event::Key(key) = event::read()?
-        {
+        // Wakes for a key, the next tick, or a due reload, whichever is first.
+        let wait = reload_at.map_or(TICK, |t| {
+            t.saturating_duration_since(Instant::now()).min(TICK)
+        });
+        // Every key already typed before the next draw, so a slow machine
+        // keeps up with fast typing.
+        let mut ready = event::poll(wait)?;
+        while ready {
+            let Event::Key(key) = event::read()? else {
+                ready = event::poll(Duration::ZERO)?;
+                continue;
+            };
+            // A to-do's text changes nothing on disk, and a reload per
+            // letter is what a slow machine feels.
+            let typing = app.pane == Pane::Todo && app.todos.inserting();
             let action = handle_key(app, key);
+            let quiet = typing && matches!(action, Action::None);
             let was_reply = matches!(action, Action::GridReply { .. });
             let was_kill = matches!(action, Action::GridKill { .. });
             if matches!(action, Action::FincaResume { .. }) {
@@ -689,7 +709,10 @@ fn event_loop(
             if was_shell {
                 refresh_shells(ctx, app);
             }
-            app.reload(&ctx.store);
+            if !quiet {
+                app.reload(&ctx.store);
+            }
+            ready = event::poll(Duration::ZERO)?;
         }
         while let Ok(r) = poller.results.try_recv() {
             app.apply_poll(r);
@@ -706,10 +729,15 @@ fn event_loop(
             app.reload(&ctx.store);
             poller.kick();
         }
-        // Hook writes land here; coalesce bursts into one reload.
+        // Hook writes land here; a burst becomes one reload a moment later,
+        // without holding up keys meanwhile.
         if rx.try_recv().is_ok() {
-            std::thread::sleep(Duration::from_millis(150));
             while rx.try_recv().is_ok() {}
+            reload_at.get_or_insert_with(|| Instant::now() + HOOK_SETTLE);
+        }
+        if reload_at.is_some_and(|t| Instant::now() >= t) {
+            while rx.try_recv().is_ok() {}
+            reload_at = None;
             app.reload(&ctx.store);
         }
     }

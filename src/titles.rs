@@ -57,10 +57,15 @@ pub fn title(paths: &Paths, account: &Path, id: &str) -> Option<String> {
         let fresh = SystemTime::now()
             .duration_since(looked)
             .is_ok_and(|d| d < RECHECK);
+        // Finding the transcript scans every Claude project folder: not
+        // while the cache is fresh, as the dashboard asks on every reload.
+        if fresh {
+            return prompt;
+        }
         let grown = transcript(account, id)
             .and_then(|t| age(&t))
             .is_some_and(|m| m > looked);
-        if fresh || !grown {
+        if !grown {
             return prompt;
         }
     }
