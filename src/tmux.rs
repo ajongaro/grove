@@ -471,11 +471,11 @@ pub fn installs() -> Vec<(PathBuf, String)> {
 }
 
 /// The tmux binaries in `dirs`, in order, each counted once however many
-/// ways it's reached.
+/// ways it's reached. Relative folders are skipped.
 pub fn installs_in(dirs: impl IntoIterator<Item = PathBuf>) -> Vec<(PathBuf, String)> {
     let mut seen = Vec::new();
     let mut out = Vec::new();
-    for dir in dirs {
+    for dir in dirs.into_iter().filter(|d| d.is_absolute()) {
         let p = dir.join("tmux");
         if !p.is_file() {
             continue;
@@ -585,7 +585,15 @@ mod tests {
         fake_tmux(&brew, "3.8");
         // The same binary reached another way (like /bin on usrmerged Linux).
         std::os::unix::fs::symlink(brew.join("tmux"), link.join("tmux")).unwrap();
-        let found = installs_in([none, brew.clone(), apt.clone(), link]);
+        // A relative PATH entry ("." or empty) is never run: it means
+        // whatever folder grove was started in. This one reaches a tmux.
+        let here = std::env::current_dir().unwrap();
+        let relative = PathBuf::from("../".repeat(here.components().count() - 1))
+            .join(d.path().join("planted").strip_prefix("/").unwrap());
+        std::fs::create_dir(d.path().join("planted")).unwrap();
+        fake_tmux(&d.path().join("planted"), "6.6");
+        assert!(relative.join("tmux").is_file());
+        let found = installs_in([none, brew.clone(), relative, apt.clone(), link]);
         assert_eq!(
             found,
             [
