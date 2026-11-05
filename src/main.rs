@@ -400,6 +400,7 @@ fn doctor(paths: &Paths) -> Result<()> {
     use doctor::Level;
     let probes = doctor::Probes {
         tmux_version: &tmux::version,
+        tmux_installs: &tmux::installs,
         claude: &|| Some(launch::claude_bin()).filter(|c| c.starts_with('/')),
         has: &runfiles::on_path,
         poll: &|f| finca::poll_via(f, std::time::Duration::from_secs(10)),

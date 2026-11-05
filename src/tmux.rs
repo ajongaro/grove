@@ -41,7 +41,7 @@ impl Tmux {
             .stdin(Stdio::null())
             .output()
             .context("running tmux")?;
-        check(&out, args)
+        self.checked(&out, args)
     }
 
     pub fn has_session(&self, name: &str) -> bool {
@@ -61,7 +61,7 @@ impl Tmux {
             .arg(cwd)
             .args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
-        check(&out, &["new-session"]).map(|_| ())
+        self.checked(&out, &["new-session"]).map(|_| ())
     }
 
     /// Creates a window (without switching to it) and returns its id (`@N`).
@@ -93,7 +93,7 @@ impl Tmux {
         }
         c.args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
-        Ok(check(&out, &["new-window"])?.trim().to_string())
+        Ok(self.checked(&out, &["new-window"])?.trim().to_string())
     }
 
     /// Window ids (`@N`) in `session`.
@@ -151,7 +151,7 @@ impl Tmux {
             .arg(cwd)
             .args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
-        check(&out, &["split-window"]).map(|_| ())
+        self.checked(&out, &["split-window"]).map(|_| ())
     }
 
     pub fn select_layout(&self, target: &str, layout: &str) -> Result<()> {
@@ -174,7 +174,7 @@ impl Tmux {
             .arg(cwd)
             .args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
-        Ok(check(&out, &["split-window"])?.trim().to_string())
+        Ok(self.checked(&out, &["split-window"])?.trim().to_string())
     }
 
     /// `format` expanded for `target`.
@@ -199,7 +199,7 @@ impl Tmux {
             .stdin(Stdio::null())
             .output()
             .context("running tmux")?;
-        check(&out, &["source-file"]).map(|_| ())
+        self.checked(&out, &["source-file"]).map(|_| ())
     }
 
     pub fn select_pane(&self, target: &str) -> Result<()> {
@@ -278,7 +278,7 @@ impl Tmux {
         }
         c.args(argv);
         let out = c.stdin(Stdio::null()).output().context("running tmux")?;
-        check(&out, &["display-popup"]).map(|_| ())
+        self.checked(&out, &["display-popup"]).map(|_| ())
     }
 
     /// A window option's value (e.g. a user option like `@grove_build`).
@@ -379,7 +379,7 @@ impl Tmux {
             .take()
             .context("tmux stdin")?
             .write_all(text.as_bytes())?;
-        check(&child.wait_with_output()?, &["load-buffer"])?;
+        self.checked(&child.wait_with_output()?, &["load-buffer"])?;
         self.run(&[
             "paste-buffer",
             "-p",
@@ -409,6 +409,87 @@ impl Tmux {
             let _ = std::fs::remove_file(path);
         }
     }
+
+    /// `check`, plus an explanation for the one failure that otherwise
+    /// makes no sense (see `clash_hint`).
+    fn checked(&self, out: &Output, args: &[&str]) -> Result<String> {
+        check(out, args).map_err(|e| {
+            if e.to_string().contains(CLASH) {
+                anyhow!("{e}\n{}", clash_hint(self.socket.as_deref(), &installs()))
+            } else {
+                e
+            }
+        })
+    }
+}
+
+/// What an older tmux prints for anything it asks a server that a newer
+/// tmux started.
+const CLASH: &str = "server exited unexpectedly";
+
+/// Explains `CLASH`: Grove's server outlives `grove`, so a later run that
+/// finds a different, older tmux first on PATH can't talk to it.
+pub fn clash_hint(socket: Option<&str>, installs: &[(PathBuf, String)]) -> String {
+    let l = socket.map_or_else(String::new, |s| format!(" -L {s}"));
+    let newest = installs
+        .iter()
+        .max_by_key(|(_, v)| parse_version(v))
+        .filter(|_| installs.len() > 1);
+    let Some((newest, _)) = newest else {
+        return format!(
+            "Its server was probably started by a different tmux than this one. \
+             `which -a tmux` lists them; stop the server with the newest: `tmux{l} kill-server`."
+        );
+    };
+    let list: String = installs
+        .iter()
+        .map(|(p, v)| format!("\n  {} ({v})", p.display()))
+        .collect();
+    format!(
+        "Its server was started by a different tmux than the one first on your PATH now. \
+         tmux on this machine:{list}\n\
+         Keep the same one first on PATH in every shell, and stop the running server with the \
+         newest (this closes Grove's sessions): `{}{l} kill-server`",
+        newest.display()
+    )
+}
+
+/// Every tmux on this machine: PATH first, then the usual install folders
+/// a shell might leave off its PATH. Each with its `tmux -V`.
+pub fn installs() -> Vec<(PathBuf, String)> {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let usual = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/home/linuxbrew/.linuxbrew/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    .map(PathBuf::from);
+    let user_brew = crate::config::expand_tilde("~/.linuxbrew/bin");
+    installs_in(std::env::split_paths(&path).chain(usual).chain([user_brew]))
+}
+
+/// The tmux binaries in `dirs`, in order, each counted once however many
+/// ways it's reached.
+pub fn installs_in(dirs: impl IntoIterator<Item = PathBuf>) -> Vec<(PathBuf, String)> {
+    let mut seen = Vec::new();
+    let mut out = Vec::new();
+    for dir in dirs {
+        let p = dir.join("tmux");
+        if !p.is_file() {
+            continue;
+        }
+        let real = p.canonicalize().unwrap_or_else(|_| p.clone());
+        if seen.contains(&real) {
+            continue;
+        }
+        seen.push(real);
+        if let Ok(o) = Command::new(&p).arg("-V").stdin(Stdio::null()).output() {
+            out.push((p, String::from_utf8_lossy(&o.stdout).trim().to_string()));
+        }
+    }
+    out
 }
 
 /// The windows focused clients show, from `list-clients` lines (window,
@@ -485,6 +566,71 @@ pub fn version() -> Result<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fake_tmux(dir: &Path, version: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let p = dir.join("tmux");
+        std::fs::write(&p, format!("#!/bin/sh\necho 'tmux {version}'\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn finds_every_tmux_once_in_path_order() {
+        let d = tempfile::tempdir().unwrap();
+        let [apt, brew, link, none] = ["apt", "brew", "link", "none"].map(|n| d.path().join(n));
+        for dir in [&apt, &brew, &link, &none] {
+            std::fs::create_dir(dir).unwrap();
+        }
+        fake_tmux(&apt, "3.4");
+        fake_tmux(&brew, "3.8");
+        // The same binary reached another way (like /bin on usrmerged Linux).
+        std::os::unix::fs::symlink(brew.join("tmux"), link.join("tmux")).unwrap();
+        let found = installs_in([none, brew.clone(), apt.clone(), link]);
+        assert_eq!(
+            found,
+            [
+                (brew.join("tmux"), "tmux 3.8".to_string()),
+                (apt.join("tmux"), "tmux 3.4".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_version_clash_says_what_happened_and_how_to_stop_it() {
+        let installs = [
+            (PathBuf::from("/usr/bin/tmux"), "tmux 3.4".to_string()),
+            (
+                PathBuf::from("/home/linuxbrew/.linuxbrew/bin/tmux"),
+                "tmux 3.8".to_string(),
+            ),
+        ];
+        let hint = clash_hint(Some("grove"), &installs);
+        assert!(hint.contains("started by a different tmux"), "{hint}");
+        assert!(hint.contains("/usr/bin/tmux (tmux 3.4)"), "{hint}");
+        // Stopped with the newest, the one that can still talk to it.
+        assert!(
+            hint.contains("`/home/linuxbrew/.linuxbrew/bin/tmux -L grove kill-server`"),
+            "{hint}"
+        );
+        // With one tmux in sight there's nothing to pick from.
+        let one = clash_hint(Some("grove"), &installs[..1]);
+        assert!(one.contains("`which -a tmux`"), "{one}");
+
+        use std::os::unix::process::ExitStatusExt;
+        let out = Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: vec![],
+            stderr: CLASH.as_bytes().to_vec(),
+        };
+        let err = Tmux::new("grove")
+            .checked(&out, &["new-session"])
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").starts_with("tmux new-session failed: server exited unexpectedly\n"),
+            "{err:#}"
+        );
+        assert!(format!("{err:#}").contains("different tmux"), "{err:#}");
+    }
 
     /// A throwaway tmux server, killed on drop.
     struct TestServer(Tmux);

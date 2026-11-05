@@ -26,6 +26,8 @@ pub struct Check {
 /// The outside world, so tests don't depend on the machine.
 pub struct Probes<'a> {
     pub tmux_version: &'a dyn Fn() -> anyhow::Result<(u32, u32)>,
+    /// Every tmux on the machine, with its `tmux -V`.
+    pub tmux_installs: &'a dyn Fn() -> Vec<(std::path::PathBuf, String)>,
     /// `claude`'s absolute path, or None if it's not on PATH.
     pub claude: &'a dyn Fn() -> Option<String>,
     /// Whether a program is on PATH.
@@ -51,6 +53,26 @@ pub fn run(paths: &Paths, probes: &Probes) -> Vec<Check> {
             format!("{}.{} is too old; Grove needs 3.2 or newer", v.0, v.1),
         )),
         Err(e) => out.push(check(Level::Fail, "tmux", format!("{e:#}"))),
+    }
+    // Grove's server outlives `grove`, and an older tmux can't talk to one
+    // a newer tmux started: which one a shell finds first has to stay put.
+    let installs = (probes.tmux_installs)();
+    let mut versions: Vec<_> = installs.iter().map(|(_, v)| v).collect();
+    versions.sort();
+    versions.dedup();
+    if versions.len() > 1 {
+        let list: Vec<_> = installs
+            .iter()
+            .map(|(p, v)| format!("{v} at {}", p.display()))
+            .collect();
+        out.push(check(
+            Level::Warn,
+            "tmux versions",
+            format!(
+                "{}; keep the same one first on PATH in every shell, or Grove can't reach its tmux",
+                list.join(", ")
+            ),
+        ));
     }
     match (probes.claude)() {
         Some(p) => out.push(check(Level::Ok, "claude", p)),
@@ -240,6 +262,7 @@ mod tests {
     fn ok_probes<'a>() -> Probes<'a> {
         Probes {
             tmux_version: &|| Ok((3, 5)),
+            tmux_installs: &Vec::new,
             claude: &|| Some("/bin/claude".into()),
             has: &|_| true,
             poll: &|_| {
@@ -259,6 +282,48 @@ mod tests {
             .find(|c| c.what == what)
             .unwrap_or_else(|| panic!("no check {what:?} in {checks:?}"))
             .level
+    }
+
+    #[test]
+    fn warns_when_two_tmux_versions_could_start_groves_server() {
+        let d = tempfile::tempdir().unwrap();
+        let paths = Paths::new(d.path().join("home"));
+        paths.ensure().unwrap();
+        let tmux = |p: &str, v: &str| (std::path::PathBuf::from(p), v.to_string());
+        let two = || {
+            vec![
+                tmux("/usr/bin/tmux", "tmux 3.4"),
+                tmux("/home/linuxbrew/.linuxbrew/bin/tmux", "tmux 3.8"),
+            ]
+        };
+        let checks = run(
+            &paths,
+            &Probes {
+                tmux_installs: &two,
+                ..ok_probes()
+            },
+        );
+        assert_eq!(level_of(&checks, "tmux versions"), Level::Warn);
+        let c = checks.iter().find(|c| c.what == "tmux versions").unwrap();
+        assert!(c.detail.contains("tmux 3.4 at /usr/bin/tmux"), "{c:?}");
+        // The same version twice (a symlink, two copies) is no clash.
+        let same = || {
+            vec![
+                tmux("/usr/bin/tmux", "tmux 3.4"),
+                tmux("/opt/tmux", "tmux 3.4"),
+            ]
+        };
+        let checks = run(
+            &paths,
+            &Probes {
+                tmux_installs: &same,
+                ..ok_probes()
+            },
+        );
+        assert!(
+            !checks.iter().any(|c| c.what == "tmux versions"),
+            "{checks:?}"
+        );
     }
 
     #[test]

@@ -33,7 +33,7 @@ macOS and Linux only.
 Any one of these:
 
 ```sh
-# Homebrew (macOS or Linux); also installs tmux
+# Homebrew (macOS or Linux); installs tmux on macOS, uses the system's on Linux
 brew install ajongaro/grove/grove
 
 # Or the install script: the right binary for your OS and CPU, into ~/.local/bin

@@ -28,9 +28,12 @@ class Grove < Formula
   homepage "https://github.com/ajongaro/grove"
   license "MIT"
 
-  depends_on "tmux"
-
+  # On Linux, the system's tmux: a second one from Homebrew means whichever
+  # a shell finds first starts Grove's server, and an older one can't reach
+  # a server a newer one started.
   on_macos do
+    depends_on "tmux"
+
     on_arm do
 $mac_arm
     end
@@ -55,6 +58,7 @@ $linux_intel
   def caveats
     <<~EOS
       Grove needs Claude Code, logged in: https://code.claude.com/docs
+      On Linux it uses your system's tmux (3.2 or newer): sudo apt install tmux
       Check your setup with: grove doctor
       After brew upgrade grove, press R on the dashboard to restart it.
     EOS
