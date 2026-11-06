@@ -3,6 +3,8 @@
 A tmux dashboard for running and supervising Claude Code sessions across your
 projects.
 
+![The Grove dashboard: projects, pinned sessions, sessions, a to-do list and fincas](docs/screenshot.png)
+
 - **Projects:** each has a folder, a color and a one-line summary.
 - **Sessions:** each Claude Code session runs in its own tmux window. Grove
   shows which ones are working, which **need you** (a permission prompt) and
