@@ -34,6 +34,7 @@ fn cfg(e: &Env) -> Config {
 
 fn project(e: &Env) -> Project {
     Project {
+        id: None,
         name: "My Proj".into(),
         path: e.proj_dir.clone(),
         color: Some("#2e8b57".into()),

@@ -91,7 +91,36 @@ fn add_project_rejects_missing_dir_and_duplicates() {
     let dir = t.root.join("app");
     std::fs::create_dir_all(&dir).unwrap();
     add_project_at(&t.ctx.store, dir.to_str().unwrap()).unwrap();
-    assert!(add_project_at(&t.ctx.store, dir.to_str().unwrap()).is_err());
+    let err = add_project_at(&t.ctx.store, dir.to_str().unwrap()).unwrap_err();
+    assert!(err.to_string().contains("already the app project"), "{err}");
+}
+
+#[test]
+fn a_second_folder_with_a_taken_name_gets_its_parents() {
+    let t = setup("addtwin");
+    for parent in ["acme", "globex"] {
+        std::fs::create_dir_all(t.root.join(parent).join("website")).unwrap();
+    }
+    let first = t.root.join("acme/website");
+    let second = t.root.join("globex/website");
+    assert_eq!(
+        add_project_at(&t.ctx.store, first.to_str().unwrap()).unwrap(),
+        "website"
+    );
+    assert_eq!(
+        add_project_at(&t.ctx.store, second.to_str().unwrap()).unwrap(),
+        "globex/website"
+    );
+    let p = t.ctx.store.get_project("globex/website").unwrap();
+    assert_eq!(p.slug(), "globex-website");
+    assert!(
+        t.ctx
+            .store
+            .paths
+            .projects
+            .join("globex-website.toml")
+            .is_file()
+    );
 }
 
 #[test]
@@ -174,6 +203,7 @@ fn new_session_for_missing_project_dir_is_an_error() {
     t.ctx
         .store
         .add_project(&Project {
+            id: None,
             name: "gone".into(),
             path: "/no/such".into(),
             color: None,
@@ -199,6 +229,7 @@ fn project_shell_for_missing_project_dir_is_an_error() {
     t.ctx
         .store
         .add_project(&Project {
+            id: None,
             name: "gone".into(),
             path: "/no/such".into(),
             color: None,
@@ -700,6 +731,7 @@ fn new_shell_for_missing_project_dir_is_an_error() {
     t.ctx
         .store
         .add_project(&Project {
+            id: None,
             name: "gone".into(),
             path: "/no/such".into(),
             color: None,

@@ -37,19 +37,12 @@ impl Store {
                 std::fs::read_to_string(&f)
                     .map_err(|e| e.to_string())
                     .and_then(|t| toml::from_str::<Project>(&t).map_err(|e| e.to_string()))
-                    .and_then(|p| {
-                        // Sessions are keyed by the file's slug,
-                        // so a renamed `name` would orphan them.
+                    .map(|mut p: Project| {
+                        // The file name is the project's identity, so
+                        // `name` is free to change.
                         let stem = f.file_stem().unwrap_or_default().to_string_lossy();
-                        if p.slug() == stem {
-                            Ok(p)
-                        } else {
-                            Err(format!(
-                                "name {:?} doesn't match file {stem}.toml; rename the file to {}.toml or change the name back",
-                                p.name,
-                                p.slug()
-                            ))
-                        }
+                        p.id = Some(stem.into_owned());
+                        p
                     })
                     .map_err(|e| (f, e))
             })
@@ -63,8 +56,10 @@ impl Store {
             .into_iter()
             .filter_map(Result::ok)
             .collect();
+        // By id first, so a label can't shadow another project's id.
         all.iter()
             .find(|p| p.slug() == slug)
+            .or_else(|| all.iter().find(|p| slugify(&p.name) == slug))
             .cloned()
             .ok_or_else(|| {
                 let names: Vec<_> = all.iter().map(|p| p.name.as_str()).collect();
@@ -82,7 +77,7 @@ impl Store {
             bail!("project name {:?} has no letters or digits", p.name);
         }
         if self.project_file(&slug).exists() {
-            bail!("a project with slug {slug:?} already exists");
+            bail!("a project with id {slug:?} already exists");
         }
         self.save_project(p)
     }

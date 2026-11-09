@@ -67,6 +67,7 @@ fn add_in(t: &T, name: &str, work: bool) {
     std::fs::create_dir_all(&path).unwrap();
     t.store
         .add_project(&Project {
+            id: None,
             name: name.into(),
             path,
             color: None,
@@ -171,6 +172,7 @@ fn symlinked_path_into_the_work_folder_counts_as_work() {
     std::os::unix::fs::symlink(&real, &link).unwrap();
     t.store
         .add_project(&Project {
+            id: None,
             name: "linked".into(),
             path: link,
             color: None,
@@ -783,6 +785,7 @@ fn scope_follows_config_edits_without_a_restart() {
     let store = Store::new(paths.clone());
     store
         .add_project(&Project {
+            id: None,
             name: "alpha".into(),
             path: work.join("alpha"),
             color: None,

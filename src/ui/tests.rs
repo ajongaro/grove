@@ -35,6 +35,7 @@ fn store_with(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, St
     for p in projects {
         store
             .add_project(&Project {
+                id: None,
                 name: p.to_string(),
                 path: format!("/code/{p}").into(),
                 color: None,
@@ -117,6 +118,7 @@ fn reload_keeps_selection_on_same_project() {
     let (_d, s, mut app) = loaded(&["beta", "gamma"], &[]);
     app.proj_idx = 1; // gamma
     s.add_project(&Project {
+        id: None,
         name: "alpha".into(),
         path: "/a".into(),
         color: None,
@@ -855,6 +857,7 @@ fn reload_keeps_finca_selection_and_poll_state() {
         t0(),
     );
     s.add_project(&Project {
+        id: None,
         name: "beta".into(),
         path: "/b".into(),
         color: None,
@@ -989,6 +992,7 @@ fn work_and_play(projects: &[(&str, &str)]) -> (tempfile::TempDir, Store, App) {
     let (d, s) = store_with(&[], &[]);
     for (name, path) in projects {
         s.add_project(&Project {
+            id: None,
             name: name.to_string(),
             path: path.into(),
             color: None,
@@ -3908,6 +3912,7 @@ fn shift_j_skips_a_hidden_box() {
     )
     .unwrap();
     s.add_project(&Project {
+        id: None,
         name: "acme".into(),
         path: "/w/acme".into(),
         color: None,

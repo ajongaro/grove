@@ -5,19 +5,25 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Project {
+    /// Free text: the label on the project's row. Change it any time.
     pub name: String,
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The project's file name (`projects/<id>.toml`), set when loaded. It's
+    /// the project's identity: sessions, to-dos and tmux windows use it, so
+    /// renaming (`name`) moves nothing. Unset, it's the slug of `name`.
+    #[serde(skip)]
+    pub id: Option<String>,
 }
 
 impl Project {
     pub fn slug(&self) -> String {
-        slugify(&self.name)
+        self.id.clone().unwrap_or_else(|| slugify(&self.name))
     }
 }
 

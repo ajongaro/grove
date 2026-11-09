@@ -344,6 +344,7 @@ mod tests {
         .unwrap();
         let store = Store::new(paths.clone());
         let proj = |name: &str, path: &Path| Project {
+            id: None,
             name: name.into(),
             path: path.into(),
             color: None,

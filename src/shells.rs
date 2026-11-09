@@ -155,6 +155,7 @@ mod tests {
         tmux.new_session_detached("grove", "dash", &root, &sleeper)
             .unwrap();
         let project = Project {
+            id: None,
             name: "My App".into(),
             path: root.clone(),
             color: None,

@@ -10,6 +10,7 @@ fn store() -> (tempfile::TempDir, Store) {
 
 fn proj(name: &str) -> Project {
     Project {
+        id: None,
         name: name.into(),
         path: "/tmp/x".into(),
         color: None,
@@ -60,6 +61,7 @@ fn project_roundtrip_by_name_or_slug() {
     let mut p = proj("My App");
     p.color = Some("#123456".into());
     s.add_project(&p).unwrap();
+    p.id = Some("my-app".into());
     assert_eq!(s.get_project("My App").unwrap(), p);
     assert_eq!(s.get_project("my-app").unwrap(), p);
     assert_eq!(s.list_projects().len(), 1);
@@ -177,21 +179,39 @@ fn todos_read_back_what_was_written_and_start_empty() {
 }
 
 #[test]
-fn renamed_project_file_is_reported_not_split() {
+fn renamed_project_keeps_its_id() {
     let (_d, s) = store();
     s.add_project(&proj("my-app")).unwrap();
     std::fs::write(
         s.paths.projects.join("my-app.toml"),
-        "name = \"Other\"\npath = \"/tmp/x\"\n",
+        "name = \"Acme site\"\npath = \"/tmp/x\"\n",
     )
     .unwrap();
     let all = s.list_projects();
     assert_eq!(all.len(), 1);
-    let (path, err) = all[0].as_ref().unwrap_err();
-    assert!(path.ends_with("my-app.toml"));
-    assert!(err.contains("my-app") && err.contains("Other"), "{err}");
-    assert!(s.get_project("Other").is_err());
-    assert!(!s.paths.projects.join("other.toml").exists());
+    // Found by its new label or its id; the id (the file) never moves.
+    for q in ["Acme site", "acme-site", "my-app"] {
+        let p = s.get_project(q).unwrap();
+        assert_eq!((p.name.as_str(), p.slug()), ("Acme site", "my-app".into()));
+    }
+    let mut p = s.get_project("my-app").unwrap();
+    p.summary = Some("x".into());
+    s.save_project(&p).unwrap();
+    assert!(!s.paths.projects.join("acme-site.toml").exists());
+    assert_eq!(s.list_projects().len(), 1);
+}
+
+#[test]
+fn an_id_beats_another_projects_label() {
+    let (_d, s) = store();
+    s.add_project(&proj("site")).unwrap();
+    s.add_project(&proj("other")).unwrap();
+    std::fs::write(
+        s.paths.projects.join("other.toml"),
+        "name = \"site\"\npath = \"/tmp/x\"\n",
+    )
+    .unwrap();
+    assert_eq!(s.get_project("site").unwrap().slug(), "site");
 }
 
 fn finca(name: &str) -> crate::finca::Finca {

@@ -153,6 +153,7 @@ mod tests {
         let s = Store::new(Paths::new(d.path().join("home")));
         for name in ["alpha", "beta"] {
             s.add_project(&Project {
+                id: None,
                 name: name.into(),
                 path: "/x".into(),
                 color: None,

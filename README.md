@@ -78,6 +78,11 @@ grove add                         # the current folder
 grove add --new ~/code/new-thing  # create it (with git init) first
 ```
 
+A project is named after its folder. If that name is taken (a second
+`website`, say), the parent folder's name is added: `globex/website`.
+To rename one, press `e` on it and change `name`. The file name stays the
+project's id, so its sessions, to-dos and windows are untouched.
+
 Check: `grove doctor` lists `✓ project <name>` with the account it will use.
 
 ### 5. Start it
@@ -149,7 +154,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `/` | dashboard | find a session, here or on a finca, live or ended |
 | `n` | dashboard | start a named session |
 | `a` | dashboard | add a project (Tab completes, `j`/`k` pick a match) |
-| `e` | dashboard | edit the project file in `$EDITOR` (popup) |
+| `e` | dashboard | edit the project file in `$EDITOR` (popup); change `name` to rename it |
 | `s` | dashboard | a quick shell in the project's folder (popup; `exit` closes it) |
 | `S` | dashboard | a shell in the project's folder that stays open (see [Shells](#shells)) |
 | `s` `S` | Pinned | the same for a pinned session's project, or a shell on its finca |
@@ -500,8 +505,8 @@ than `~/.claude`, set `claude_config_dir` in that machine's
 ```
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
-projects/<slug>.toml      name, path, color, summary
-todos/<slug>.md           the project's to-do list (Markdown checklist)
+projects/<id>.toml        name (a free label), path, color, summary
+todos/<id>.md             the project's to-do list (Markdown checklist)
 sessions/<uuid>.json      one per session: state, window, message
 stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color

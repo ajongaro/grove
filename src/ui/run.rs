@@ -396,15 +396,31 @@ pub fn add_project_at(store: &Store, path: &str) -> Result<String> {
     if !dir.is_dir() {
         bail!("{} is not a directory", dir.display());
     }
-    let name = dir
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "root".into());
+    let existing: Vec<Project> = store
+        .list_projects()
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    if let Some(p) = existing.iter().find(|p| p.path == dir) {
+        bail!("{} is already the {} project", dir.display(), p.name);
+    }
+    let base = |d: &std::path::Path| d.file_name().map(|n| n.to_string_lossy().into_owned());
+    let mut name = base(&dir).unwrap_or_else(|| "root".into());
+    // Another project already has the folder's name (say a second
+    // `website`): add its parent's, so `acme/website` has id `acme-website`.
+    let taken = |name: &str| {
+        let slug = crate::model::slugify(name);
+        existing.iter().any(|p| p.slug() == slug)
+    };
+    if taken(&name)
+        && let Some(parent) = dir.parent().and_then(base)
+    {
+        name = format!("{parent}/{name}");
+    }
     store.add_project(&Project {
         name: name.clone(),
         path: dir,
-        color: None,
-        summary: None,
+        ..Default::default()
     })?;
     Ok(name)
 }
