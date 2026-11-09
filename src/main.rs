@@ -3,6 +3,7 @@ mod config;
 mod desk;
 mod doctor;
 mod finca;
+mod hidden;
 mod hook;
 mod kill;
 mod launch;

@@ -42,6 +42,13 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             if !app.fincas.is_empty() || app.groups().len() > 1 {
                 h.push(("J/K", "section"));
             }
+            if app.groups().len() > 1 {
+                // With a box hidden, the way back comes right after Enter.
+                match app.hidden.is_empty() {
+                    true => h.push(("H", "hide box")),
+                    false => h.insert(1, ("H", "show all")),
+                }
+            }
             h.push(("T", "theme"));
             (p.accent, h)
         }

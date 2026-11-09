@@ -327,6 +327,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('R') => Action::Update,
+        KeyCode::Char('H') => toggle_hidden(app),
         KeyCode::Char('T') => {
             let current = super::theme::pal().name;
             let sel = super::theme::all()
@@ -538,6 +539,33 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
 
 /// Projects → Pinned (when there are pins) → Sessions → To-do (when a
 /// project is selected) and around.
+/// `H`: hides the selected project's account box, or, with any box
+/// hidden, shows them all again.
+fn toggle_hidden(app: &mut App) -> Action {
+    if app.groups().len() < 2 {
+        app.footer = Some("H hides an account's box: there's only one".into());
+        return Action::None;
+    }
+    if !app.hidden.is_empty() {
+        return Action::SaveHidden {
+            accounts: Default::default(),
+        };
+    }
+    let Some(account) = app.selected_project().map(|p| app.account_of(p).name) else {
+        return Action::None;
+    };
+    app.footer = Some(format!(
+        "{} hidden · H shows it again",
+        account.to_uppercase()
+    ));
+    app.pane = Pane::Projects;
+    app.proj_idx = 0;
+    app.sess_idx = 0;
+    Action::SaveHidden {
+        accounts: [account].into_iter().collect(),
+    }
+}
+
 /// A run of rows `J`/`K` jump between. The left pane's are each account's
 /// box of projects and then the fincas, by the row each starts on; the
 /// right column's are Pinned, Sessions and To-do.

@@ -159,6 +159,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `1`–`9` | dashboard | jump to that pinned session |
 | `c` | dashboard | clear ended sessions for the project |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
+| `H` | project | hide its account's box, to focus on work or play; again shows every box (see [More than one Claude account](#more-than-one-claude-account)) |
 | `t` | dashboard | jump to the project's to-do list |
 | `v` | dashboard | session grid: every live session's screen |
 | `V` | dashboard | the pinned desk: your pinned sessions, live, side by side |
@@ -186,7 +187,8 @@ window you're in and the windows that need you (in red); the dashboard has the
 rest. Each project row counts its live
 sessions by state: 💧 needs you, 🌳 your turn, 🌿 working.
 
-An ended session stays listed until you clear it (`c`). **Enter** on one
+A project's sessions are listed most recently active first, the order
+their ages read in. An ended session stays listed until you clear it (`c`). **Enter** on one
 reopens it in a new window with `claude --resume`, picking up its last
 conversation (Grove follows it through `/clear` and `/resume`). It keeps its
 name, unless a live session has taken it since, and its cost keeps adding
@@ -406,6 +408,11 @@ folder = "~/Work"                          # projects under here use this accoun
 When an account has a `folder`, the dashboard's left column splits into one
 box per account (the default on top), and `j`/`k` run straight through them.
 Within each box, projects with the most live sessions come first.
+**`H`** on a project hides its account's box, so a working day can be all
+work and an evening all play. The box shrinks to its title, `j`/`k` and
+`J`/`K` pass it by, and `H` again shows every box. It stays hidden through
+restarts (`~/.grove/hidden.json`). Its sessions still count toward
+"needs you" and still alert, so nothing waits on you unseen.
 The tmux status bar shows the account of the window you're in, and `grove add`
 says which account a folder picked. To move a project to another account,
 move its folder and add it again.

@@ -3813,3 +3813,111 @@ fn shift_j_steps_through_each_account_box() {
         "top of the play box"
     );
 }
+
+#[test]
+fn sessions_list_most_recently_active_first() {
+    let mut old = session("a1", "alpha", "old", State::YourTurn, Some("@1"));
+    old.updated_at = t0() - Duration::hours(2);
+    let mut new = session("a2", "alpha", "new", State::Working, Some("@2"));
+    new.created_at = t0() - Duration::hours(3);
+    let (_d, s, mut app) = loaded(&["alpha"], &[old, new]);
+    let names = |app: &App| -> Vec<String> {
+        app.visible_sessions()
+            .iter()
+            .map(|s| s.name.clone())
+            .collect()
+    };
+    assert_eq!(names(&app), ["new", "old"]);
+    // Activity on the older one brings it to the top, cursor and all.
+    app.pane = Pane::Sessions;
+    app.sess_idx = 1;
+    let mut a1 = s.get_session("a1").unwrap();
+    a1.updated_at = t0() + Duration::minutes(1);
+    s.save_session(&a1).unwrap();
+    app.reload(&s);
+    assert_eq!(names(&app), ["old", "new"]);
+    assert_eq!(app.selected_session().unwrap().name, "old");
+}
+
+/// Applies a SaveHidden action the way perform + reload would.
+fn save_hidden(s: &Store, app: &mut App, a: Action) {
+    match a {
+        Action::SaveHidden { accounts } => crate::hidden::save(&s.paths, &accounts).unwrap(),
+        other => panic!("{other:?}"),
+    }
+    app.reload(s);
+}
+
+#[test]
+fn big_h_hides_an_account_box_and_again_shows_them_all() {
+    let (_d, s, mut app) = work_and_play(&[
+        ("acme", "/w/acme"),
+        ("beta", "/code/beta"),
+        ("gamma", "/code/gamma"),
+    ]);
+    app.pane = Pane::Projects;
+    app.proj_idx = 2;
+    assert_eq!(app.selected_project().unwrap().slug, "acme");
+    let a = handle_key(&mut app, ch('H'));
+    save_hidden(&s, &mut app, a);
+    let slugs: Vec<_> = app.projects.iter().map(|p| p.slug.as_str()).collect();
+    assert_eq!(slugs, ["beta", "gamma"]);
+    assert_eq!(app.selected_project().unwrap().slug, "beta");
+    let out = screen(&app, 100, 30);
+    assert!(out.contains("WORK") && out.contains("hidden"), "{out}");
+    assert!(!out.contains("acme"), "{out}");
+    assert!(app.footer.as_deref().unwrap().contains("WORK hidden"));
+    app.footer = None;
+    let f = footer_of(&app, 100);
+    assert!(f.contains("H show all"), "{f}");
+    // Kept across a restart.
+    let mut fresh = App::new("/x".into());
+    fresh.cfg = app.cfg.clone();
+    fresh.reload(&s);
+    assert!(fresh.is_hidden("work"));
+    // H with a box hidden shows them all, the cursor where it was.
+    app.proj_idx = 1;
+    let a = handle_key(&mut app, ch('H'));
+    save_hidden(&s, &mut app, a);
+    assert_eq!(app.projects.len(), 3);
+    assert_eq!(app.selected_project().unwrap().slug, "gamma");
+}
+
+#[test]
+fn big_h_with_one_account_just_says_so() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    assert_eq!(handle_key(&mut app, ch('H')), Action::None);
+    assert!(app.footer.as_deref().unwrap().contains("only one"));
+}
+
+#[test]
+fn a_hidden_file_naming_every_box_hides_nothing() {
+    let (_d, s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    let all = ["work", "play"].map(String::from).into_iter().collect();
+    crate::hidden::save(&s.paths, &all).unwrap();
+    app.reload(&s);
+    assert!(app.hidden.is_empty());
+    assert_eq!(app.projects.len(), 2);
+}
+
+#[test]
+fn shift_j_skips_a_hidden_box() {
+    let (_d, s, mut app) = with_fincas(&["alpha"], &[], &["pi"]);
+    app.cfg = toml::from_str(
+        "claude_config_dir = \"~/.claude-play\"\n[accounts.work]\ndir = \"~/.claude-work\"\nfolder = \"/w\"\n",
+    )
+    .unwrap();
+    s.add_project(&Project {
+        name: "acme".into(),
+        path: "/w/acme".into(),
+        color: None,
+        summary: None,
+    })
+    .unwrap();
+    crate::hidden::save(&s.paths, &["work".to_string()].into_iter().collect()).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Projects;
+    app.proj_idx = 0;
+    handle_key(&mut app, shift('J'));
+    assert_eq!(app.selected_finca().unwrap().slug, "pi");
+}

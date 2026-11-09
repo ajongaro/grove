@@ -57,12 +57,19 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let [left, right] =
         Layout::horizontal([Constraint::Percentage(32), Constraint::Percentage(68)]).areas(main);
 
-    // Left: one equal share per account box, plus one for the fincas.
+    // Left: one equal share per account box, plus one for the fincas; a
+    // hidden box (H) shrinks to its border and one line.
+    let shares: Vec<Constraint> = app
+        .groups()
+        .iter()
+        .map(|g| match app.is_hidden(&g.name) {
+            true => Constraint::Length(3),
+            false => Constraint::Fill(1),
+        })
+        .chain((!app.fincas.is_empty()).then_some(Constraint::Fill(1)))
+        .collect();
     let groups = app.groups().len();
-    let shares = groups + usize::from(!app.fincas.is_empty());
-    let mut boxes = Layout::vertical((0..shares).map(|_| Constraint::Fill(1)))
-        .split(left)
-        .to_vec();
+    let mut boxes = Layout::vertical(shares).split(left).to_vec();
     if let Some(fincas) = boxes.get(groups).copied() {
         render_fincas(frame, app, fincas, now);
         boxes.truncate(groups);
@@ -241,6 +248,12 @@ fn render_project_boxes(frame: &mut Frame, app: &App, areas: &[Rect]) {
         } else {
             g.name.to_uppercase()
         };
+        if app.is_hidden(&g.name) {
+            let block = pane_block(vec![Span::raw(title).fg(pal().dim)], false);
+            let note = Paragraph::new("hidden · H shows it").fg(pal().dim);
+            frame.render_widget(note.block(block), *area);
+            continue;
+        }
         let empty = match app
             .cfg
             .accounts

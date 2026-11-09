@@ -138,6 +138,10 @@ pub enum Action {
     SaveTheme {
         name: String,
     },
+    /// Write the accounts whose boxes are hidden.
+    SaveHidden {
+        accounts: std::collections::BTreeSet<String>,
+    },
     /// Run the guided finca setup against this SSH destination.
     SetupFinca {
         dest: String,
@@ -289,6 +293,9 @@ pub struct App {
     pub completion_idx: Option<usize>,
     /// For naming each project's Claude account.
     pub cfg: crate::config::Config,
+    /// Accounts whose project box is hidden (`H`); their projects aren't
+    /// in `projects`.
+    pub hidden: std::collections::BTreeSet<String>,
     /// The to-do list of `todo_slug`.
     pub todos: crate::todo::Todos,
     /// The project whose list `todos` holds: the selected one, if usable.
@@ -374,6 +381,7 @@ impl App {
             completions: Vec::new(),
             completion_idx: None,
             cfg: crate::config::Config::default(),
+            hidden: Default::default(),
             todos: crate::todo::Todos::default(),
             todo_slug: None,
             open_todos: HashMap::new(),
@@ -420,6 +428,11 @@ impl App {
         out
     }
 
+    /// Whether `account`'s project box is hidden.
+    pub fn is_hidden(&self, account: &str) -> bool {
+        self.hidden.contains(account)
+    }
+
     /// The account the project's folder puts it on.
     pub fn account_of(&self, p: &ProjectRow) -> crate::config::Account {
         self.cfg.account_for(&p.path)
@@ -463,6 +476,9 @@ impl App {
             })
             .collect();
         self.sessions = store.list_sessions(None);
+        // Most recently active first: the order the ages beside them read in.
+        self.sessions
+            .sort_by_key(|s| std::cmp::Reverse(s.updated_at));
         self.titles = self
             .sessions
             .iter()
@@ -487,6 +503,13 @@ impl App {
         };
         let mut projects = std::mem::take(&mut self.projects);
         projects.sort_by_cached_key(key);
+        // Only accounts that have a box can hide, and never every box.
+        self.hidden = crate::hidden::load(&store.paths);
+        self.hidden.retain(|h| groups.iter().any(|g| &g.name == h));
+        if groups.len() < 2 || self.hidden.len() >= groups.len() {
+            self.hidden.clear();
+        }
+        projects.retain(|p| !self.hidden.contains(&self.cfg.account_for(&p.path).name));
         self.projects = projects;
 
         if let Some(i) =
