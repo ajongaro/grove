@@ -141,7 +141,8 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `C-g` | anywhere | back to the dashboard |
 | `C-h` `C-j` `C-k` `C-l` | anywhere | move between panes: a session and its shell, the desk's columns. With no pane that way, on the dashboard, or in vim or fzf, the key goes to the program as usual |
 | `C-\` | session | a shell below it, in its folder; again to switch between them, `exit` closes it |
-| `j` `k` `↑` `↓` | dashboard | move |
+| `j` `k` `↑` `↓` | dashboard | move; off the end of a section, into the next |
+| `J` `K` | dashboard | jump to the next / previous section in the column: each account's projects, the fincas, Pinned, Sessions, the to-do list |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
 | `Enter` | session | jump to its window; on an ended one, resume its conversation |
@@ -162,6 +163,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `v` | dashboard | session grid: every live session's screen |
 | `V` | dashboard | the pinned desk: your pinned sessions, live, side by side |
 | `R` | dashboard | restart on a new Grove, after upgrading |
+| `T` | dashboard | pick a color theme (see [Themes](#themes)) |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
 | `prefix r` | anywhere | reload Grove's tmux config |
@@ -170,6 +172,11 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 
 `C-g` is taken from Claude Code inside Grove, where it would open the prompt
 in your editor.
+
+The bar along the bottom shows the most used keys for whatever is selected
+(a project, a finca, a session, a shell, a pin, a to-do), with its keys in
+that pane's color. On a narrow screen the rarer ones drop off; `?` lists
+them all.
 
 Sessions grow through their states: 🌱 **starting** → 🌿 **working** ⇄
 💧 **needs you** (a permission prompt; it wants watering) → 🌳 **your turn**
@@ -316,6 +323,24 @@ Then press `R` on the dashboard. It refreshes Grove's generated files and tmux
 config and restarts the dashboard on the new build. Running sessions aren't
 touched.
 
+### Themes
+
+**`T`** opens the theme picker. Moving through the list redraws the
+dashboard in each theme; Enter keeps one and saves it to `config.toml`,
+and Esc puts back the one you had. Or set it yourself:
+
+```toml
+theme = "catppuccin-mocha"   # grove (the default), catppuccin-mocha, catppuccin-macchiato,
+                             # catppuccin-frappe, tokyo-night ("catppuccin" means Mocha)
+```
+
+Colors in `config.toml` and project files can be **names** as well as
+`#rrggbb`, and named ones follow the theme: `blue` is Catppuccin's blue in
+Catppuccin and Tokyo Night's in Tokyo Night. The names are red, maroon,
+flamingo, rosewater, orange (or peach), yellow, green, teal, cyan (or sky),
+sapphire, blue, lavender, purple (or mauve) and pink. The theme colors the
+dashboard; tmux's own colors stay yours to set in `tmux.local.conf`.
+
 ## To-do lists
 
 Each project has a to-do list under its sessions (`t` or `Tab` to get
@@ -370,11 +395,11 @@ anywhere else use the default account (`claude_config_dir`):
 ```toml
 claude_config_dir = "~/.claude-personal"   # default account, shown as "personal"
 # account_name = "home"                    # optional: name it yourself
-account_color = "#7aa2f7"                  # optional: its color on the dashboard
+account_color = "blue"                     # optional: its color (a name follows the theme, or "#rrggbb")
 
 [accounts.work]
 dir = "~/.claude-work"                     # log in once: CLAUDE_CONFIG_DIR=~/.claude-work claude
-color = "#e8a33d"
+color = "peach"
 folder = "~/Work"                          # projects under here use this account
 ```
 
@@ -487,6 +512,7 @@ editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
 statusline = true                      # Grove's status line in its sessions
+theme = "grove"                        # dashboard colors: see "Themes"
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```

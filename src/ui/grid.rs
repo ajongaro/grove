@@ -9,7 +9,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 
 use super::app::App;
-use super::render::{ACCENT, FINCAS_COLOR, SESSIONS_COLOR, state_color};
+use super::render::state_color;
+use super::theme::pal;
 use crate::model::State;
 
 /// Seconds without a good fetch before a finca's tiles go stale.
@@ -217,48 +218,49 @@ pub fn render_grid(
     // Top line: totals, what's shown, unreachable fincas, the way back.
     let count = |f: &dyn Fn(State) -> bool| tiles.iter().filter(|t| f(t.state)).count();
     let mut spans = vec![
-        Span::raw(" SESSIONS").fg(SESSIONS_COLOR),
+        Span::raw(" SESSIONS").fg(pal().sessions),
         Span::raw(format!(" · {} live", tiles.len())),
     ];
     if shown.len() < tiles.len() {
-        spans.push(Span::raw(format!(" · showing {}–{}", shown.start + 1, shown.end)).dark_gray());
+        spans
+            .push(Span::raw(format!(" · showing {}–{}", shown.start + 1, shown.end)).fg(pal().dim));
     }
     for (icon, n, c) in [
         (
             State::NeedsYou.glyph(),
             count(&|s| s == State::NeedsYou),
-            Color::Red,
+            pal().needs_you,
         ),
         (
             State::YourTurn.glyph(),
             count(&|s| s == State::YourTurn),
-            Color::Yellow,
+            pal().your_turn,
         ),
         (
             State::Working.glyph(),
             count(&|s| matches!(s, State::Working | State::Starting)),
-            Color::Green,
+            pal().working,
         ),
     ] {
-        spans.push(Span::raw(format!("  {icon}{n}")).fg(if n == 0 { Color::DarkGray } else { c }));
+        spans.push(Span::raw(format!("  {icon}{n}")).fg(if n == 0 { pal().dim } else { c }));
     }
     for f in &app.fincas {
         if matches!(f.reach, Some(crate::finca::Reach::Unreachable { .. })) {
-            spans.push(Span::raw(format!(" · {} unreachable", f.name)).dark_gray());
+            spans.push(Span::raw(format!(" · {} unreachable", f.name)).fg(pal().dim));
         }
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), top);
     frame.render_widget(
         Paragraph::new("v back · ? help ")
             .alignment(Alignment::Right)
-            .dark_gray(),
+            .fg(pal().dim),
         top,
     );
 
     if tiles.is_empty() {
         frame.render_widget(
             Paragraph::new(" No live sessions. Esc back, then Enter on a project to start one.")
-                .dark_gray(),
+                .fg(pal().dim),
             body,
         );
     }
@@ -296,11 +298,11 @@ pub fn render_grid(
                 .unwrap_or_else(|| "Enter send · Esc cancel".into());
             let lines = vec![
                 Line::from(vec![
-                    Span::raw(format!(" reply to {} ▸ ", r.handle)).fg(ACCENT),
+                    Span::raw(format!(" reply to {} ▸ ", r.handle)).fg(pal().accent),
                     Span::raw(r.text.clone()),
-                    Span::raw("_").dark_gray(),
+                    Span::raw("_").fg(pal().dim),
                 ]),
-                Line::from(format!(" {hint}")).dark_gray(),
+                Line::from(format!(" {hint}")).fg(pal().dim),
             ];
             frame.render_widget(Paragraph::new(lines), bottom);
         }
@@ -308,7 +310,7 @@ pub fn render_grid(
             let text = app.footer.clone().unwrap_or_else(|| {
                 "Enter jump · i reply · x kill · Tab next waiting · hjkl move".into()
             });
-            frame.render_widget(Paragraph::new(format!(" {text}")).dark_gray(), bottom);
+            frame.render_widget(Paragraph::new(format!(" {text}")).fg(pal().dim), bottom);
         }
     }
 }
@@ -317,7 +319,7 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     if rect.width < 3 || rect.height < 2 {
         return;
     }
-    let dim = |c: Color| if t.stale { Color::DarkGray } else { c };
+    let dim = |c: Color| if t.stale { pal().dim } else { c };
     // A session asking for permission shows its whole screen, so the
     // question is visible.
     let (lines, draft) = match &t.screen {
@@ -328,29 +330,31 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     let icon = t.state.glyph();
     let mut title = vec![Span::raw(" ")];
     if let Some((_, name)) = &t.finca {
-        title.push(Span::raw(name.clone()).fg(dim(FINCAS_COLOR)));
-        title.push(Span::raw(" · ").dark_gray());
+        title.push(Span::raw(name.clone()).fg(dim(pal().fincas)));
+        title.push(Span::raw(" · ").fg(pal().dim));
     }
-    title.push(Span::raw(t.handle()).fg(dim(Color::White)));
+    title.push(Span::raw(t.handle()).fg(dim(pal().bright)));
     title.push(Span::raw(format!(" {icon} {}", t.state.label())).fg(dim(state_color(t.state))));
-    title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).dark_gray());
+    title.push(Span::raw(format!("  {}", super::app::format_age(t.updated_at, now))).fg(pal().dim));
     if draft {
-        title.push(Span::raw("  ✎ draft").fg(dim(Color::Cyan)));
+        title.push(Span::raw("  ✎ draft").fg(dim(pal().draft)));
     }
     if t.stale {
-        title.push(Span::raw("  stale").dark_gray());
+        title.push(Span::raw("  stale").fg(pal().dim));
     }
     // Last: a narrow tile cuts the title's end, and draft/stale matter more.
     if let Some(st) = &t.stats {
-        title.push(Span::raw(format!("  {st}")).dark_gray());
+        title.push(Span::raw(format!("  {st}")).fg(pal().dim));
     }
     title.push(Span::raw(" "));
     let border = if selected {
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(pal().accent)
+            .add_modifier(Modifier::BOLD)
     } else if t.finca.is_some() && !t.stale {
-        Style::default().fg(FINCAS_COLOR)
+        Style::default().fg(pal().fincas)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(pal().dim)
     };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -364,7 +368,7 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     let body: Vec<Line> = match &t.screen {
-        None => vec![Line::from(t.state.label().to_string()).dark_gray()],
+        None => vec![Line::from(t.state.label().to_string()).fg(pal().dim)],
         Some(_) => {
             let keep = &lines[lines.len().saturating_sub(usize::from(inner.height))..];
             keep.iter()
@@ -373,7 +377,7 @@ fn draw_tile(frame: &mut Frame, t: &Tile, selected: bool, rect: Rect, now: DateT
         }
     };
     let style = if t.stale {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(pal().dim)
     } else {
         Style::default()
     };

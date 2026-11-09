@@ -14,13 +14,13 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Dashboard",
         &[
-            ("j k ↑ ↓", "move (crosses panes at the ends)"),
+            ("j k / J K", "move / by section (crosses at ends)"),
             ("Tab h l", "switch pane"),
             ("1–9", "jump to a pin"),
             ("t", "to-do list"),
             ("v V /", "session grid / pinned desk / find"),
             ("a", "add a project"),
-            ("R", "update Grove (after upgrading)"),
+            ("R T", "update Grove / pick a theme"),
             ("?", "this help"),
             ("q", "detach (sessions keep running)"),
         ],

@@ -224,10 +224,10 @@ fn run_with(
             let name = grove_account
                 .or_else(|| Some(cfg.as_ref()?.default_account().name))
                 .unwrap_or_else(|| "default".into());
-            let color = cfg
-                .as_ref()
-                .and_then(|c| c.account(Some(&name)).ok())
-                .and_then(|a| a.color);
+            let color = cfg.as_ref().and_then(|c| {
+                let color = c.account(Some(&name)).ok()?.color?;
+                Some(crate::ui::theme::hex(&color, &c.theme))
+            });
             if let Err(e) = stats::record(paths, &s.id, &name, &input) {
                 log::error(paths, "statusline", &format!("recording {}: {e:#}", s.id));
             }

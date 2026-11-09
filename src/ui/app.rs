@@ -48,6 +48,12 @@ pub enum PromptKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     Normal,
+    /// `T`: the theme picker. `sel` indexes `theme::all()` and is drawn
+    /// live; `was` is the theme to put back on Esc.
+    Themes {
+        sel: usize,
+        was: &'static str,
+    },
     /// The `?` key list; any key closes it.
     Help,
     /// `/`: finding a session anywhere; `sel` indexes `search::search`.
@@ -128,6 +134,10 @@ pub struct FincaRow {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
+    /// Write `theme = "<name>"` to config.toml.
+    SaveTheme {
+        name: String,
+    },
     /// Run the guided finca setup against this SSH destination.
     SetupFinca {
         dest: String,

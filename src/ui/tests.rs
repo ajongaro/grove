@@ -1383,10 +1383,10 @@ fn help_colors_sections_keys_and_notes() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('?'));
     // Section headings take their pane's color.
-    assert_eq!(fg_of(&app, 140, 50, "Fincas"), super::render::FINCAS_COLOR);
+    assert_eq!(fg_of(&app, 140, 50, "Fincas"), super::theme::pal().fincas);
     assert_eq!(fg_of(&app, 140, 50, "Prompts"), Color::White);
     // Keys stand out from what they do; asides in parentheses are dimmed.
-    assert_eq!(fg_of(&app, 140, 50, "C-g"), super::render::KEY_COLOR);
+    assert_eq!(fg_of(&app, 140, 50, "C-g"), super::theme::pal().key);
     assert_eq!(fg_of(&app, 140, 50, "back to the dashboard"), Color::Reset);
     assert_eq!(fg_of(&app, 140, 50, "(folder kept)"), Color::DarkGray);
 }
@@ -3016,7 +3016,7 @@ fn the_pinned_title_isnt_focus_green_when_unfocused() {
     crate::pins::save(&s.paths, &[pin(None, "a2")]).unwrap();
     app.reload(&s);
     app.pane = Pane::Projects;
-    assert_ne!(fg_of(&app, 110, 32, "PINNED"), super::render::ACCENT);
+    assert_ne!(fg_of(&app, 110, 32, "PINNED"), super::theme::pal().accent);
 }
 
 // ---------- shells that stay open ----------
@@ -3595,4 +3595,221 @@ fn big_v_opens_the_desk_of_live_pins() {
     // From the Pinned pane too.
     app.pane = Pane::Pinned;
     assert_eq!(handle_key(&mut app, ch('V')), want);
+}
+
+#[test]
+fn t_previews_themes_live_and_esc_puts_the_old_one_back() {
+    use super::theme::pal;
+    let mut app = App::new("/x".into());
+    assert_eq!(handle_key(&mut app, ch('T')), Action::None);
+    assert!(matches!(app.mode, Mode::Themes { sel: 0, .. }));
+    let s = screen(&app, 100, 30);
+    assert!(s.contains("Theme"), "{s}");
+    assert!(s.contains("catppuccin-mocha"), "{s}");
+    handle_key(&mut app, ch('j'));
+    assert_eq!(pal().name, "catppuccin-mocha");
+    handle_key(&mut app, ch('k'));
+    handle_key(&mut app, ch('k'));
+    assert_eq!(pal().name, "tokyo-night", "k wraps to the bottom");
+    handle_key(&mut app, key(KeyCode::Esc));
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(pal().name, "grove");
+}
+
+#[test]
+fn enter_in_the_theme_picker_keeps_and_saves_the_theme() {
+    use super::theme::pal;
+    let mut app = App::new("/x".into());
+    handle_key(&mut app, ch('T'));
+    handle_key(&mut app, ch('j'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::SaveTheme {
+            name: "catppuccin-mocha".into()
+        }
+    );
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(pal().name, "catppuccin-mocha");
+}
+
+#[test]
+fn named_account_colors_follow_the_theme() {
+    use ratatui::style::Color::Rgb;
+    let (_d, _s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    app.cfg.account_color = Some("blue".into());
+    app.cfg.accounts.get_mut("work").unwrap().color = Some("peach".into());
+    assert_eq!(fg_of(&app, 100, 24, "PLAY "), Rgb(0x7a, 0xa2, 0xf7));
+    assert_eq!(fg_of(&app, 100, 24, "WORK "), Rgb(0xff, 0x9e, 0x64));
+    super::theme::set("catppuccin-mocha");
+    assert_eq!(fg_of(&app, 100, 24, "PLAY "), Rgb(0x89, 0xb4, 0xfa));
+    assert_eq!(fg_of(&app, 100, 24, "WORK "), Rgb(0xfa, 0xb3, 0x87));
+}
+
+fn shift(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT)
+}
+
+#[test]
+fn shift_j_and_k_jump_between_sections_in_each_column() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1"), pin(Some("pi"), "pi-n0")]).unwrap();
+    app.reload(&s);
+    app.todos.load("- [ ] one\n- [ ] two\n- [ ] three\n");
+    // Left: Projects → Fincas, and no further.
+    app.pane = Pane::Projects;
+    handle_key(&mut app, shift('J'));
+    assert_eq!(app.selected_finca().unwrap().slug, "pi");
+    handle_key(&mut app, shift('J'));
+    assert_eq!(
+        app.selected_finca().unwrap().slug,
+        "pi",
+        "stays at the last"
+    );
+    handle_key(&mut app, shift('K'));
+    assert_eq!(app.selected_project().unwrap().slug, "alpha");
+    assert!(app.todo_slug.is_some());
+    // Right: Pinned → Sessions → To-do, each on its first row.
+    app.pane = Pane::Pinned;
+    app.pin_idx = 1;
+    handle_key(&mut app, shift('J'));
+    assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 0));
+    app.sess_idx = 1;
+    handle_key(&mut app, shift('J'));
+    assert_eq!(app.pane, Pane::Todo);
+    assert!(app.todos.at_top());
+    handle_key(&mut app, ch('j'));
+    handle_key(&mut app, shift('J'));
+    assert_eq!(app.pane, Pane::Todo, "nothing below the to-do list");
+    handle_key(&mut app, shift('K'));
+    assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 0));
+    handle_key(&mut app, shift('K'));
+    assert_eq!((app.pane, app.pin_idx), (Pane::Pinned, 0));
+}
+
+#[test]
+fn shift_j_in_the_todo_list_waits_for_a_half_typed_command() {
+    let (_d, _s, mut app) = pinned_app();
+    app.todos.load("- [ ] one\n");
+    app.pane = Pane::Todo;
+    handle_key(&mut app, ch('d'));
+    handle_key(&mut app, shift('K'));
+    assert_eq!(app.pane, Pane::Todo);
+}
+
+#[test]
+fn j_off_the_sessions_lands_on_the_first_todo() {
+    let (_d, _s, mut app) = pinned_app();
+    app.todos.load("- [ ] one\n- [ ] two\n");
+    app.pane = Pane::Todo;
+    handle_key(&mut app, ch('j'));
+    app.pane = Pane::Sessions;
+    app.sess_idx = app.session_rows() - 1;
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pane, Pane::Todo);
+    assert!(app.todos.at_top());
+}
+
+#[test]
+fn t_opens_the_theme_picker_from_the_pinned_pane() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    handle_key(&mut app, ch('T'));
+    assert!(matches!(app.mode, Mode::Themes { .. }));
+}
+
+fn footer_of(app: &App, w: u16) -> String {
+    screen(app, w, 30).lines().last().unwrap().to_string()
+}
+
+#[test]
+fn the_footer_hints_follow_focus() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a1")]).unwrap();
+    app.reload(&s);
+    app.todos.load("- [ ] one\n");
+    let mut seen = Vec::new();
+    for (pane, proj, sess) in [
+        (Pane::Projects, 0, 0),
+        (Pane::Projects, 1, 0),
+        (Pane::Pinned, 0, 0),
+        (Pane::Sessions, 0, 0),
+        (Pane::Todo, 0, 0),
+    ] {
+        app.pane = pane;
+        app.proj_idx = proj;
+        app.sess_idx = sess;
+        let f = footer_of(&app, 100);
+        assert!(f.contains("? help"), "{f}");
+        seen.push(f);
+    }
+    assert!(
+        seen[0].contains("enter start") && seen[0].contains("n named"),
+        "{}",
+        seen[0]
+    );
+    assert!(seen[1].contains("enter connect"), "{}", seen[1]);
+    assert!(seen[2].contains("p unpin"), "{}", seen[2]);
+    assert!(
+        seen[3].contains("enter jump") && seen[3].contains("x kill"),
+        "{}",
+        seen[3]
+    );
+    assert!(
+        seen[4].contains("o add") && seen[4].contains("x done"),
+        "{}",
+        seen[4]
+    );
+}
+
+#[test]
+fn footer_hint_keys_take_their_pane_color() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.pane = Pane::Sessions;
+    assert_eq!(
+        fg_of(&app, 100, 30, "enter start"),
+        super::theme::pal().sessions
+    );
+    app.pane = Pane::Projects;
+    assert_eq!(
+        fg_of(&app, 100, 30, "enter start"),
+        super::theme::pal().accent
+    );
+}
+
+#[test]
+fn a_narrow_footer_drops_hints_from_the_end_but_keeps_help() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.pane = Pane::Projects;
+    let f = footer_of(&app, 40);
+    assert!(f.contains("enter start"), "{f}");
+    assert!(f.contains("? help"), "{f}");
+    assert!(!f.contains("d remove"), "{f}");
+}
+
+#[test]
+fn shift_j_steps_through_each_account_box() {
+    let (_d, _s, mut app) = work_and_play(&[
+        ("acme", "/w/acme"),
+        ("beta", "/code/beta"),
+        ("gamma", "/code/gamma"),
+    ]);
+    app.pane = Pane::Projects;
+    app.proj_idx = 1;
+    assert_eq!(app.selected_project().unwrap().slug, "gamma");
+    handle_key(&mut app, shift('J'));
+    assert_eq!(app.selected_project().unwrap().slug, "acme", "the work box");
+    handle_key(&mut app, shift('J'));
+    assert_eq!(
+        app.selected_project().unwrap().slug,
+        "acme",
+        "no fincas below"
+    );
+    handle_key(&mut app, shift('K'));
+    assert_eq!(
+        app.selected_project().unwrap().slug,
+        "beta",
+        "top of the play box"
+    );
 }

@@ -69,6 +69,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         Mode::Search { query, sel } => search_key(app, query, sel, key),
+        Mode::Themes { sel, was } => themes_key(app, sel, was, key),
         Mode::Normal => normal_key(app, key),
         Mode::Grid { sel, reply } => grid_key(app, sel, reply, key),
         Mode::GridKill {
@@ -287,6 +288,10 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     {
         return Action::None;
     }
+    if let KeyCode::Char(c @ ('J' | 'K')) = key.code {
+        jump_section(app, if c == 'J' { 1 } else { -1 });
+        return Action::None;
+    }
     if key.code == KeyCode::Char('v') {
         app.mode = Mode::Grid {
             sel: 0,
@@ -322,6 +327,15 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('R') => Action::Update,
+        KeyCode::Char('T') => {
+            let current = super::theme::pal().name;
+            let sel = super::theme::all()
+                .iter()
+                .position(|t| t.name == current)
+                .unwrap_or(0);
+            app.mode = Mode::Themes { sel, was: current };
+            Action::None
+        }
         KeyCode::Char('F') => {
             app.mode = add_finca_prompt();
             Action::None
@@ -331,6 +345,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             let last = app.session_rows().saturating_sub(1);
             if app.pane == Pane::Sessions && app.todo_slug.is_some() && app.sess_idx >= last {
                 app.pane = Pane::Todo;
+                app.todos.go_top();
             } else {
                 move_selection(app, 1);
             }
@@ -478,6 +493,12 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
         app.pane = Pane::Projects;
         return Action::None;
     };
+    if let KeyCode::Char(c @ ('J' | 'K')) = key.code
+        && app.todos.idle()
+    {
+        jump_section(app, if c == 'J' { 1 } else { -1 });
+        return Action::None;
+    }
     if !app.todos.inserting() && key.modifiers.is_empty() {
         match key.code {
             KeyCode::Tab => {
@@ -517,6 +538,85 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
 
 /// Projects → Pinned (when there are pins) → Sessions → To-do (when a
 /// project is selected) and around.
+/// A run of rows `J`/`K` jump between. The left pane's are each account's
+/// box of projects and then the fincas, by the row each starts on; the
+/// right column's are Pinned, Sessions and To-do.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Section {
+    Left(usize),
+    Pinned,
+    Sessions,
+    Todo,
+}
+
+/// `J`/`K`: onto the first row of the next or previous section in this
+/// column. Nothing happens past the last (or before the first).
+fn jump_section(app: &mut App, step: isize) {
+    use Section::*;
+    let (sections, here) = if app.pane == Pane::Projects {
+        let mut starts = Vec::new();
+        let mut last = None;
+        for (i, p) in app.projects.iter().enumerate() {
+            let account = Some(app.account_of(p).name);
+            if account != last {
+                starts.push(i);
+                last = account;
+            }
+        }
+        if !app.fincas.is_empty() {
+            starts.push(app.projects.len());
+        }
+        let here = starts.iter().rev().find(|s| **s <= app.proj_idx).copied();
+        (
+            starts.into_iter().map(Left).collect::<Vec<_>>(),
+            here.map(Left),
+        )
+    } else {
+        let mut s = Vec::new();
+        if !app.pinned_rows().is_empty() {
+            s.push(Pinned);
+        }
+        s.push(Sessions);
+        if app.todo_slug.is_some() {
+            s.push(Todo);
+        }
+        let here = match app.pane {
+            Pane::Pinned => Pinned,
+            Pane::Todo => Todo,
+            _ => Sessions,
+        };
+        (s, Some(here))
+    };
+    let Some(at) = here.and_then(|h| sections.iter().position(|s| *s == h)) else {
+        return;
+    };
+    let Some(&to) = (at as isize + step)
+        .try_into()
+        .ok()
+        .and_then(|i: usize| sections.get(i))
+    else {
+        return;
+    };
+    match to {
+        Left(row) => {
+            app.proj_idx = row;
+            app.sess_idx = 0;
+        }
+        Pinned => {
+            app.pane = Pane::Pinned;
+            app.pin_idx = 0;
+        }
+        Sessions => {
+            app.pane = Pane::Sessions;
+            app.sess_idx = 0;
+        }
+        Todo => {
+            app.pane = Pane::Todo;
+            app.todos.go_top();
+        }
+    }
+}
+
 fn cycle_pane(app: &mut App, step: isize) {
     let mut panes = vec![Pane::Projects];
     if !app.pinned_rows().is_empty() {
@@ -883,7 +983,7 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 },
                 // Keys that work anywhere on the dashboard pass through;
                 // session and project keys don't apply here.
-                KeyCode::Char('q' | '?' | 'R' | 'F' | 'a' | 't' | 'h' | 'l' | 'v' | 'V')
+                KeyCode::Char('q' | '?' | 'R' | 'T' | 'F' | 'a' | 't' | 'h' | 'l' | 'v' | 'V')
                 | KeyCode::Tab
                 | KeyCode::BackTab
                 | KeyCode::Left
@@ -985,4 +1085,29 @@ fn jump_to_pin(app: &mut App, r: &super::app::PinRow) -> Action {
             Action::None
         }
     }
+}
+
+/// The theme picker: moving draws the dashboard in the theme under the
+/// cursor; Enter keeps it (and saves it), Esc puts the old one back.
+fn themes_key(app: &mut App, sel: usize, was: &'static str, key: KeyEvent) -> Action {
+    let themes = super::theme::all();
+    let sel = match key.code {
+        KeyCode::Char('j') | KeyCode::Down => (sel + 1) % themes.len(),
+        KeyCode::Char('k') | KeyCode::Up => (sel + themes.len() - 1) % themes.len(),
+        KeyCode::Enter => {
+            app.mode = Mode::Normal;
+            return Action::SaveTheme {
+                name: themes[sel].name.to_string(),
+            };
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'T') => {
+            super::theme::set(was);
+            app.mode = Mode::Normal;
+            return Action::None;
+        }
+        _ => sel,
+    };
+    super::theme::set(themes[sel].name);
+    app.mode = Mode::Themes { sel, was };
+    Action::None
 }

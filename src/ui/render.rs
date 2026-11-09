@@ -1,5 +1,6 @@
 //! Draws the dashboard.
 
+use super::theme::pal;
 use chrono::{DateTime, Timelike, Utc};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -10,20 +11,9 @@ use ratatui::widgets::{Block, BorderType, Clear, List, ListItem, ListState, Para
 use super::app::{App, FincaItem, FincaRow, Mode, Pane, PromptKind, format_age};
 use crate::model::State;
 
-/// Focus: the focused pane's border and the selected row.
-/// Keys in the help popup.
-pub(super) const KEY_COLOR: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 /// Width of each session-state count on a project row: a two-column glyph,
 /// two digits, a space.
 const SLOT_W: usize = 5;
-pub(super) const ACCENT: Color = Color::Rgb(102, 187, 106);
-/// Each pane's title word keeps its color whatever has focus (green and
-/// red stay free for focus and needs-you). Account boxes use the account's.
-pub(super) const SESSIONS_COLOR: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
-pub(super) const TODO_COLOR: Color = Color::Rgb(0x7d, 0xcf, 0xff);
-pub(super) const FINCAS_COLOR: Color = Color::Rgb(0xf7, 0x76, 0x8e);
-/// A shell's row in Sessions: apart from the session-state colours.
-const SHELL_COLOR: Color = Color::Rgb(0x7a, 0xa2, 0xf7);
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     // The header gives its rows back to the lists in a short window.
@@ -123,13 +113,14 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                     Block::bordered()
                         .border_type(BorderType::Rounded)
                         .title(title)
-                        .fg(ACCENT),
+                        .fg(pal().accent),
                 ),
                 area,
             );
             render_completions(frame, app, area);
         }
         Mode::Help => render_help(frame),
+        Mode::Themes { sel, .. } => render_themes(frame, *sel),
         Mode::Search { query, sel } => render_search(frame, app, query, *sel, now),
         Mode::Confirm { label, .. } => kill_popup(frame, label),
         Mode::ConfirmShell { label, .. } => {
@@ -143,7 +134,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                     Block::bordered()
                         .border_type(BorderType::Rounded)
                         .title(" Confirm ")
-                        .fg(Color::Red),
+                        .fg(pal().error),
                 ),
                 area,
             );
@@ -156,7 +147,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                     Block::bordered()
                         .border_type(BorderType::Rounded)
                         .title(" New project folder ")
-                        .fg(ACCENT),
+                        .fg(pal().accent),
                 ),
                 area,
             );
@@ -207,7 +198,7 @@ fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
                 Block::bordered()
                     .border_type(BorderType::Rounded)
                     .title(title)
-                    .fg(Color::DarkGray),
+                    .fg(pal().dim),
             )
             .highlight_style(highlight(true)),
         area,
@@ -222,16 +213,16 @@ fn pane_block<'a>(spans: Vec<Span<'a>>, focused: bool) -> Block<'a> {
     // Uncolored words would take the border's (focus) color.
     title.extend(spans.into_iter().map(|s| match s.style.fg {
         Some(_) => s,
-        None => s.fg(Color::Gray),
+        None => s.fg(pal().muted),
     }));
     title.push(Span::raw(" "));
     let b = Block::bordered()
         .border_type(BorderType::Rounded)
         .title(Line::from(title));
     if focused {
-        b.border_style(Style::new().fg(ACCENT))
+        b.border_style(Style::new().fg(pal().accent))
     } else {
-        b.border_style(Style::new().fg(Color::DarkGray))
+        b.border_style(Style::new().fg(pal().dim))
     }
 }
 
@@ -282,7 +273,7 @@ fn render_projects(
     empty: &str,
 ) {
     let has_selection = app.pane == Pane::Projects && rows.contains(&app.proj_idx);
-    let word = match parse_hex(color) {
+    let word = match parse_color(color) {
         Some(c) => Span::raw(title.to_string()).fg(c),
         None => Span::raw(title.to_string()),
     };
@@ -290,7 +281,7 @@ fn render_projects(
     if rows.is_empty() {
         let p = Paragraph::new(empty.to_string())
             .wrap(Wrap { trim: true })
-            .dark_gray()
+            .fg(pal().dim)
             .block(block);
         frame.render_widget(p, area);
         return;
@@ -301,14 +292,14 @@ fn render_projects(
         .map(|p| {
             if p.error.is_some() {
                 return ListItem::new(Line::from(vec![
-                    Span::raw("✗ ").red(),
-                    Span::raw(p.name.clone()).red(),
-                    Span::raw(" (bad file)").dark_gray(),
+                    Span::raw("✗ ").fg(pal().error),
+                    Span::raw(p.name.clone()).fg(pal().error),
+                    Span::raw(" (bad file)").fg(pal().dim),
                 ]));
             }
             let dot = Span::styled(
                 "● ",
-                Style::new().fg(parse_hex(p.color.as_deref()).unwrap_or(ACCENT)),
+                Style::new().fg(parse_color(p.color.as_deref()).unwrap_or(pal().accent)),
             );
             let todo = app
                 .open_todos
@@ -351,7 +342,7 @@ fn render_projects(
             }
             let mut spans = vec![dot, Span::raw(name)];
             if let Some(t) = todo {
-                spans.push(Span::raw(t).dark_gray());
+                spans.push(Span::raw(t).fg(pal().dim));
             }
             if !right.is_empty() {
                 let used: usize = spans.iter().map(|s| s.width()).sum();
@@ -376,33 +367,33 @@ fn render_projects(
 fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     use crate::finca::Reach;
     let block = pane_block(
-        vec![Span::raw("FINCAS").fg(FINCAS_COLOR)],
+        vec![Span::raw("FINCAS").fg(pal().fincas)],
         app.pane == Pane::Projects && app.selected_finca().is_some(),
     );
     let items: Vec<ListItem> = app
         .fincas
         .iter()
         .map(|f| {
-            let color = parse_hex(f.color.as_deref()).unwrap_or(ACCENT);
+            let color = parse_color(f.color.as_deref()).unwrap_or(pal().accent);
             let name = Span::raw(f.name.clone());
             let line = match (&f.error, &f.reach) {
                 (Some(_), _) => vec![
-                    Span::raw("✗ ").red(),
-                    name.red(),
-                    Span::raw(" (bad file)").dark_gray(),
+                    Span::raw("✗ ").fg(pal().error),
+                    name.fg(pal().error),
+                    Span::raw(" (bad file)").fg(pal().dim),
                 ],
                 (None, None) => vec![
-                    Span::raw("◌ ").dark_gray(),
+                    Span::raw("◌ ").fg(pal().dim),
                     name,
-                    Span::raw("  checking…").dark_gray(),
+                    Span::raw("  checking…").fg(pal().dim),
                 ],
                 (None, Some(Reach::Reachable(st))) => {
                     let mut v = vec![Span::styled("● ", Style::new().fg(color)), name];
-                    v.push(Span::raw(format!("  {} live", st.live)).dark_gray());
+                    v.push(Span::raw(format!("  {} live", st.live)).fg(pal().dim));
                     if st.needs_you > 0 {
                         v.push(
                             Span::raw(format!("  {}{}", State::NeedsYou.glyph(), st.needs_you))
-                                .red()
+                                .fg(pal().error)
                                 .bold(),
                         );
                     }
@@ -413,16 +404,16 @@ fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
                         .last_ok
                         .map_or("never".to_string(), |t| format_age(t, now));
                     vec![
-                        Span::raw("○ ").dark_gray(),
-                        name.dark_gray(),
-                        Span::raw(format!("  unreachable · {since}")).dark_gray(),
+                        Span::raw("○ ").fg(pal().dim),
+                        name.fg(pal().dim),
+                        Span::raw(format!("  unreachable · {since}")).fg(pal().dim),
                     ]
                 }
                 (None, Some(Reach::NeedsUpdate)) => {
                     vec![
-                        Span::raw("◐ ").yellow(),
+                        Span::raw("◐ ").fg(pal().warn),
                         name,
-                        Span::raw("  needs update").yellow(),
+                        Span::raw("  needs update").fg(pal().warn),
                     ]
                 }
             };
@@ -446,21 +437,21 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         .map(|s| format!(" ({})", s.host))
         .unwrap_or_default();
     let title = vec![
-        Span::raw("FINCA").fg(FINCAS_COLOR),
+        Span::raw("FINCA").fg(pal().fincas),
         Span::raw(format!(" — {}{host}", f.name)),
     ];
     let block = pane_block(title, app.pane == Pane::Sessions);
     let mut lines: Vec<Line> = Vec::new();
     match &f.reach {
-        None => lines.push(Line::raw("Checking…").dark_gray()),
+        None => lines.push(Line::raw("Checking…").fg(pal().dim)),
         Some(Reach::NeedsUpdate) => lines.push(
             Line::raw(format!("{}'s grove is too old to report status — run scripts/deploy-fincas.sh. Enter still connects.", f.name))
-                .yellow(),
+                .fg(pal().warn),
         ),
         Some(Reach::Unreachable { error }) => {
             let since = f.last_ok.map_or("never reachable".to_string(), |t| format!("last reachable {} ago", format_age(t, now)));
-            lines.push(Line::raw(format!("Unreachable: {error}")).red());
-            lines.push(Line::raw(format!("({since}; showing last known sessions)")).dark_gray());
+            lines.push(Line::raw(format!("Unreachable: {error}")).fg(pal().error));
+            lines.push(Line::raw(format!("({since}; showing last known sessions)")).fg(pal().dim));
             lines.push(Line::raw(""));
         }
         Some(Reach::Reachable(_)) => {}
@@ -483,7 +474,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
     };
     let no_sessions = !items.iter().any(|i| matches!(i, FincaItem::Session { .. }));
     if f.last_status.is_some() && no_sessions {
-        lines.push(Line::raw(format!("No live sessions on {}.", f.name)).dark_gray());
+        lines.push(Line::raw(format!("No live sessions on {}.", f.name)).fg(pal().dim));
     }
     let mut heading: Option<&str> = None;
     for (i, item) in items.iter().enumerate() {
@@ -502,7 +493,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                         Span::styled(format!("  {} ", s.state.glyph()), Style::new().fg(color)),
                         Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                         Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
-                        Span::raw(format!(" · {}", format_age(s.updated_at, now))).dark_gray(),
+                        Span::raw(format!(" · {}", format_age(s.updated_at, now))).fg(pal().dim),
                     ]),
                     i,
                 ));
@@ -516,18 +507,18 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                     lines.push(Line::raw("Shells").bold());
                 }
                 let mut spans = vec![
-                    Span::raw("  ●  ").fg(FINCAS_COLOR),
+                    Span::raw("  ●  ").fg(pal().fincas),
                     Span::raw(format!("{:<w$}", w.label(), w = name_w)).bold(),
                 ];
                 if let Some(t) = &w.title {
-                    spans.push(Span::raw(t.clone()).dark_gray());
+                    spans.push(Span::raw(t.clone()).fg(pal().dim));
                 }
                 lines.push(mark(Line::from(spans), i));
             }
         }
     }
     lines.push(Line::raw(""));
-    lines.push(Line::raw("Enter: open · s: shell · C-q: come back").dark_gray());
+    lines.push(Line::raw("Enter: open · s: shell · C-q: come back").fg(pal().dim));
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -537,12 +528,12 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
 }
 
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
-    let mut title = vec![Span::raw("SESSIONS").fg(SESSIONS_COLOR)];
+    let mut title = vec![Span::raw("SESSIONS").fg(pal().sessions)];
     if let Some(p) = app.selected_project() {
         let a = app.account_of(p);
         let account = Span::raw(a.name.to_uppercase());
         title.push(Span::raw(" — "));
-        title.push(match parse_hex(a.color.as_deref()) {
+        title.push(match parse_color(a.color.as_deref()) {
             Some(c) => account.fg(c),
             None => account,
         });
@@ -581,10 +572,10 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
     let shell_rows = shells.iter().map(|s| {
         ListItem::new(Line::from(vec![
             // As wide as a session's glyph and space, so the columns match.
-            Span::raw("$  ").fg(SHELL_COLOR),
+            Span::raw("$  ").fg(pal().shell),
             Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
-            Span::raw(format!("{:<10}", "shell")).fg(SHELL_COLOR),
-            Span::raw(format!(" · {}", s.command)).dark_gray(),
+            Span::raw(format!("{:<10}", "shell")).fg(pal().shell),
+            Span::raw(format!(" · {}", s.command)).fg(pal().dim),
         ]))
     });
     let items: Vec<ListItem> = sessions
@@ -595,10 +586,10 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
                 Span::styled(format!("{} ", s.state.glyph()), Style::new().fg(color)),
                 Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                 Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
-                Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).dark_gray(),
+                Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).fg(pal().dim),
             ];
             if let Some(st) = app.stats.get(&s.id) {
-                spans.push(Span::raw(format!(" · {}", stats_label(st))).dark_gray());
+                spans.push(Span::raw(format!(" · {}", stats_label(st))).fg(pal().dim));
             }
             let mut lines = vec![Line::from(spans)];
             // On its own line so long permission prompts aren't cut off.
@@ -636,12 +627,12 @@ fn name_width<'a>(names: impl Iterator<Item = &'a str>) -> usize {
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.pane == Pane::Todo;
-    let block = pane_block(vec![Span::raw("TO-DO").fg(TODO_COLOR)], focused);
+    let block = pane_block(vec![Span::raw("TO-DO").fg(pal().todo)], focused);
     let t = &app.todos;
     if t.items.is_empty() {
         let p = Paragraph::new("No to-dos — press o (or a) to add one (t or Tab to get here).")
             .wrap(Wrap { trim: true })
-            .dark_gray()
+            .fg(pal().dim)
             .block(block);
         frame.render_widget(p, area);
         return;
@@ -657,11 +648,11 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
             }
             let line = if item.done {
                 Line::from(vec![
-                    Span::raw("[x] ").dark_gray(),
-                    Span::raw(text).dark_gray().crossed_out(),
+                    Span::raw("[x] ").fg(pal().dim),
+                    Span::raw(text).fg(pal().dim).crossed_out(),
                 ])
             } else {
-                Line::from(vec![Span::raw("[ ] ").fg(ACCENT), Span::raw(text)])
+                Line::from(vec![Span::raw("[ ] ").fg(pal().accent), Span::raw(text)])
             };
             ListItem::new(line)
         })
@@ -692,7 +683,7 @@ fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: Dat
             .enumerate()
             .map(|(i, c)| {
                 let style = if hl.contains(&i) {
-                    base.fg(ACCENT).bold()
+                    base.fg(pal().accent).bold()
                 } else {
                     base
                 };
@@ -702,24 +693,24 @@ fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: Dat
     };
     let mut lines = vec![
         Line::from(vec![
-            Span::raw(" / ").fg(ACCENT).bold(),
+            Span::raw(" / ").fg(pal().accent).bold(),
             Span::raw(format!("{query}█")),
         ]),
         Line::raw(""),
     ];
     if hits.is_empty() {
-        lines.push(Line::raw("   no sessions match").dark_gray());
+        lines.push(Line::raw("   no sessions match").fg(pal().dim));
     }
     for (i, h) in hits.iter().enumerate().skip(first).take(fits) {
         let it = &h.item;
         let ended = it.state == State::Ended;
         let base = if ended {
-            Style::new().dark_gray()
+            Style::new().fg(pal().dim)
         } else {
             Style::new()
         };
         let mut top = vec![
-            Span::raw(if i == sel { " ▸ " } else { "   " }).fg(ACCENT),
+            Span::raw(if i == sel { " ▸ " } else { "   " }).fg(pal().accent),
             Span::raw(format!("{} ", it.state.glyph())),
         ];
         top.extend(lit(&it.handle, &h.handle_hl, base));
@@ -728,17 +719,17 @@ fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: Dat
         top.push(Span::raw(
             " ".repeat(inner_w.saturating_sub(used + right.chars().count())),
         ));
-        top.push(Span::raw(right).dark_gray());
+        top.push(Span::raw(right).fg(pal().dim));
         let mut top = Line::from(top);
         if i == sel {
-            top = top.bg(Color::Rgb(0x2a, 0x2f, 0x3a));
+            top = top.bg(pal().selected_bg);
         }
         lines.push(top);
         let about = it.about.as_deref().unwrap_or("");
         let room = inner_w.saturating_sub(7);
         let about: String = about.chars().take(room).collect();
         let mut bottom = vec![Span::raw("      ")];
-        bottom.extend(lit(&about, &h.about_hl, Style::new().dark_gray()));
+        bottom.extend(lit(&about, &h.about_hl, Style::new().fg(pal().dim)));
         lines.push(Line::from(bottom));
     }
     frame.render_widget(
@@ -747,7 +738,7 @@ fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: Dat
                 .border_type(BorderType::Rounded)
                 .title(" Find a session ")
                 .title_bottom(" Enter jump / resume · ↑↓ move · Esc close ")
-                .border_style(Style::new().fg(ACCENT)),
+                .border_style(Style::new().fg(pal().accent)),
         ),
         area,
     );
@@ -759,23 +750,23 @@ fn render_help(frame: &mut Frame) {
         .map(|(section, keys)| {
             // Each heading in its pane's color.
             let color = match *section {
-                "Projects" => ACCENT,
-                "Sessions" => SESSIONS_COLOR,
-                "To-do" => TODO_COLOR,
-                "Fincas" => FINCAS_COLOR,
-                _ => Color::White,
+                "Projects" => pal().accent,
+                "Sessions" => pal().sessions,
+                "To-do" => pal().todo,
+                "Fincas" => pal().fincas,
+                _ => pal().bright,
             };
             let mut lines = vec![Line::raw(*section).bold().fg(color)];
             for (k, what) in *keys {
                 let mut spans = vec![
                     Span::raw("  "),
-                    Span::raw(format!("{k:<10} ")).bold().fg(KEY_COLOR),
+                    Span::raw(format!("{k:<10} ")).bold().fg(pal().key),
                 ];
                 // A trailing aside in parentheses is dimmed.
                 match what.find(" (").filter(|_| what.ends_with(')')) {
                     Some(i) => {
                         spans.push(Span::raw(&what[..i]));
-                        spans.push(Span::raw(&what[i..]).dark_gray());
+                        spans.push(Span::raw(&what[i..]).fg(pal().dim));
                     }
                     None => spans.push(Span::raw(*what)),
                 }
@@ -816,10 +807,10 @@ fn render_help(frame: &mut Frame) {
     frame.render_widget(Clear, area);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(Color::DarkGray))
+        .border_style(Style::new().fg(pal().dim))
         .title(Line::from(vec![
-            Span::raw(" Keys ").fg(ACCENT).bold(),
-            Span::raw("(any key closes) ").dark_gray(),
+            Span::raw(" Keys ").fg(pal().accent).bold(),
+            Span::raw("(any key closes) ").fg(pal().dim),
         ]))
         .title_bottom(state_legend());
     let inner = block.inner(area);
@@ -849,41 +840,45 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
                 " {} {n} needs you {detail}",
                 State::NeedsYou.glyph()
             ))
-            .white()
-            .on_red()
+            .fg(pal().on_alert)
+            .bg(pal().needs_you)
             .bold(),
         );
         spans.push(Span::raw(" "));
     }
     match &app.footer {
-        Some(msg) => spans.push(Span::raw(msg.clone()).yellow()),
+        Some(msg) => spans.push(Span::raw(msg.clone()).fg(pal().warn)),
         None if app.pane == Pane::Todo && app.todos.inserting() => {
-            spans.push(Span::raw(" -- INSERT -- ").black().on_yellow().bold());
-            spans.push(Span::raw(" enter/esc save · ctrl-u clear").dark_gray());
+            spans.push(
+                Span::raw(" -- INSERT -- ")
+                    .fg(pal().ink)
+                    .bg(pal().warn)
+                    .bold(),
+            );
+            spans.push(Span::raw(" enter/esc save · ctrl-u clear").fg(pal().dim));
         }
-        None if app.pane == Pane::Todo => spans.push(
-            Span::raw("o/O add · i/A edit · cc change · x done · dd delete · p paste · u undo · E vim · h back · ? help").dark_gray(),
-        ),
         None => {
-            const KEYS: &str = "enter open/jump · n new · s/S shell · r rename · a add · t to-do · v grid · x kill · d remove · tab pane · ? help · q detach";
-            // Now and then, when nothing else needs saying, the grove speaks,
-            // taking the key list's room if it must ("? help" stays).
+            let (color, hints) = super::hints::for_focus(app);
             let used: usize = spans.iter().map(Span::width).sum();
+            let room = (area.width as usize).saturating_sub(used + 1);
+            // Now and then, when nothing else needs saying, the grove speaks,
+            // as long as the top few hints still fit beside it.
             let quip = flair::quip(now).filter(|_| n == 0).and_then(|q| {
-                let q = Span::raw(q).dark_gray().italic();
-                [KEYS, "? help"].into_iter().find_map(|keys| {
-                    let pad = (area.width as usize)
-                        .checked_sub(used + Span::raw(keys).width() + q.width() + 1)?;
-                    (pad >= 2).then(|| (keys, pad, q.clone()))
-                })
+                let q = Span::raw(q).fg(pal().dim).italic();
+                let keys = room.checked_sub(q.width() + 2)?;
+                (super::hints::fit(&hints, keys) >= hints.len().min(3)).then_some((q, keys))
             });
             match quip {
-                Some((keys, pad, q)) => {
-                    spans.push(Span::raw(keys).dark_gray());
-                    spans.push(Span::raw(" ".repeat(pad)));
+                Some((q, keys)) => {
+                    let h = super::hints::spans(&hints, color, keys);
+                    let w: usize = h.iter().map(Span::width).sum();
+                    spans.extend(h);
+                    spans.push(Span::raw(
+                        " ".repeat(room.saturating_sub(w + q.width()).max(2)),
+                    ));
                     spans.push(q);
                 }
-                None => spans.push(Span::raw(KEYS).dark_gray()),
+                None => spans.extend(super::hints::spans(&hints, color, room)),
             }
         }
     }
@@ -893,10 +888,10 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
 fn highlight(focused: bool) -> Style {
     if focused {
         Style::new()
-            .bg(Color::Rgb(46, 74, 52))
+            .bg(pal().cursor_bg)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::new().bg(Color::Rgb(40, 40, 40))
+        Style::new().bg(pal().cursor_dim_bg)
     }
 }
 
@@ -927,7 +922,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         let style = if n > 0 {
             Style::new().fg(state_color(state))
         } else {
-            Style::new().dark_gray()
+            Style::new().fg(pal().dim)
         };
         Span::styled(format!("{}{n} {label}", state.glyph()), style)
     };
@@ -952,7 +947,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
             .count();
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
-    let place = Line::from(vec![Span::raw(place).dark_gray(), Span::raw(" ")]);
+    let place = Line::from(vec![Span::raw(place).fg(pal().dim), Span::raw(" ")]);
 
     let local = now.with_timezone(&chrono::Local);
     let today = local.format("%Y-%m-%d").to_string();
@@ -987,7 +982,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         .map(|i| {
             let mut spans = vec![Span::raw(" ")];
             spans.push(match WORDMARK.get(i) {
-                Some(w) => Span::styled(*w, Style::new().fg(ACCENT).bold()),
+                Some(w) => Span::styled(*w, Style::new().fg(pal().accent).bold()),
                 None => Span::raw(" ".repeat(wordmark_w)),
             });
             if let Some(sky) = &sky {
@@ -1025,28 +1020,26 @@ fn state_legend() -> Line<'static> {
             State::Ended.glyph(),
             State::Ended.label()
         ))
-        .dark_gray(),
+        .fg(pal().dim),
     );
     Line::from(spans)
 }
 
 pub(super) fn state_color(s: State) -> Color {
     match s {
-        State::NeedsYou => Color::Red,
-        State::YourTurn => Color::Yellow,
-        State::Working => Color::Green,
-        State::Starting => Color::Cyan,
-        State::Ended => Color::DarkGray,
+        State::NeedsYou => pal().needs_you,
+        State::YourTurn => pal().your_turn,
+        State::Working => pal().working,
+        State::Starting => pal().starting,
+        State::Ended => pal().dim,
     }
 }
 
-pub(super) fn parse_hex(c: Option<&str>) -> Option<Color> {
-    let h = c?.strip_prefix('#')?;
-    if h.len() != 6 {
-        return None;
-    }
-    let v = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
-    Some(Color::Rgb(v(0)?, v(2)?, v(4)?))
+/// A color from config.toml or a project: `#rrggbb`, or a name (`blue`)
+/// in the theme the dashboard is drawing with.
+pub(super) fn parse_color(c: Option<&str>) -> Option<Color> {
+    let (r, g, b) = super::theme::lookup(c?, pal())?;
+    Some(Color::Rgb(r, g, b))
 }
 
 /// A centered box `width_pct`% wide and `height` rows tall, clamped to `area`.
@@ -1074,7 +1067,7 @@ fn confirm_popup(frame: &mut Frame, text: &str) {
             Block::bordered()
                 .border_type(BorderType::Rounded)
                 .title(" Confirm ")
-                .fg(Color::Red),
+                .fg(pal().error),
         ),
         area,
     );
@@ -1091,7 +1084,7 @@ fn render_pinned(
 ) {
     let focused = app.pane == Pane::Pinned;
     // Its own colour: green is the focus border's.
-    let block = pane_block(vec![Span::raw("PINNED").fg(KEY_COLOR)], focused);
+    let block = pane_block(vec![Span::raw("PINNED").fg(pal().key)], focused);
     let origins: Vec<String> = rows
         .iter()
         .map(|r| match (&r.finca, &r.account) {
@@ -1118,26 +1111,26 @@ fn render_pinned(
                 "   ".into()
             };
             let (color, label) = if r.unreachable {
-                (Color::DarkGray, "unreachable")
+                (pal().dim, "unreachable")
             } else {
                 (state_color(r.state), r.state.label())
             };
             let icon = r.state.glyph();
             let origin_color = match (&r.finca, &r.account) {
-                _ if r.unreachable => Color::DarkGray,
-                (Some(_), _) => FINCAS_COLOR,
-                (None, Some(a)) => parse_hex(a.color.as_deref()).unwrap_or(Color::Gray),
-                (None, None) => Color::Gray,
+                _ if r.unreachable => pal().dim,
+                (Some(_), _) => pal().fincas,
+                (None, Some(a)) => parse_color(a.color.as_deref()).unwrap_or(pal().muted),
+                (None, None) => pal().muted,
             };
             let pad = handle_w - (origin.chars().count() + 3 + r.handle.chars().count());
             let mut spans = vec![
-                Span::raw(num).dark_gray(),
+                Span::raw(num).fg(pal().dim),
                 Span::styled(format!("{icon} "), Style::new().fg(color)),
                 Span::styled(origin.clone(), Style::new().fg(origin_color)),
-                Span::raw(" · ").dark_gray(),
+                Span::raw(" · ").fg(pal().dim),
                 Span::raw(format!("{}{}", r.handle, " ".repeat(pad))).bold(),
                 Span::styled(format!("{label:<12}"), Style::new().fg(color)),
-                Span::raw(format!("{:<5}", format_age(r.updated_at, now))).dark_gray(),
+                Span::raw(format!("{:<5}", format_age(r.updated_at, now))).fg(pal().dim),
             ];
             if let Some(m) = r.message.as_deref().filter(|_| !r.unreachable) {
                 spans.push(Span::styled(m.to_string(), Style::new().fg(color)));
@@ -1150,4 +1143,54 @@ fn render_pinned(
         .block(block)
         .highlight_style(highlight(focused));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// The `T` picker: each theme's name beside swatches of its pane colors.
+fn render_themes(frame: &mut Frame, sel: usize) {
+    let themes = super::theme::all();
+    let area = popup(frame.area(), 40, themes.len() as u16 + 4);
+    let area = Rect {
+        width: area.width.max(44).min(frame.area().width),
+        ..area
+    };
+    let area = Rect {
+        x: frame.area().x + (frame.area().width - area.width) / 2,
+        ..area
+    };
+    frame.render_widget(Clear, area);
+    let mut lines: Vec<Line> = themes
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let here = i == sel;
+            let mut spans = vec![
+                Span::raw(if here { " ▸ " } else { "   " }).fg(pal().accent),
+                Span::raw(format!("{:<22}", t.name)).fg(if here {
+                    pal().bright
+                } else {
+                    pal().muted
+                }),
+            ];
+            for c in [t.accent, t.sessions, t.todo, t.fincas, t.shell, t.key] {
+                spans.push(Span::raw("●").fg(c));
+            }
+            let line = Line::from(spans);
+            if here {
+                line.bg(pal().selected_bg)
+            } else {
+                line
+            }
+        })
+        .collect();
+    lines.push(Line::raw(""));
+    lines.push(Line::raw(" j/k preview · Enter keep · Esc cancel").fg(pal().dim));
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(pal().accent))
+                .title(Span::raw(" Theme ").fg(pal().accent).bold()),
+        ),
+        area,
+    );
 }

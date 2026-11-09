@@ -1,14 +1,13 @@
 //! The ticker line above the footer: the indexes, then a page of symbols
 //! that turns every few seconds.
 
+use super::theme::pal;
 use chrono::{DateTime, Utc};
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
 use crate::ticker::{Market, Quote, Tape};
 
-const UP: Color = Color::Rgb(0x9e, 0xce, 0x6a);
-const DOWN: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 /// Seconds each page shows.
 const PAGE_SECS: i64 = 8;
 /// Older than this, the line says how old.
@@ -27,11 +26,11 @@ fn label(symbol: &str) -> &str {
 /// Up, down or flat as it shows, to one decimal.
 fn change(pct: f64) -> Span<'static> {
     if pct >= 0.05 {
-        Span::styled(format!("▲{pct:.1}%"), Style::new().fg(UP))
+        Span::styled(format!("▲{pct:.1}%"), Style::new().fg(pal().up))
     } else if pct <= -0.05 {
-        Span::styled(format!("▼{:.1}%", -pct), Style::new().fg(DOWN))
+        Span::styled(format!("▼{:.1}%", -pct), Style::new().fg(pal().down))
     } else {
-        Span::raw("·0.0%").dark_gray()
+        Span::raw("·0.0%").fg(pal().dim)
     }
 }
 
@@ -45,7 +44,7 @@ fn index(q: &Quote) -> Vec<Span<'static>> {
 fn symbol(q: &Quote) -> Vec<Span<'static>> {
     vec![
         Span::raw(q.symbol.clone()).bold(),
-        Span::raw(format!(" {:.2} ", q.price)).gray(),
+        Span::raw(format!(" {:.2} ", q.price)).fg(pal().muted),
         change(q.change_pct),
     ]
 }
@@ -118,16 +117,16 @@ pub fn line(tape: &Tape, cols: usize, now: DateTime<Utc>) -> Option<Line<'static
     if total > 0 {
         let at = (now.timestamp().div_euclid(PAGE_SECS) as usize) % total;
         if sep > 0 {
-            spans.push(Span::raw(" │ ").dark_gray());
+            spans.push(Span::raw(" │ ").fg(pal().dim));
         }
         spans.extend(join(pages.swap_remove(at)));
         if total > 1 {
-            spans.push(Span::raw(format!(" {}/{total}", at + 1)).dark_gray());
+            spans.push(Span::raw(format!(" {}/{total}", at + 1)).fg(pal().dim));
         }
     }
     if !note.is_empty() {
         spans.push(Span::raw("  "));
-        spans.push(Span::raw(note).dark_gray().italic());
+        spans.push(Span::raw(note).fg(pal().dim).italic());
     }
     Some(Line::from(spans))
 }
@@ -185,9 +184,9 @@ mod tests {
         assert!(t.ends_with(" 1/3"), "{t}");
         assert!(l.width() <= 100, "{}", l.width());
         let up = l.spans.iter().find(|s| s.content == "▲0.4%").unwrap();
-        assert_eq!(up.style.fg, Some(UP));
+        assert_eq!(up.style.fg, Some(pal().up));
         let down = l.spans.iter().find(|s| s.content == "▼0.2%").unwrap();
-        assert_eq!(down.style.fg, Some(DOWN));
+        assert_eq!(down.style.fg, Some(pal().down));
     }
 
     #[test]

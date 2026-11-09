@@ -32,6 +32,10 @@ pub struct Config {
     pub statusline: bool,
     /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
     pub ticker: TickerConfig,
+    /// The dashboard's colors: `grove` (the default), or `catppuccin-mocha`,
+    /// `catppuccin-macchiato`, `catppuccin-frappe` (`catppuccin` is Mocha) or
+    /// `tokyo-night`.
+    pub theme: String,
 }
 
 impl Default for Config {
@@ -47,6 +51,7 @@ impl Default for Config {
             alerts: true,
             statusline: true,
             ticker: TickerConfig::default(),
+            theme: String::new(),
         }
     }
 }
@@ -268,6 +273,57 @@ pub fn load_config(paths: &Paths) -> Result<Config> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
         Err(e) => Err(e).with_context(|| format!("reading {}", file.display())),
     }
+}
+
+/// Sets `theme` in config.toml, keeping everything else (comments
+/// included) as it was.
+pub fn save_theme(paths: &Paths, name: &str) -> Result<()> {
+    let file = paths.config_file();
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
+    };
+    let text = with_theme(&text, name);
+    toml::from_str::<Config>(&text).context("the new config.toml doesn't parse")?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
+}
+
+/// `text` with its top-level `theme` line set to `name`. A new line goes
+/// after the last top-level setting, before any comment that heads the
+/// first `[table]`.
+fn with_theme(text: &str, name: &str) -> String {
+    let line = format!("theme = \"{}\"", name.replace(['"', '\\'], ""));
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let first_table = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with('['))
+        .unwrap_or(lines.len());
+    let existing = lines[..first_table].iter().position(|l| {
+        l.trim_start()
+            .strip_prefix("theme")
+            .is_some_and(|rest| rest.trim_start().starts_with('='))
+    });
+    match existing {
+        Some(i) => lines[i] = line,
+        None => {
+            let mut at = first_table;
+            while at > 0 && lines[at - 1].trim_start().starts_with('#') && first_table < lines.len()
+            {
+                at -= 1;
+            }
+            while at > 0 && lines[at - 1].trim().is_empty() {
+                at -= 1;
+            }
+            lines.insert(at, line);
+        }
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
 }
 
 pub fn expand_tilde(p: &str) -> PathBuf {
@@ -556,5 +612,39 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(editor(&c), "nvim");
+    }
+
+    #[test]
+    fn with_theme_replaces_the_existing_line_and_keeps_comments() {
+        let text = "# mine\nclaude_config_dir = \"~/.c\"\ntheme = \"grove\"  # old\n\n[ticker]\ntheme = \"not this one\"\n";
+        assert_eq!(
+            with_theme(text, "tokyo-night"),
+            "# mine\nclaude_config_dir = \"~/.c\"\ntheme = \"tokyo-night\"\n\n[ticker]\ntheme = \"not this one\"\n"
+        );
+    }
+
+    #[test]
+    fn with_theme_adds_a_line_above_the_first_table_and_its_comment() {
+        let text = "account_color = \"#7aa2f7\"\n\n# Work\n[accounts.work]\ndir = \"~/.w\"\n";
+        let out = with_theme(text, "catppuccin-mocha");
+        assert_eq!(
+            out,
+            "account_color = \"#7aa2f7\"\ntheme = \"catppuccin-mocha\"\n\n# Work\n[accounts.work]\ndir = \"~/.w\"\n"
+        );
+        let cfg: Config = toml::from_str(&out).unwrap();
+        assert_eq!(cfg.theme, "catppuccin-mocha");
+        assert_eq!(with_theme("", "grove"), "theme = \"grove\"\n");
+        assert_eq!(
+            with_theme("# just a note\n", "grove"),
+            "# just a note\ntheme = \"grove\"\n"
+        );
+    }
+
+    #[test]
+    fn save_theme_writes_config_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path().to_path_buf());
+        save_theme(&paths, "tokyo-night").unwrap();
+        assert_eq!(load_config(&paths).unwrap().theme, "tokyo-night");
     }
 }

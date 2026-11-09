@@ -234,6 +234,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
             Outcome::Message("Grove is up to date (run files and tmux config refreshed)".into())
         }
+        Action::SaveTheme { name } => {
+            crate::config::save_theme(&store.paths, &name)?;
+            Outcome::Message(format!("Theme: {name} (saved to config.toml)"))
+        }
         Action::SaveTodos { slug, text } => {
             store.write_todos(&slug, &text)?;
             Outcome::Nothing
@@ -600,6 +604,14 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     let mut app = App::new(cwd);
     app.host = short_host();
     app.cfg = ctx.cfg.clone();
+    if !super::theme::set(&ctx.cfg.theme) {
+        let known: Vec<_> = super::theme::names().collect();
+        app.footer = Some(format!(
+            " unknown theme \"{}\" (try {}) ",
+            ctx.cfg.theme,
+            known.join(", ")
+        ));
+    }
     app.reload(&ctx.store);
     let ticker = crate::ticker::Ticker::start(ctx.store.paths.clone());
 

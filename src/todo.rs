@@ -77,6 +77,16 @@ impl Todos {
         self.idx == 0 && self.pending.is_none() && !self.inserting()
     }
 
+    /// Not typing and not halfway through a command like `d`.
+    pub fn idle(&self) -> bool {
+        self.pending.is_none() && !self.inserting()
+    }
+
+    /// The cursor to the first item, as when arriving from above.
+    pub fn go_top(&mut self) {
+        self.idx = 0;
+    }
+
     pub fn inserting(&self) -> bool {
         self.insert.is_some()
     }

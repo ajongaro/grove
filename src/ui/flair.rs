@@ -3,19 +3,16 @@
 //! moves is a function of the time the frame is drawn at, so it adds no
 //! redraws.
 
+use super::theme::pal;
 use chrono::{DateTime, Utc};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span};
 
-use super::render::parse_hex;
+use super::render::parse_color;
 use crate::config::Config;
 use crate::stats::{Harvest, Totals};
 
-pub(super) const LEAF: Color = Color::Rgb(0x8f, 0xb3, 0x5a);
-pub(super) const STEM: Color = Color::Rgb(0x8d, 0x6e, 0x4c);
-pub(super) const OLIVE: Color = Color::Rgb(0x6b, 0x4a, 0x7a);
 /// A paler leaf, so neighbouring trees read as two.
-const SAGE: Color = Color::Rgb(0x6f, 0x9a, 0x6a);
 const STAR: Color = Color::Rgb(0xf0, 0xe6, 0xa0);
 const SUN: Color = Color::Rgb(0xff, 0xd8, 0x4a);
 const MOON: Color = Color::Rgb(0xe8, 0xe4, 0xd0);
@@ -167,11 +164,11 @@ pub fn sky(
     let big = width * 2 / 5;
     let small = width * 3 / 4;
     for (x, crown, leaf, trunk, fits) in [
-        (big, ["▗▟█●▙▖", "▜●██●▛"], LEAF, 2, big + 6 <= width),
+        (big, ["▗▟█●▙▖", "▜●██●▛"], pal().leaf, 2, big + 6 <= width),
         (
             small,
             [" ▄▄ ", "▟●█▙"],
-            SAGE,
+            pal().sage,
             1,
             small >= big + 7 && small + 4 <= width,
         ),
@@ -181,7 +178,7 @@ pub fn sky(
         }
         for (row, part) in rows.iter_mut().zip(crown) {
             put(row, x as isize, part, |c| match c {
-                '●' => Style::new().fg(OLIVE).bg(leaf),
+                '●' => Style::new().fg(pal().fruit).bg(leaf),
                 _ => on_sky(leaf),
             });
         }
@@ -203,7 +200,7 @@ pub fn sky(
             ),
         ] {
             if rows[y][x].is_none() {
-                rows[y][x] = Some((c, on_sky(LEAF)));
+                rows[y][x] = Some((c, on_sky(pal().leaf)));
             }
         }
     }
@@ -228,7 +225,12 @@ pub fn sky(
     let grass = Line::from(
         grass
             .into_iter()
-            .map(|c| Span::styled(c, Style::new().fg(if c == "▔" { LEAF } else { STEM })))
+            .map(|c| {
+                Span::styled(
+                    c,
+                    Style::new().fg(if c == "▔" { pal().leaf } else { pal().stem }),
+                )
+            })
             .collect::<Vec<_>>(),
     );
     [line(&rows[0]), line(&rows[1]), grass]
@@ -278,17 +280,17 @@ pub fn quiet_grove() -> Vec<Line<'static>> {
         )
     };
     vec![
-        row(&[("      ▄▆▄          ", LEAF), ("▗▄▖", SAGE)]),
+        row(&[("      ▄▆▄          ", pal().leaf), ("▗▄▖", pal().sage)]),
         row(&[
-            ("     ▟█", LEAF),
-            ("●", OLIVE),
-            ("█▙   ", LEAF),
-            ("▗▆▖", SAGE),
-            ("  ▟███▙", SAGE),
+            ("     ▟█", pal().leaf),
+            ("●", pal().fruit),
+            ("█▙   ", pal().leaf),
+            ("▗▆▖", pal().sage),
+            ("  ▟███▙", pal().sage),
         ]),
-        row(&[("       ▐▌     ▐▌    ▐▌", STEM)]),
-        row(&[("   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔", STEM)]),
-        Line::from(Span::raw("     the grove is quiet").dark_gray()),
+        row(&[("       ▐▌     ▐▌    ▐▌", pal().stem)]),
+        row(&[("   ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔", pal().stem)]),
+        Line::from(Span::raw("     the grove is quiet").fg(pal().dim)),
     ]
 }
 
@@ -312,11 +314,11 @@ pub fn short_count(n: u64) -> String {
 /// own totals in their colour; detail goes before accounts do.
 pub fn harvest_line(harvests: &[Harvest], cfg: &Config, max: usize) -> Line<'static> {
     if harvests.is_empty() {
-        let l = Line::from(Span::raw("🧺 nothing harvested yet today").dark_gray());
+        let l = Line::from(Span::raw("🧺 nothing harvested yet today").fg(pal().dim));
         return if l.width() <= max { l } else { Line::default() };
     }
     let lines = |t: &Totals| format!("+{} −{}", short_count(t.added), short_count(t.removed));
-    let sep = || Span::raw(" · ").dark_gray();
+    let sep = || Span::raw(" · ").fg(pal().dim);
     let candidates: Vec<Vec<Span<'static>>> = if cfg.accounts.is_empty() {
         let t = harvests.iter().fold(Totals::default(), |mut a, h| {
             a.cost += h.totals.cost;
@@ -330,7 +332,7 @@ pub fn harvest_line(harvests: &[Harvest], cfg: &Config, max: usize) -> Line<'sta
             "{n} session{} today",
             if n == 1 { "" } else { "s" }
         ))
-        .dark_gray();
+        .fg(pal().dim);
         vec![
             vec![
                 cost.clone(),
@@ -354,7 +356,7 @@ pub fn harvest_line(harvests: &[Harvest], cfg: &Config, max: usize) -> Line<'sta
                 let color = cfg
                     .account(Some(&h.account))
                     .ok()
-                    .and_then(|a| parse_hex(a.color.as_deref()));
+                    .and_then(|a| parse_color(a.color.as_deref()));
                 let mut text = format!("{} ${:.2}", h.account, h.totals.cost);
                 if detail {
                     text.push_str(&format!(" {}", lines(&h.totals)));
@@ -606,6 +608,6 @@ mod tests {
     fn harvest_empty_is_dim_placeholder() {
         let l = harvest_line(&[], &Config::default(), 80);
         assert_eq!(text(&l), "🧺 nothing harvested yet today");
-        assert!(l.spans.iter().all(|s| s.style.fg == Some(Color::DarkGray)));
+        assert!(l.spans.iter().all(|s| s.style.fg == Some(pal().dim)));
     }
 }

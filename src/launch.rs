@@ -301,8 +301,13 @@ fn open_window(
         &spec.env,
         &spec.argv,
     )?;
+    let hex = |c: &str| crate::ui::theme::hex(c, &cfg.theme);
     if let Some(color) = &project.color {
-        let _ = tmux.set_window_option(&window, "window-status-style", &format!("fg={color}"));
+        let _ = tmux.set_window_option(
+            &window,
+            "window-status-style",
+            &format!("fg={}", hex(color)),
+        );
     }
     // Which session this window is, for the MCP tools (mcp.rs `window`).
     let _ = tmux.set_window_option(&window, "@grove_session", &session.id);
@@ -311,7 +316,7 @@ fn open_window(
     let _ = tmux.set_window_option(
         &window,
         "@grove_account_color",
-        spec.account.color.as_deref().unwrap_or("default"),
+        &spec.account.color.as_deref().map_or("default".into(), hex),
     );
     // Re-read: a hook may already have moved the state on.
     if let Some(latest) = store.get_session(&session.id) {
