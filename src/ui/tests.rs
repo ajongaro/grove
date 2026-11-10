@@ -1610,7 +1610,7 @@ fn project_counts_line_up_at_the_right_edge() {
             session("3", "longer-name", "s3", State::Working, Some("@3")),
         ],
     );
-    let out = screen(&app, 100, 20);
+    let out = screen(&app, 100, 15);
     // The working slot is the same column in both rows, however long the
     // name, and sits just inside the box's right border.
     let a = col_of(&out, "alpha", '🌿');
@@ -1640,7 +1640,7 @@ fn project_row_shows_only_states_it_has() {
         &["alpha"],
         &[session("1", "alpha", "s1", State::Working, Some("@1"))],
     );
-    let out = screen(&app, 100, 20);
+    let out = screen(&app, 100, 15);
     assert!(out.contains("🌿1"), "{out}");
     assert!(!out.contains("💧"), "{out}");
 }
@@ -1791,7 +1791,7 @@ fn long_session_names_keep_a_gap_before_the_state() {
             session("2", "alpha", "short", State::YourTurn, Some("@2")),
         ],
     );
-    let s = screen(&app, 100, 20);
+    let s = screen(&app, 100, 15);
     assert!(s.contains("Minecraft Server  working"), "{s}");
     let col = |needle: &str| {
         s.lines()
@@ -2046,11 +2046,62 @@ fn header_counts_fincas_that_are_up() {
 }
 
 #[test]
-fn header_is_dropped_in_a_short_window() {
-    let (_d, _s, app) = loaded(&["alpha"], &[]);
+fn a_short_window_gets_the_compact_bar_then_none() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.host = "testbox".into();
     let out = screen(&app, 110, 18);
-    assert!(!out.contains("█▀▀▀"), "{out}");
+    assert!(!out.contains("█▀▀"), "{out}");
+    let top = out.lines().next().unwrap();
+    assert!(top.starts_with(" grove  testbox"), "{out}");
+    assert!(top.trim_end().ends_with("🌿0 working"), "{out}");
+    assert!(out.lines().nth(1).unwrap().contains("alpha"), "{out}");
+    let out = screen(&app, 110, 14);
     assert!(out.lines().next().unwrap().contains("alpha"), "{out}");
+}
+
+#[test]
+fn compact_and_off_headers() {
+    use crate::config::Header;
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::NeedsYou, Some("@1"))],
+    );
+    app.host = "testbox".into();
+    app.cfg.header = Header::Compact;
+    let out = screen(&app, 110, 40);
+    let top = out.lines().next().unwrap();
+    assert!(!out.contains("█▀▀") && !out.contains("harvest"), "{out}");
+    assert!(top.starts_with(" grove  testbox"), "{out}");
+    assert!(
+        top.contains("💧1 needs you  🌳0 your turn  🌿0 working"),
+        "{out}"
+    );
+    assert!(out.lines().nth(1).unwrap().contains("╭ "), "{out}");
+    // Narrow: the place goes before the totals do.
+    let out = screen(&app, 50, 40);
+    let top = out.lines().next().unwrap();
+    assert!(
+        !top.contains("testbox") && top.contains("💧1 needs you"),
+        "{out}"
+    );
+
+    app.cfg.header = Header::Off;
+    let out = screen(&app, 110, 40);
+    assert!(out.lines().next().unwrap().contains("╭ "), "{out}");
+    assert!(!out.contains("needs you  🌳"), "{out}");
+}
+
+#[test]
+fn shift_b_cycles_the_top_bar_and_saves_it() {
+    use crate::config::Header;
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    for want in [Header::Compact, Header::Off, Header::Full] {
+        assert_eq!(
+            handle_key(&mut app, shift('B')),
+            Action::SaveHeader { header: want }
+        );
+        assert_eq!(app.cfg.header, want);
+    }
 }
 
 fn screens_doc(sessions: &[(&str, &str, &str, State)]) -> crate::screens::Screens {

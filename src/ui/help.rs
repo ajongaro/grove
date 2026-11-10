@@ -20,7 +20,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("t", "to-do list"),
             ("v V /", "session grid / pinned desk / find"),
             ("a", "add a project"),
-            ("R T", "update Grove / pick a theme"),
+            ("R T B", "update Grove / theme / top bar"),
             ("?", "this help"),
             ("q", "detach (sessions keep running)"),
         ],

@@ -138,6 +138,10 @@ pub enum Action {
     SaveTheme {
         name: String,
     },
+    /// Write `header = "<full|compact|off>"` to config.toml.
+    SaveHeader {
+        header: crate::config::Header,
+    },
     /// Write the accounts whose boxes are hidden.
     SaveHidden {
         accounts: std::collections::BTreeSet<String>,

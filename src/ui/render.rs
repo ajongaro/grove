@@ -16,11 +16,13 @@ use crate::model::State;
 const SLOT_W: usize = 5;
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
-    // The header gives its rows back to the lists in a short window.
-    let header_h = if frame.area().height >= HEADER_MIN_HEIGHT {
-        HEADER_ROWS
-    } else {
-        0
+    // The header gives its rows back to the lists in a short window: the
+    // full one shrinks to the compact line, which then goes.
+    let height = frame.area().height;
+    let header_h = match app.cfg.header {
+        Header::Full if height >= HEADER_MIN_HEIGHT => HEADER_ROWS,
+        Header::Full | Header::Compact if height >= TICKER_MIN_HEIGHT => 1,
+        _ => 0,
     };
     // The ticker takes a row over the footer when there's room for one.
     let ticker = app
@@ -35,8 +37,10 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         Constraint::Length(1),
     ])
     .areas(frame.area());
-    if header_h > 0 {
-        render_header(frame, app, header, now);
+    match header_h {
+        0 => {}
+        1 => render_compact_header(frame, app, header),
+        _ => render_header(frame, app, header, now),
     }
     let grid = match &app.mode {
         Mode::Grid { sel, reply } => Some((*sel, reply.as_ref())),
@@ -916,15 +920,14 @@ const HEADER_MIN_HEIGHT: u16 = 24;
 const TICKER_MIN_HEIGHT: u16 = 16;
 
 use super::flair;
+use crate::config::Header;
 
 /// An olive branch growing to the right: (text, color) runs per row. The
 /// stem is a run of upper half blocks, so it sits where the rows meet.
 const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", "█▄█ █▀▄ █▄█ ▀▄▀ ██▄"];
 
-/// Logo and a window of sky with its olive trees on the left, leaves blowing
-/// through while anything works; this machine's session totals, the fincas that are up and the day's
-/// harvest on the right.
-fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
+/// Sessions needing you, waiting on you and working, in their colors.
+fn header_totals(app: &App) -> Line<'static> {
     let count = |want: &[State]| {
         app.sessions
             .iter()
@@ -939,7 +942,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         };
         Span::styled(format!("{}{n} {label}", state.glyph()), style)
     };
-    let totals = Line::from(vec![
+    Line::from(vec![
         total(count(&[State::NeedsYou]), "needs you", State::NeedsYou),
         Span::raw("  "),
         total(count(&[State::YourTurn]), "your turn", State::YourTurn),
@@ -950,7 +953,11 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
             State::Working,
         ),
         Span::raw(" "),
-    ]);
+    ])
+}
+
+/// This machine, and how many fincas are up.
+fn header_place(app: &App) -> String {
     let mut place = app.host.clone();
     if !app.fincas.is_empty() {
         let up = app
@@ -960,7 +967,34 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
             .count();
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
-    let place = Line::from(vec![Span::raw(place).fg(pal().dim), Span::raw(" ")]);
+    place
+}
+
+/// The compact top bar (`header = "compact"`, or a short window): the name
+/// and place on the left, the totals on the right, no art.
+fn render_compact_header(frame: &mut Frame, app: &App, area: Rect) {
+    let totals = header_totals(app);
+    let mut left = vec![Span::raw(" grove").fg(pal().accent).bold()];
+    let place = format!("  {}", header_place(app));
+    if 6 + place.chars().count() + totals.width() < area.width as usize {
+        left.push(Span::raw(place).fg(pal().dim));
+    }
+    frame.render_widget(Paragraph::new(Line::from(left)), area);
+    frame.render_widget(
+        Paragraph::new(totals).alignment(ratatui::layout::Alignment::Right),
+        area,
+    );
+}
+
+/// Logo and a window of sky with its olive trees on the left, leaves blowing
+/// through while anything works; this machine's session totals, the fincas that are up and the day's
+/// harvest on the right.
+fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
+    let totals = header_totals(app);
+    let place = Line::from(vec![
+        Span::raw(header_place(app)).fg(pal().dim),
+        Span::raw(" "),
+    ]);
 
     let local = now.with_timezone(&chrono::Local);
     let today = local.format("%Y-%m-%d").to_string();

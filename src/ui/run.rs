@@ -238,6 +238,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::hidden::save(&store.paths, &accounts)?;
             Outcome::Nothing
         }
+        Action::SaveHeader { header } => {
+            crate::config::save_header(&store.paths, header)?;
+            Outcome::Message(format!("Top bar: {} · B changes it", header.name()))
+        }
         Action::SaveTheme { name } => {
             crate::config::save_theme(&store.paths, &name)?;
             Outcome::Message(format!("Theme: {name} (saved to config.toml)"))

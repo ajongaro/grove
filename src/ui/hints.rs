@@ -49,7 +49,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                     false => h.insert(1, ("H", "show all")),
                 }
             }
-            h.push(("T", "theme"));
+            h.extend([("T", "theme"), ("B", "top bar")]);
             (p.accent, h)
         }
         Pane::Pinned => (

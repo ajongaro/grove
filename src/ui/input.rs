@@ -328,6 +328,12 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
         }
         KeyCode::Char('R') => Action::Update,
         KeyCode::Char('H') => toggle_hidden(app),
+        KeyCode::Char('B') => {
+            app.cfg.header = app.cfg.header.next();
+            Action::SaveHeader {
+                header: app.cfg.header,
+            }
+        }
         KeyCode::Char('T') => {
             let current = super::theme::pal().name;
             let sel = super::theme::all()
@@ -1011,7 +1017,9 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 },
                 // Keys that work anywhere on the dashboard pass through;
                 // session and project keys don't apply here.
-                KeyCode::Char('q' | '?' | 'R' | 'T' | 'F' | 'a' | 't' | 'h' | 'l' | 'v' | 'V')
+                KeyCode::Char(
+                    'q' | '?' | 'R' | 'T' | 'B' | 'F' | 'a' | 't' | 'h' | 'l' | 'v' | 'V',
+                )
                 | KeyCode::Tab
                 | KeyCode::BackTab
                 | KeyCode::Left

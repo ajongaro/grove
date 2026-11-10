@@ -170,6 +170,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `V` | dashboard | the pinned desk: your pinned sessions, live, side by side |
 | `R` | dashboard | restart on a new Grove, after upgrading |
 | `T` | dashboard | pick a color theme (see [Themes](#themes)) |
+| `B` | dashboard | top bar: full (logo, sky, harvest) → compact (one line of totals) → off; saved |
 | `F` | dashboard | add a finca (guided setup; `a` on a finca too) |
 | `C-v` | finca window | send the clipboard's file or image there, paste its path |
 | `prefix r` | anywhere | reload Grove's tmux config |
@@ -348,6 +349,14 @@ flamingo, rosewater, orange (or peach), yellow, green, teal, cyan (or sky),
 sapphire, blue, lavender, purple (or mauve) and pink. The theme colors the
 dashboard; tmux's own colors stay yours to set in `tmux.local.conf`.
 
+### Top bar
+
+**`B`** cycles the top bar and saves your choice as `header` in
+`config.toml`: **full** (the logo, the olive grove's sky and the day's
+harvest), **compact** (one plain line: the host and the session totals)
+or **off**. In a short window the full bar falls back to compact, and
+below 16 rows there's no bar at all.
+
 ## To-do lists
 
 Each project has a to-do list under its sessions (`t` or `Tab` to get
@@ -525,6 +534,7 @@ claude_args = []                       # e.g. ["--model", "opus"]
 alerts = true                          # desktop alerts when a session needs you
 statusline = true                      # Grove's status line in its sessions
 theme = "grove"                        # dashboard colors: see "Themes"
+header = "full"                        # top bar: full, compact (one plain line) or off (B cycles)
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```

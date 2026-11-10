@@ -36,6 +36,36 @@ pub struct Config {
     /// `catppuccin-macchiato`, `catppuccin-frappe` (`catppuccin` is Mocha) or
     /// `tokyo-night`.
     pub theme: String,
+    /// The dashboard's top bar: `full` (logo, sky and the day's harvest),
+    /// `compact` (one plain line of totals) or `off`. `B` cycles them.
+    pub header: Header,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Header {
+    #[default]
+    Full,
+    Compact,
+    Off,
+}
+
+impl Header {
+    pub fn name(self) -> &'static str {
+        match self {
+            Header::Full => "full",
+            Header::Compact => "compact",
+            Header::Off => "off",
+        }
+    }
+    /// The next one `B` shows.
+    pub fn next(self) -> Self {
+        match self {
+            Header::Full => Header::Compact,
+            Header::Compact => Header::Off,
+            Header::Off => Header::Full,
+        }
+    }
 }
 
 impl Default for Config {
@@ -52,6 +82,7 @@ impl Default for Config {
             statusline: true,
             ticker: TickerConfig::default(),
             theme: String::new(),
+            header: Header::Full,
         }
     }
 }
@@ -278,13 +309,22 @@ pub fn load_config(paths: &Paths) -> Result<Config> {
 /// Sets `theme` in config.toml, keeping everything else (comments
 /// included) as it was.
 pub fn save_theme(paths: &Paths, name: &str) -> Result<()> {
+    save_setting(paths, "theme", name)
+}
+
+pub fn save_header(paths: &Paths, header: Header) -> Result<()> {
+    save_setting(paths, "header", header.name())
+}
+
+/// Sets a top-level `key = "value"` in config.toml, keeping the rest.
+fn save_setting(paths: &Paths, key: &str, value: &str) -> Result<()> {
     let file = paths.config_file();
     let text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
     };
-    let text = with_theme(&text, name);
+    let text = with_setting(&text, key, value);
     toml::from_str::<Config>(&text).context("the new config.toml doesn't parse")?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
@@ -292,11 +332,16 @@ pub fn save_theme(paths: &Paths, name: &str) -> Result<()> {
     std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
 }
 
-/// `text` with its top-level `theme` line set to `name`. A new line goes
+#[cfg(test)]
+fn with_theme(text: &str, name: &str) -> String {
+    with_setting(text, "theme", name)
+}
+
+/// `text` with its top-level `key` line set to `value`. A new line goes
 /// after the last top-level setting, before any comment that heads the
 /// first `[table]`.
-fn with_theme(text: &str, name: &str) -> String {
-    let line = format!("theme = \"{}\"", name.replace(['"', '\\'], ""));
+fn with_setting(text: &str, key: &str, value: &str) -> String {
+    let line = format!("{key} = \"{}\"", value.replace(['"', '\\'], ""));
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let first_table = lines
         .iter()
@@ -304,7 +349,7 @@ fn with_theme(text: &str, name: &str) -> String {
         .unwrap_or(lines.len());
     let existing = lines[..first_table].iter().position(|l| {
         l.trim_start()
-            .strip_prefix("theme")
+            .strip_prefix(key)
             .is_some_and(|rest| rest.trim_start().starts_with('='))
     });
     match existing {
@@ -621,6 +666,20 @@ mod tests {
             with_theme(text, "tokyo-night"),
             "# mine\nclaude_config_dir = \"~/.c\"\ntheme = \"tokyo-night\"\n\n[ticker]\ntheme = \"not this one\"\n"
         );
+    }
+
+    #[test]
+    fn header_setting_parses_and_saves() {
+        let cfg: Config = toml::from_str("header = \"compact\"").unwrap();
+        assert_eq!(cfg.header, Header::Compact);
+        assert_eq!(Config::default().header, Header::Full);
+        assert!(toml::from_str::<Config>("header = \"tiny\"").is_err());
+        let out = with_setting("theme = \"grove\"\n", "header", "off");
+        assert_eq!(out, "theme = \"grove\"\nheader = \"off\"\n");
+        // `header_x` isn't `header`.
+        let out = with_setting("header_x = \"a\"\n", "header", "off");
+        assert!(out.contains("header_x = \"a\"") && out.contains("header = \"off\""));
+        assert_eq!(Header::Off.next(), Header::Full);
     }
 
     #[test]
