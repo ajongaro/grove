@@ -256,8 +256,29 @@ impl Tmux {
             .ok()
     }
 
+    /// Makes `target` its session's current window, sized to the terminals
+    /// now showing it.
     pub fn select_window(&self, target: &str) -> Result<()> {
-        self.run(&["select-window", "-t", target]).map(|_| ())
+        self.run(&["select-window", "-t", target])?;
+        // A window that's also in a desk column keeps the column's size
+        // (window-size latest) until a key is pressed in the bigger client.
+        // Switching that client to it counts as its activity, so the window
+        // grows to fill it.
+        let clients = self
+            .run(&[
+                "list-clients",
+                "-F",
+                "#{client_name} #{session_name} #{window_id}",
+            ])
+            .unwrap_or_default();
+        let id = self
+            .run(&["display-message", "-p", "-t", target, "#{window_id}"])
+            .unwrap_or_default();
+        for (client, session) in showing(&clients, id.trim()) {
+            let to = format!("={session}:{}", id.trim());
+            let _ = self.run(&["switch-client", "-c", client, "-t", &to]);
+        }
+        Ok(())
     }
 
     pub fn kill_window(&self, id: &str) -> Result<()> {
@@ -494,6 +515,21 @@ pub fn installs_in(dirs: impl IntoIterator<Item = PathBuf>) -> Vec<(PathBuf, Str
         }
     }
     out
+}
+
+/// The (client, session) pairs from `list-clients` lines (client, session,
+/// window) showing `window`, leaving out desk columns: they size the window
+/// to a column.
+fn showing<'a>(clients: &'a str, window: &str) -> Vec<(&'a str, &'a str)> {
+    clients
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split(' ');
+            Some((f.next()?, f.next()?, f.next()?))
+        })
+        .filter(|(_, s, w)| *w == window && !window.is_empty() && !crate::desk::is_column(s))
+        .map(|(c, s, _)| (c, s))
+        .collect()
 }
 
 /// The windows focused clients show, from `list-clients` lines (window,
@@ -752,6 +788,19 @@ mod tests {
         t.select_window(&id).unwrap();
         t.kill_window(&id).unwrap();
         assert!(!t.list_windows("g").unwrap().contains(&id));
+    }
+
+    #[test]
+    fn showing_skips_desk_columns_and_other_windows() {
+        let clients = "/dev/ttys000 grove @105\n\
+                       /dev/ttys001 desk-abc @105\n\
+                       /dev/ttys002 grove @7\n\
+                       /dev/ttys003 other @105\n";
+        assert_eq!(
+            showing(clients, "@105"),
+            [("/dev/ttys000", "grove"), ("/dev/ttys003", "other")]
+        );
+        assert!(showing(clients, "").is_empty());
     }
 
     #[test]
