@@ -3665,7 +3665,7 @@ fn t_previews_themes_live_and_esc_puts_the_old_one_back() {
     assert_eq!(pal().name, "catppuccin-mocha");
     handle_key(&mut app, ch('k'));
     handle_key(&mut app, ch('k'));
-    assert_eq!(pal().name, "dracula", "k wraps to the bottom");
+    assert_eq!(pal().name, "solarized-light", "k wraps to the bottom");
     handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(pal().name, "grove");
@@ -4005,4 +4005,27 @@ fn a_theme_paints_its_background_and_grove_keeps_the_terminals() {
         assert_eq!(bgs(&app).0, base, "{name} popup");
         app.mode = Mode::Normal;
     }
+}
+
+#[test]
+fn the_theme_picker_scrolls_in_a_short_window() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    let last = super::theme::all().len() - 1;
+    app.mode = Mode::Themes {
+        sel: last,
+        was: "grove",
+    };
+    let out = screen(&app, 100, 16);
+    assert!(out.contains("▸ solarized-light"), "{out}");
+    assert!(!out.contains("│   grove "), "{out}");
+    assert!(out.contains("Esc cancel"), "{out}");
+    app.mode = Mode::Themes {
+        sel: 0,
+        was: "grove",
+    };
+    let out = screen(&app, 100, 16);
+    assert!(
+        out.contains("▸ grove") && !out.contains("solarized-light"),
+        "{out}"
+    );
 }

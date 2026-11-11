@@ -320,6 +320,32 @@ pub const FRAPPE: Theme = catppuccin(
     },
 );
 
+pub const LATTE: Theme = catppuccin(
+    "catppuccin-latte",
+    Flavor {
+        rosewater: 0xdc8a78,
+        flamingo: 0xdd7878,
+        pink: 0xea76cb,
+        mauve: 0x8839ef,
+        red: 0xd20f39,
+        maroon: 0xe64553,
+        peach: 0xfe640b,
+        yellow: 0xdf8e1d,
+        green: 0x40a02b,
+        teal: 0x179299,
+        sky: 0x04a5e5,
+        sapphire: 0x209fb5,
+        blue: 0x1e66f5,
+        lavender: 0x7287fd,
+        text: 0x4c4f69,
+        subtext0: 0x6c6f85,
+        overlay0: 0x9ca0b0,
+        surface0: 0xccd0da,
+        surface1: 0xbcc0cc,
+        base: 0xeff1f5,
+    },
+);
+
 /// Tokyo Night (github.com/folke/tokyonight.nvim), the Night style.
 pub const TOKYO_NIGHT: Theme = Theme {
     name: "tokyo-night",
@@ -455,14 +481,370 @@ pub const DRACULA: Theme = Theme {
     },
 };
 
-static THEMES: [&Theme; 7] = [
+/// A theme from a palette's colors, each Grove role taking the usual one:
+/// green for work and focus (`accent` unless the palette says otherwise),
+/// red for needs-you, yellow for your turn.
+struct Palette {
+    bg: u32,
+    /// The selected row; a step off `bg`.
+    surface: u32,
+    dim: u32,
+    muted: u32,
+    fg: u32,
+    bright: u32,
+    red: u32,
+    orange: u32,
+    yellow: u32,
+    green: u32,
+    teal: u32,
+    cyan: u32,
+    blue: u32,
+    purple: u32,
+    pink: u32,
+    accent: u32,
+    sessions: u32,
+    fincas: u32,
+}
+
+const fn from_palette(name: &'static str, p: Palette) -> Theme {
+    Theme {
+        name,
+        accent: rgb(p.accent),
+        key: rgb(p.yellow),
+        sessions: rgb(p.sessions),
+        todo: rgb(p.cyan),
+        fincas: rgb(p.fincas),
+        shell: rgb(p.blue),
+        up: rgb(p.green),
+        down: rgb(p.red),
+        needs_you: rgb(p.red),
+        your_turn: rgb(p.yellow),
+        working: rgb(p.green),
+        starting: rgb(p.cyan),
+        dim: rgb(p.dim),
+        muted: rgb(p.muted),
+        bright: rgb(p.bright),
+        error: rgb(p.red),
+        warn: rgb(p.orange),
+        on_alert: rgb(p.bg),
+        ink: rgb(p.bg),
+        draft: rgb(p.teal),
+        selected_bg: rgb(p.surface),
+        cursor_bg: mix(p.bg, p.accent, 22),
+        cursor_dim_bg: rgb(p.surface),
+        leaf: rgb(p.green),
+        sage: rgb(p.teal),
+        stem: mix(p.orange, p.surface, 55),
+        fruit: rgb(p.purple),
+        bg: rgb(p.bg),
+        fg: rgb(p.fg),
+        hues: Hues {
+            red: p.red,
+            maroon: p.red,
+            flamingo: p.pink,
+            rosewater: p.fg,
+            orange: p.orange,
+            yellow: p.yellow,
+            green: p.green,
+            teal: p.teal,
+            cyan: p.cyan,
+            sapphire: p.blue,
+            blue: p.blue,
+            lavender: p.purple,
+            purple: p.purple,
+            pink: p.pink,
+        },
+    }
+}
+
+/// Gruvbox light, in its darker "faded" accents so they read on cream.
+pub const GRUVBOX_LIGHT: Theme = from_palette(
+    "gruvbox-light",
+    Palette {
+        bg: 0xfbf1c7,
+        surface: 0xebdbb2,
+        dim: 0xa89984,
+        muted: 0x7c6f64,
+        fg: 0x3c3836,
+        bright: 0x282828,
+        red: 0x9d0006,
+        orange: 0xaf3a03,
+        yellow: 0xb57614,
+        green: 0x79740e,
+        teal: 0x427b58,
+        cyan: 0x427b58,
+        blue: 0x076678,
+        purple: 0x8f3f71,
+        pink: 0x8f3f71,
+        accent: 0x79740e,
+        sessions: 0x8f3f71,
+        fincas: 0xaf3a03,
+    },
+);
+
+/// Nord: nordtheme.com/docs/colors-and-palettes.
+pub const NORD: Theme = from_palette(
+    "nord",
+    Palette {
+        bg: 0x2e3440,
+        surface: 0x3b4252,
+        dim: 0x616e88,
+        muted: 0xd8dee9,
+        fg: 0xd8dee9,
+        bright: 0xeceff4,
+        red: 0xbf616a,
+        orange: 0xd08770,
+        yellow: 0xebcb8b,
+        green: 0xa3be8c,
+        teal: 0x8fbcbb,
+        cyan: 0x88c0d0,
+        blue: 0x81a1c1,
+        purple: 0xb48ead,
+        pink: 0xb48ead,
+        accent: 0x88c0d0,
+        sessions: 0xb48ead,
+        fincas: 0xd08770,
+    },
+);
+
+/// Rosé Pine (rosepinetheme.com/palette). It has no green: foam (its
+/// cyan) stands in for work, and rose leads.
+/// One Rosé Pine variant's palette, by its own names.
+struct RosePine {
+    base: u32,
+    overlay: u32,
+    muted: u32,
+    subtle: u32,
+    text: u32,
+    love: u32,
+    gold: u32,
+    rose: u32,
+    pine: u32,
+    foam: u32,
+    iris: u32,
+}
+
+const fn rose_pine(name: &'static str, r: RosePine) -> Theme {
+    from_palette(
+        name,
+        Palette {
+            bg: r.base,
+            surface: r.overlay,
+            dim: r.muted,
+            muted: r.subtle,
+            fg: r.text,
+            bright: r.text,
+            red: r.love,
+            orange: r.rose,
+            yellow: r.gold,
+            green: r.foam,
+            teal: r.pine,
+            cyan: r.foam,
+            blue: r.pine,
+            purple: r.iris,
+            pink: r.rose,
+            accent: r.rose,
+            sessions: r.iris,
+            fincas: r.gold,
+        },
+    )
+}
+
+pub const ROSE_PINE: Theme = rose_pine(
+    "rose-pine",
+    RosePine {
+        base: 0x191724,
+        overlay: 0x26233a,
+        muted: 0x6e6a86,
+        subtle: 0x908caa,
+        text: 0xe0def4,
+        love: 0xeb6f92,
+        gold: 0xf6c177,
+        rose: 0xebbcba,
+        pine: 0x31748f,
+        foam: 0x9ccfd8,
+        iris: 0xc4a7e7,
+    },
+);
+pub const ROSE_PINE_MOON: Theme = rose_pine(
+    "rose-pine-moon",
+    RosePine {
+        base: 0x232136,
+        overlay: 0x393552,
+        muted: 0x6e6a86,
+        subtle: 0x908caa,
+        text: 0xe0def4,
+        love: 0xeb6f92,
+        gold: 0xf6c177,
+        rose: 0xea9a97,
+        pine: 0x3e8fb0,
+        foam: 0x9ccfd8,
+        iris: 0xc4a7e7,
+    },
+);
+pub const ROSE_PINE_DAWN: Theme = rose_pine(
+    "rose-pine-dawn",
+    RosePine {
+        base: 0xfaf4ed,
+        overlay: 0xf2e9e1,
+        muted: 0x9893a5,
+        subtle: 0x797593,
+        text: 0x575279,
+        love: 0xb4637a,
+        gold: 0xea9d34,
+        rose: 0xd7827e,
+        pine: 0x286983,
+        foam: 0x56949f,
+        iris: 0x907aa9,
+    },
+);
+
+/// Everforest dark, medium: github.com/sainnhe/everforest.
+pub const EVERFOREST: Theme = from_palette(
+    "everforest",
+    Palette {
+        bg: 0x2d353b,
+        surface: 0x3d484d,
+        dim: 0x7a8478,
+        muted: 0x9da9a0,
+        fg: 0xd3c6aa,
+        bright: 0xd3c6aa,
+        red: 0xe67e80,
+        orange: 0xe69875,
+        yellow: 0xdbbc7f,
+        green: 0xa7c080,
+        teal: 0x83c092,
+        cyan: 0x83c092,
+        blue: 0x7fbbb3,
+        purple: 0xd699b6,
+        pink: 0xd699b6,
+        accent: 0xa7c080,
+        sessions: 0xd699b6,
+        fincas: 0xe69875,
+    },
+);
+
+/// Kanagawa wave: github.com/rebelot/kanagawa.nvim.
+pub const KANAGAWA: Theme = from_palette(
+    "kanagawa",
+    Palette {
+        bg: 0x1f1f28,
+        surface: 0x2a2a37,
+        dim: 0x727169,
+        muted: 0xc8c093,
+        fg: 0xdcd7ba,
+        bright: 0xdcd7ba,
+        red: 0xe46876,
+        orange: 0xffa066,
+        yellow: 0xe6c384,
+        green: 0x98bb6c,
+        teal: 0x7aa89f,
+        cyan: 0x7fb4ca,
+        blue: 0x7e9cd8,
+        purple: 0x957fb8,
+        pink: 0xd27e99,
+        accent: 0x98bb6c,
+        sessions: 0x957fb8,
+        fincas: 0xffa066,
+    },
+);
+
+/// Atom's One Dark.
+pub const ONE_DARK: Theme = from_palette(
+    "one-dark",
+    Palette {
+        bg: 0x282c34,
+        surface: 0x3e4451,
+        dim: 0x5c6370,
+        muted: 0x9da5b4,
+        fg: 0xabb2bf,
+        bright: 0xd7dae0,
+        red: 0xe06c75,
+        orange: 0xd19a66,
+        yellow: 0xe5c07b,
+        green: 0x98c379,
+        teal: 0x56b6c2,
+        cyan: 0x56b6c2,
+        blue: 0x61afef,
+        purple: 0xc678dd,
+        pink: 0xc678dd,
+        accent: 0x98c379,
+        sessions: 0xc678dd,
+        fincas: 0xd19a66,
+    },
+);
+
+/// Solarized (ethanschoonover.com/solarized): the same accents on dark or
+/// light, the base tones swapped.
+const fn solarized(
+    name: &'static str,
+    bg: u32,
+    surface: u32,
+    dim: u32,
+    fg: u32,
+    bright: u32,
+) -> Theme {
+    from_palette(
+        name,
+        Palette {
+            bg,
+            surface,
+            dim,
+            muted: fg,
+            fg,
+            bright,
+            red: 0xdc322f,
+            orange: 0xcb4b16,
+            yellow: 0xb58900,
+            green: 0x859900,
+            teal: 0x2aa198,
+            cyan: 0x2aa198,
+            blue: 0x268bd2,
+            purple: 0x6c71c4,
+            pink: 0xd33682,
+            accent: 0x859900,
+            sessions: 0x6c71c4,
+            fincas: 0xcb4b16,
+        },
+    )
+}
+
+pub const SOLARIZED_DARK: Theme = solarized(
+    "solarized-dark",
+    0x002b36,
+    0x073642,
+    0x586e75,
+    0x839496,
+    0x93a1a1,
+);
+pub const SOLARIZED_LIGHT: Theme = solarized(
+    "solarized-light",
+    0xfdf6e3,
+    0xeee8d5,
+    0x93a1a1,
+    0x657b83,
+    0x586e75,
+);
+
+static THEMES: [&Theme; 18] = [
     &GROVE,
     &MOCHA,
     &MACCHIATO,
     &FRAPPE,
+    &LATTE,
     &TOKYO_NIGHT,
     &GRUVBOX,
+    &GRUVBOX_LIGHT,
     &DRACULA,
+    &NORD,
+    &ROSE_PINE,
+    &ROSE_PINE_MOON,
+    &ROSE_PINE_DAWN,
+    &EVERFOREST,
+    &KANAGAWA,
+    &ONE_DARK,
+    &SOLARIZED_DARK,
+    &SOLARIZED_LIGHT,
 ];
 
 /// The theme called `name`; `catppuccin` alone means Mocha.
@@ -473,6 +855,12 @@ pub fn named(name: &str) -> Option<&'static Theme> {
         "catppuccin" => "catppuccin-mocha",
         "tokyonight" | "tokyo night" => "tokyo-night",
         "gruvbox-dark" | "gruvbox dark" => "gruvbox",
+        "latte" => "catppuccin-latte",
+        "rosepine" | "rose-pine-main" | "rosé-pine" | "rosé pine" | "rose pine" => "rose-pine",
+        "everforest-dark" => "everforest",
+        "kanagawa-wave" => "kanagawa",
+        "onedark" | "one dark" => "one-dark",
+        "solarized" => "solarized-dark",
         n => n,
     };
     THEMES.iter().copied().find(|t| t.name == name)
@@ -542,7 +930,15 @@ mod tests {
             named("catppuccin-frappe").unwrap().name,
             "catppuccin-frappe"
         );
-        assert!(named("solarized").is_none());
+        assert_eq!(named("solarized").unwrap().name, "solarized-dark");
+        assert_eq!(named("Rosé Pine").unwrap().name, "rose-pine");
+        assert_eq!(named("onedark").unwrap().name, "one-dark");
+        assert_eq!(named("latte").unwrap().name, "catppuccin-latte");
+        assert!(named("monokai").is_none());
+        // Every theme is reachable by its own name, and names are unique.
+        let names: std::collections::BTreeSet<_> = names().collect();
+        assert_eq!(names.len(), all().len());
+        assert!(all().iter().all(|t| named(t.name).unwrap().name == t.name));
     }
 
     #[test]

@@ -1245,6 +1245,12 @@ fn render_themes(frame: &mut Frame, sel: usize) {
             }
         })
         .collect();
+    // In a short window the list scrolls, keeping the selection in view.
+    let rows = usize::from(area.height.saturating_sub(4)).max(1);
+    if lines.len() > rows {
+        let start = sel.saturating_sub(rows / 2).min(lines.len() - rows);
+        lines = lines.drain(start..start + rows).collect();
+    }
     lines.push(Line::raw(""));
     lines.push(Line::raw(" j/k preview · Enter keep · Esc cancel").fg(pal().dim));
     frame.render_widget(
