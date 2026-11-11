@@ -740,14 +740,23 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
             }
             Some(Action::None)
         }
-        KeyCode::Char('s') => Some(match error {
+        KeyCode::Char('s' | 'S') => Some(match error {
             Some(e) => {
                 app.footer = Some(format!("{name} can't be used: {e}"));
                 Action::None
             }
             None => Action::FincaShell { slug, via },
         }),
-        KeyCode::Char('n' | 'e' | 'c' | 'x') => {
+        // A new session needs one of the finca's projects: its own
+        // dashboard, where n starts one.
+        KeyCode::Char('n') => Some(match error {
+            Some(e) => {
+                app.footer = Some(format!("{name} can't be used: {e}"));
+                Action::None
+            }
+            None => Action::ConnectFinca { slug, via },
+        }),
+        KeyCode::Char('e' | 'c' | 'x') => {
             app.footer = Some(format!(
                 "Sessions on {name} are managed there: connect with Enter (C-q to come back)"
             ));

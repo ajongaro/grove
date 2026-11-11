@@ -22,6 +22,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             p.fincas,
             vec![
                 ("enter", "connect"),
+                ("n", "new session there"),
                 ("s", "shell there"),
                 ("l", "its sessions"),
                 ("a", "add finca"),
@@ -77,7 +78,12 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                         ("h", "fincas"),
                     ]
                 }
-                None => vec![("enter", "connect"), ("s", "shell"), ("h", "fincas")],
+                None => vec![
+                    ("enter", "connect"),
+                    ("n", "new session there"),
+                    ("s", "shell"),
+                    ("h", "fincas"),
+                ],
             },
         ),
         Pane::Sessions if app.selected_shell().is_some() => (

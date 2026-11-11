@@ -809,7 +809,7 @@ fn unreachable_finca_keeps_last_known_sessions_marked_stale() {
 #[test]
 fn session_keys_on_a_finca_point_to_connecting() {
     let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
-    for c in ['n', 'e', 'c', 'x'] {
+    for c in ['e', 'c', 'x'] {
         assert_eq!(handle_key(&mut app, ch(c)), Action::None, "{c}");
         assert_eq!(app.mode, Mode::Normal, "{c}");
         assert!(
@@ -818,6 +818,42 @@ fn session_keys_on_a_finca_point_to_connecting() {
             app.footer
         );
     }
+}
+
+#[test]
+fn n_and_shift_s_work_in_a_fincas_empty_session_list() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Reachable(remote_status("homebox", 0, 0)),
+        t0(),
+    );
+    app.proj_idx = 1;
+    for pane in [Pane::Projects, Pane::Sessions] {
+        app.pane = pane;
+        // n: its own dashboard, where n starts one in a project of its.
+        assert_eq!(
+            handle_key(&mut app, ch('n')),
+            Action::ConnectFinca {
+                slug: "homebox".into(),
+                via: Some("me@homebox".into())
+            },
+            "{pane:?}"
+        );
+        for c in ['s', 'S'] {
+            assert_eq!(
+                handle_key(&mut app, ch(c)),
+                Action::FincaShell {
+                    slug: "homebox".into(),
+                    via: Some("me@homebox".into())
+                },
+                "{pane:?} {c}"
+            );
+        }
+    }
+    let out = screen(&app, 110, 30);
+    assert!(out.contains("n: new session there"), "{out}");
 }
 
 #[test]

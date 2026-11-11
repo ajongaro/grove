@@ -537,7 +537,9 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
         }
     }
     lines.push(Line::raw(""));
-    lines.push(Line::raw("Enter: open · s: shell · C-q: come back").fg(pal().dim));
+    lines.push(
+        Line::raw("Enter: open · n: new session there · s: shell · C-q: come back").fg(pal().dim),
+    );
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })

@@ -449,7 +449,9 @@ the footer counts remote sessions that need you.
 
 - **Enter** on a finca opens that machine's own Grove dashboard. Every key
   goes to it.
-- **`s`** on a finca opens a plain login shell there. Your tmux prefix
+- **`n`** on a finca (or in its session list, even an empty one) opens
+  its dashboard too, where `n` starts a session in one of its projects.
+- **`s`** (or `S`) on a finca opens a plain login shell there. Your tmux prefix
   works in it, and new windows and splits (`prefix c`, `prefix v`) open
   shells on the finca too.
 - **`C-q`** comes back to your local dashboard from either. The connection
