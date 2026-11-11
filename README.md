@@ -335,7 +335,9 @@ touched.
 
 **`T`** opens the theme picker. Moving through the list redraws the
 dashboard in each theme; Enter keeps one and saves it to `config.toml`,
-and Esc puts back the one you had. Or set it yourself:
+and Esc puts back the one you had. Each theme paints the dashboard in
+its own background and text colors (the swatches sit on that
+background); `grove` keeps your terminal's. Or set it yourself:
 
 ```toml
 theme = "catppuccin-mocha"   # grove (the default), catppuccin-mocha, catppuccin-macchiato,

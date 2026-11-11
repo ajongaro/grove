@@ -3977,3 +3977,32 @@ fn shift_j_skips_a_hidden_box() {
     handle_key(&mut app, shift('J'));
     assert_eq!(app.selected_finca().unwrap().slug, "pi");
 }
+
+#[test]
+fn a_theme_paints_its_background_and_grove_keeps_the_terminals() {
+    use ratatui::style::Color::{Reset, Rgb};
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    let bgs = |app: &App| {
+        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        term.draw(|f| render(f, app, t0())).unwrap();
+        let buf = term.backend().buffer().clone();
+        // A blank cell mid-screen, and one inside the theme picker.
+        (buf[(40, 12)].bg, buf[(0, 23)].bg)
+    };
+    assert_eq!(bgs(&app), (Reset, Reset));
+    for (name, base) in [
+        ("catppuccin-mocha", Rgb(0x1e, 0x1e, 0x2e)),
+        ("catppuccin-frappe", Rgb(0x30, 0x34, 0x46)),
+        ("tokyo-night", Rgb(0x1a, 0x1b, 0x26)),
+    ] {
+        super::theme::set(name);
+        assert_eq!(bgs(&app).0, base, "{name}");
+        // Popups clear back to it too.
+        app.mode = Mode::Themes {
+            sel: 0,
+            was: "grove",
+        };
+        assert_eq!(bgs(&app).0, base, "{name} popup");
+        app.mode = Mode::Normal;
+    }
+}

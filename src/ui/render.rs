@@ -16,6 +16,8 @@ use crate::model::State;
 const SLOT_W: usize = 5;
 
 pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
+    // The theme's own background and text (grove's are the terminal's).
+    frame.render_widget(Block::new().style(base_style()), frame.area());
     // The header gives its rows back to the lists in a short window: the
     // full one shrinks to the compact line, which then goes.
     let height = frame.area().height;
@@ -118,7 +120,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 PromptKind::RenameShell { .. } => " Rename shell (Enter saves, Esc cancels) ",
             };
             let area = popup(frame.area(), 70, 3);
-            frame.render_widget(Clear, area);
+            blank(frame, area);
             frame.render_widget(
                 Paragraph::new(format!("{input}█")).block(
                     Block::bordered()
@@ -139,7 +141,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         Mode::ConfirmRemove { name, .. } => {
             let area = popup(frame.area(), 60, 3);
-            frame.render_widget(Clear, area);
+            blank(frame, area);
             frame.render_widget(
                 Paragraph::new(format!("Remove project {name}? Its folder stays.  y / n")).block(
                     Block::bordered()
@@ -152,7 +154,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         Mode::ConfirmCreate { path } => {
             let area = popup(frame.area(), 70, 3);
-            frame.render_widget(Clear, area);
+            blank(frame, area);
             frame.render_widget(
                 Paragraph::new(format!("Create {path} and git init it?  y / n")).block(
                     Block::bordered()
@@ -202,7 +204,7 @@ fn render_completions(frame: &mut Frame, app: &App, prompt: Rect) {
     };
     let title = format!(" {} matches — Tab or j/k to cycle ", app.completions.len());
     let mut state = ListState::default().with_selected(app.completion_idx.map(|i| i - start));
-    frame.render_widget(Clear, area);
+    blank(frame, area);
     frame.render_stateful_widget(
         List::new(items)
             .block(
@@ -691,7 +693,7 @@ fn render_search(frame: &mut Frame, app: &App, query: &str, sel: usize, now: Dat
     let mut area = popup(screen, 80, rows.min(screen.height.saturating_sub(2)));
     area.width = area.width.max(screen.width.min(60));
     area.x = screen.x + (screen.width - area.width) / 2;
-    frame.render_widget(Clear, area);
+    blank(frame, area);
     let inner_w = area.width.saturating_sub(2) as usize;
     let fits = (area.height.saturating_sub(4) / 2).max(1) as usize;
     let first = sel.saturating_sub(fits - 1);
@@ -821,7 +823,7 @@ fn render_help(frame: &mut Frame) {
     // Plus the top and bottom border.
     let height = left.len().max(right.len()) as u16 + 2;
     let area = popup(frame.area(), 90, height);
-    frame.render_widget(Clear, area);
+    blank(frame, area);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(pal().dim))
@@ -1089,6 +1091,17 @@ pub(super) fn parse_color(c: Option<&str>) -> Option<Color> {
     Some(Color::Rgb(r, g, b))
 }
 
+/// The theme's background and text color.
+fn base_style() -> Style {
+    Style::new().bg(pal().bg).fg(pal().fg)
+}
+
+/// Empties `area` for a popup, back to the theme's background.
+fn blank(frame: &mut Frame, area: Rect) {
+    frame.render_widget(Clear, area);
+    frame.render_widget(Block::new().style(base_style()), area);
+}
+
 /// A centered box `width_pct`% wide and `height` rows tall, clamped to `area`.
 fn popup(area: Rect, width_pct: u16, height: u16) -> Rect {
     let w = (area.width * width_pct / 100).max(20).min(area.width);
@@ -1108,7 +1121,7 @@ fn kill_popup(frame: &mut Frame, label: &str) {
 
 fn confirm_popup(frame: &mut Frame, text: &str) {
     let area = popup(frame.area(), 44, 3);
-    frame.render_widget(Clear, area);
+    blank(frame, area);
     frame.render_widget(
         Paragraph::new(text.to_string()).block(
             Block::bordered()
@@ -1204,7 +1217,7 @@ fn render_themes(frame: &mut Frame, sel: usize) {
         x: frame.area().x + (frame.area().width - area.width) / 2,
         ..area
     };
-    frame.render_widget(Clear, area);
+    blank(frame, area);
     let mut lines: Vec<Line> = themes
         .iter()
         .enumerate()
@@ -1218,9 +1231,12 @@ fn render_themes(frame: &mut Frame, sel: usize) {
                     pal().muted
                 }),
             ];
+            // On the theme's own background, so the flavors tell apart.
+            spans.push(Span::raw(" ").bg(t.bg));
             for c in [t.accent, t.sessions, t.todo, t.fincas, t.shell, t.key] {
-                spans.push(Span::raw("●").fg(c));
+                spans.push(Span::raw("●").fg(c).bg(t.bg));
             }
+            spans.push(Span::raw(" ").bg(t.bg));
             let line = Line::from(spans);
             if here {
                 line.bg(pal().selected_bg)

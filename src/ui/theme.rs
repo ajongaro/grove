@@ -48,6 +48,10 @@ pub struct Theme {
     pub sage: Color,
     pub stem: Color,
     pub fruit: Color,
+    /// The dashboard's background and plain text. Grove's are the
+    /// terminal's own (`Reset`); the others paint theirs.
+    pub bg: Color,
+    pub fg: Color,
     /// What color names in config.toml (`account_color = "blue"`) mean here.
     pub hues: Hues,
 }
@@ -142,6 +146,8 @@ pub const GROVE: Theme = Theme {
     sage: Color::Rgb(0x6f, 0x9a, 0x6a),
     stem: Color::Rgb(0x8d, 0x6e, 0x4c),
     fruit: Color::Rgb(0x6b, 0x4a, 0x7a),
+    bg: Color::Reset,
+    fg: Color::Reset,
     hues: Hues {
         green: 0x66bb6a,
         ..TOKYO_HUES
@@ -215,6 +221,8 @@ const fn catppuccin(name: &'static str, f: Flavor) -> Theme {
         sage: rgb(f.teal),
         stem: mix(f.flamingo, f.surface1, 45),
         fruit: rgb(f.mauve),
+        bg: rgb(f.base),
+        fg: rgb(f.text),
         hues: Hues {
             red: f.red,
             maroon: f.maroon,
@@ -342,6 +350,8 @@ pub const TOKYO_NIGHT: Theme = Theme {
     sage: rgb(0x73daca),
     stem: mix(0xff9e64, 0x414868, 55),
     fruit: rgb(0x9d7cd8),
+    bg: rgb(0x1a1b26),
+    fg: rgb(0xc0caf5),
     hues: TOKYO_HUES,
 };
 
