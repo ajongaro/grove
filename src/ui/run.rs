@@ -292,6 +292,17 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             &ctx.cfg.tmux_session,
             &slug,
         )?),
+        Action::ClearSession { session_id, name } => {
+            // Only an ended one: it may have been resumed since.
+            match store.get_session(&session_id) {
+                Some(s) if s.state != State::Ended => {
+                    bail!("{name} is running again; x kills it")
+                }
+                Some(_) => store.delete_session(&session_id)?,
+                None => {}
+            }
+            Outcome::Message(format!("Cleared {name}"))
+        }
         Action::ClearEnded { slug } => {
             let ended: Vec<_> = store
                 .list_sessions(Some(&slug))

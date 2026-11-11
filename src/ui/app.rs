@@ -214,6 +214,11 @@ pub enum Action {
     ClearEnded {
         slug: String,
     },
+    /// Forget one ended session (`c` on it).
+    ClearSession {
+        session_id: String,
+        name: String,
+    },
     /// Forget the project (its folder is kept).
     RemoveProject {
         slug: String,

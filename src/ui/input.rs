@@ -467,7 +467,23 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
                 KeyCode::Char('e') => Action::EditProject { slug },
                 KeyCode::Char('s') => Action::ProjectShell { slug },
                 KeyCode::Char('S') => Action::NewShell { slug },
-                KeyCode::Char('c') => Action::ClearEnded { slug },
+                // In the list, just the session under the cursor; on the
+                // project, all its ended ones.
+                KeyCode::Char('c') if app.pane == Pane::Sessions => match app.selected_session() {
+                    Some(s) if s.state == State::Ended => Action::ClearSession {
+                        session_id: s.id.clone(),
+                        name: s.name.clone(),
+                    },
+                    Some(s) => {
+                        app.footer = Some(format!(
+                            "{} is running: x kills it, then c clears it",
+                            s.name
+                        ));
+                        Action::None
+                    }
+                    None => Action::None,
+                },
+                KeyCode::Char('c' | 'C') => Action::ClearEnded { slug },
                 KeyCode::Char('d') if app.pane == Pane::Projects => {
                     let name = app.selected_project().map(|p| p.name.clone());
                     app.mode = Mode::ConfirmRemove {

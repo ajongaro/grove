@@ -153,6 +153,35 @@ fn clear_ended_removes_only_ended_sessions_of_that_project() {
 }
 
 #[test]
+fn clear_session_removes_just_that_ended_one() {
+    let t = setup("clearone");
+    let s = &t.ctx.store;
+    s.save_session(&sess("a", "p", State::Ended, None)).unwrap();
+    s.save_session(&sess("b", "p", State::Ended, None)).unwrap();
+    s.save_session(&sess("c", "p", State::Working, None))
+        .unwrap();
+    let clear = |id: &str| {
+        perform(
+            &t.ctx,
+            Action::ClearSession {
+                session_id: id.into(),
+                name: id.into(),
+            },
+        )
+    };
+    assert!(matches!(clear("a").unwrap(), Outcome::Message(m) if m == "Cleared a"));
+    // Resumed since the key was pressed: kept.
+    assert!(
+        clear("c")
+            .unwrap_err()
+            .to_string()
+            .contains("running again")
+    );
+    let ids: Vec<_> = s.list_sessions(None).into_iter().map(|x| x.id).collect();
+    assert_eq!(ids, ["b", "c"]);
+}
+
+#[test]
 fn kill_closes_window_and_marks_ended() {
     let t = setup("kill");
     let tm = &t.ctx.tmux;

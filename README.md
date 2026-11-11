@@ -162,7 +162,8 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `x` | session | kill it, or close a shell (asks first) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
 | `1`–`9` | dashboard | jump to that pinned session |
-| `c` | dashboard | clear ended sessions for the project |
+| `c` | dashboard | clear the ended session under the cursor |
+| `C` | dashboard | clear all the project's ended sessions |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `H` | project | hide its account's box, to focus on work or play; again shows every box (see [More than one Claude account](#more-than-one-claude-account)) |
 | `t` | dashboard | jump to the project's to-do list |
@@ -194,7 +195,7 @@ rest. Each project row counts its live
 sessions by state: 💧 needs you, 🌳 your turn, 🌿 working.
 
 A project's sessions are listed most recently active first, the order
-their ages read in. An ended session stays listed until you clear it (`c`). **Enter** on one
+their ages read in. An ended session stays listed until you clear it (`c`, or `C` for all of them). **Enter** on one
 reopens it in a new window with `claude --resume`, picking up its last
 conversation (Grove follows it through `/clear` and `/resume`). It keeps its
 name, unless a live session has taken it since, and its cost keeps adding

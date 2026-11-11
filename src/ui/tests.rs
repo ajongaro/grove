@@ -376,6 +376,50 @@ fn edit_clear_and_quit() {
 }
 
 #[test]
+fn c_clears_the_session_under_the_cursor_and_shift_c_all() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "live", State::Working, Some("@1")),
+            session("2", "alpha", "old", State::Ended, None),
+        ],
+    );
+    app.pane = Pane::Sessions;
+    let at = |app: &mut App, name: &str| {
+        app.sess_idx = app
+            .visible_sessions()
+            .iter()
+            .position(|s| s.name == name)
+            .unwrap();
+    };
+    at(&mut app, "old");
+    assert_eq!(
+        handle_key(&mut app, ch('c')),
+        Action::ClearSession {
+            session_id: "2".into(),
+            name: "old".into()
+        }
+    );
+    at(&mut app, "live");
+    assert_eq!(handle_key(&mut app, ch('c')), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap().contains("x kills it"),
+        "{:?}",
+        app.footer
+    );
+    for pane in [Pane::Sessions, Pane::Projects] {
+        app.pane = pane;
+        assert_eq!(
+            handle_key(&mut app, shift('C')),
+            Action::ClearEnded {
+                slug: "alpha".into()
+            },
+            "{pane:?}"
+        );
+    }
+}
+
+#[test]
 fn error_row_cannot_start_sessions() {
     let (_d, s) = store_with(&[], &[]);
     s.paths.ensure().unwrap();

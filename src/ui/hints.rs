@@ -36,7 +36,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 ("s/S", "shell"),
                 ("t", "to-do"),
                 ("e", "edit"),
-                ("c", "clear ended"),
+                ("C", "clear ended"),
                 ("a", "add"),
                 ("d", "remove"),
             ];
@@ -101,7 +101,8 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                     ("enter", "resume"),
                     ("r", "rename"),
                     ("p", "pin"),
-                    ("c", "clear ended"),
+                    ("c", "clear it"),
+                    ("C", "clear all ended"),
                 ],
                 Some(_) => vec![
                     ("enter", "jump"),
