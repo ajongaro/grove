@@ -341,7 +341,8 @@ background); `grove` keeps your terminal's. Or set it yourself:
 
 ```toml
 theme = "catppuccin-mocha"   # grove (the default), catppuccin-mocha, catppuccin-macchiato,
-                             # catppuccin-frappe, tokyo-night ("catppuccin" means Mocha)
+                             # catppuccin-frappe, tokyo-night, gruvbox, dracula
+                             # ("catppuccin" means Mocha)
 ```
 
 Colors in `config.toml` and project files can be **names** as well as

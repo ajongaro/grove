@@ -3665,7 +3665,7 @@ fn t_previews_themes_live_and_esc_puts_the_old_one_back() {
     assert_eq!(pal().name, "catppuccin-mocha");
     handle_key(&mut app, ch('k'));
     handle_key(&mut app, ch('k'));
-    assert_eq!(pal().name, "tokyo-night", "k wraps to the bottom");
+    assert_eq!(pal().name, "dracula", "k wraps to the bottom");
     handle_key(&mut app, key(KeyCode::Esc));
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(pal().name, "grove");

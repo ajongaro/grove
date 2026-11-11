@@ -33,8 +33,8 @@ pub struct Config {
     /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
     pub ticker: TickerConfig,
     /// The dashboard's colors: `grove` (the default), or `catppuccin-mocha`,
-    /// `catppuccin-macchiato`, `catppuccin-frappe` (`catppuccin` is Mocha) or
-    /// `tokyo-night`.
+    /// `catppuccin-macchiato`, `catppuccin-frappe` (`catppuccin` is Mocha),
+    /// `tokyo-night`, `gruvbox` or `dracula`.
     pub theme: String,
     /// The dashboard's top bar: `full` (logo, sky and the day's harvest),
     /// `compact` (one plain line of totals) or `off`. `B` cycles them.

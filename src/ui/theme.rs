@@ -355,7 +355,115 @@ pub const TOKYO_NIGHT: Theme = Theme {
     hues: TOKYO_HUES,
 };
 
-static THEMES: [&Theme; 5] = [&GROVE, &MOCHA, &MACCHIATO, &FRAPPE, &TOKYO_NIGHT];
+/// Gruvbox (dark, medium contrast): github.com/morhetz/gruvbox.
+pub const GRUVBOX: Theme = Theme {
+    name: "gruvbox",
+    accent: rgb(0xb8bb26),
+    key: rgb(0xfabd2f),
+    sessions: rgb(0xd3869b),
+    todo: rgb(0x8ec07c),
+    fincas: rgb(0xfe8019),
+    shell: rgb(0x83a598),
+    up: rgb(0xb8bb26),
+    down: rgb(0xfb4934),
+    needs_you: rgb(0xfb4934),
+    your_turn: rgb(0xfabd2f),
+    working: rgb(0xb8bb26),
+    starting: rgb(0x8ec07c),
+    dim: rgb(0x7c6f64),
+    muted: rgb(0xa89984),
+    bright: rgb(0xebdbb2),
+    error: rgb(0xfb4934),
+    warn: rgb(0xfe8019),
+    on_alert: rgb(0x282828),
+    ink: rgb(0x282828),
+    draft: rgb(0x8ec07c),
+    selected_bg: rgb(0x3c3836),
+    cursor_bg: mix(0x282828, 0xb8bb26, 22),
+    cursor_dim_bg: rgb(0x3c3836),
+    leaf: rgb(0xb8bb26),
+    sage: rgb(0x8ec07c),
+    stem: mix(0xfe8019, 0x504945, 55),
+    fruit: rgb(0xd3869b),
+    bg: rgb(0x282828),
+    fg: rgb(0xebdbb2),
+    hues: Hues {
+        red: 0xfb4934,
+        maroon: 0xcc241d,
+        flamingo: 0xd3869b,
+        rosewater: 0xebdbb2,
+        orange: 0xfe8019,
+        yellow: 0xfabd2f,
+        green: 0xb8bb26,
+        teal: 0x8ec07c,
+        cyan: 0x8ec07c,
+        sapphire: 0x83a598,
+        blue: 0x83a598,
+        lavender: 0x83a598,
+        purple: 0xd3869b,
+        pink: 0xd3869b,
+    },
+};
+
+/// Dracula: draculatheme.com/contribute. It has no blue; `blue` is its purple.
+pub const DRACULA: Theme = Theme {
+    name: "dracula",
+    accent: rgb(0xbd93f9),
+    key: rgb(0xf1fa8c),
+    sessions: rgb(0xff79c6),
+    todo: rgb(0x8be9fd),
+    fincas: rgb(0xffb86c),
+    shell: rgb(0x50fa7b),
+    up: rgb(0x50fa7b),
+    down: rgb(0xff5555),
+    needs_you: rgb(0xff5555),
+    your_turn: rgb(0xf1fa8c),
+    working: rgb(0x50fa7b),
+    starting: rgb(0x8be9fd),
+    dim: rgb(0x6272a4),
+    muted: mix(0xf8f8f2, 0x6272a4, 40),
+    bright: rgb(0xf8f8f2),
+    error: rgb(0xff5555),
+    warn: rgb(0xffb86c),
+    on_alert: rgb(0x282a36),
+    ink: rgb(0x282a36),
+    draft: rgb(0x8be9fd),
+    selected_bg: rgb(0x44475a),
+    cursor_bg: mix(0x282a36, 0xbd93f9, 25),
+    cursor_dim_bg: rgb(0x44475a),
+    leaf: rgb(0x50fa7b),
+    sage: rgb(0x8be9fd),
+    stem: mix(0xffb86c, 0x44475a, 55),
+    fruit: rgb(0xff79c6),
+    bg: rgb(0x282a36),
+    fg: rgb(0xf8f8f2),
+    hues: Hues {
+        red: 0xff5555,
+        maroon: 0xff5555,
+        flamingo: 0xff79c6,
+        rosewater: 0xf8f8f2,
+        orange: 0xffb86c,
+        yellow: 0xf1fa8c,
+        green: 0x50fa7b,
+        teal: 0x8be9fd,
+        cyan: 0x8be9fd,
+        sapphire: 0x8be9fd,
+        blue: 0xbd93f9,
+        lavender: 0xbd93f9,
+        purple: 0xbd93f9,
+        pink: 0xff79c6,
+    },
+};
+
+static THEMES: [&Theme; 7] = [
+    &GROVE,
+    &MOCHA,
+    &MACCHIATO,
+    &FRAPPE,
+    &TOKYO_NIGHT,
+    &GRUVBOX,
+    &DRACULA,
+];
 
 /// The theme called `name`; `catppuccin` alone means Mocha.
 pub fn named(name: &str) -> Option<&'static Theme> {
@@ -364,6 +472,7 @@ pub fn named(name: &str) -> Option<&'static Theme> {
         "" => "grove",
         "catppuccin" => "catppuccin-mocha",
         "tokyonight" | "tokyo night" => "tokyo-night",
+        "gruvbox-dark" | "gruvbox dark" => "gruvbox",
         n => n,
     };
     THEMES.iter().copied().find(|t| t.name == name)
@@ -448,6 +557,9 @@ mod tests {
         assert_eq!(hex("blue", "catppuccin-mocha"), "#89b4fa");
         assert_eq!(hex("Peach", "catppuccin-frappe"), "#ef9f76");
         assert_eq!(hex("peach", "tokyo-night"), "#ff9e64");
+        assert_eq!(hex("blue", "gruvbox"), "#83a598");
+        assert_eq!(hex("blue", "dracula"), "#bd93f9");
+        assert_eq!(named("Gruvbox Dark").unwrap().name, "gruvbox");
         assert_eq!(hex("green", "grove"), "#66bb6a");
         assert_eq!(hex("green", "no-such-theme"), "#66bb6a");
         assert_eq!(hex("#E8A33D", "catppuccin-mocha"), "#e8a33d");
