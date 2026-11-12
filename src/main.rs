@@ -508,7 +508,7 @@ fn refresh(paths: &Paths) -> Result<()> {
     let cfg = load_config(paths)?;
     paths.ensure()?;
     let exe = runfiles::grove_exe()?;
-    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline)?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline, &cfg.theme)?;
     let conf = paths.run.join("tmux.conf");
     let running = launch::reload_running(
         &grove_tmux(paths),
@@ -531,7 +531,7 @@ fn start(paths: &Paths) -> Result<()> {
     let cfg = preflight(paths)?;
     paths.ensure()?;
     let exe = runfiles::grove_exe()?;
-    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline)?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline, &cfg.theme)?;
 
     let tmux = grove_tmux(paths);
     let session = &cfg.tmux_session;

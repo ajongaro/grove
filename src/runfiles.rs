@@ -8,6 +8,8 @@ use serde_json::json;
 
 use crate::config::Paths;
 use crate::store::write_atomic;
+use crate::ui::theme::Theme;
+use ratatui::style::Color;
 
 /// Every hook event Grove listens to (see state.rs).
 pub const HOOK_EVENTS: [&str; 9] = [
@@ -61,7 +63,7 @@ pub fn mcp_json(grove_bin: &Path) -> serde_json::Value {
 /// `~/.grove/tmux.local.conf` is sourced last for your own setup.
 /// `clip` is the clipboard command copies are piped to (None: tmux buffer +
 /// OSC 52).
-pub fn tmux_conf(session: &str, paths: &Paths, clip: Option<&str>) -> String {
+pub fn tmux_conf(session: &str, paths: &Paths, clip: Option<&str>, theme: &Theme) -> String {
     let self_path = paths.run.join("tmux.conf");
     let local_path = paths.home.join("tmux.local.conf");
     // The default copy bindings (both key tables, and mouse drag) pipe to
@@ -95,14 +97,12 @@ bind -T copy-mode-vi C-l select-pane -R
 # Splits open in the pane's folder rather than the session's.
 bind '"' split-window -v -c "#{pane_current_path}"
 bind % split-window -h -c "#{pane_current_path}"
-set -g status-left "#[bold] GROVE "
 set -g status-left-length 12
 # The dashboard lists every session, so the bar shows only the window you're
 # in and those that need you (💧, ui/run.rs). Hidden windows render empty, so
-# the spacing lives in the formats rather than the separator.
+# the spacing lives in the formats rather than the separator. Their colours
+# follow the theme (tmux_theme, below).
 setw -g window-status-separator ""
-setw -g window-status-current-format "#[reverse] #I #W #[default]"
-setw -g window-status-format "#{?#{m:💧 *,#W},#[fg=red#,bold] #I #W #[default],}"
 
 # Dashboard by name, so window numbering (base-index) doesn't matter.
 # (Its session by name too, so C-g works from the pinned desk.)
@@ -150,11 +150,60 @@ unbind -n C-y
          bind -T grove-shell C-v {paste}\n\
          bind r source-file \"{}\" \\; display \"Reloaded Grove tmux config\"\n\
          {copy}\
+         {theme}\
          \n# Your own setup, loaded last.\n\
          source-file -q \"{}\"\n\
          {ACCOUNT_TAG}",
         self_path.display(),
         local_path.display(),
+        theme = tmux_theme(theme),
+    )
+}
+
+/// The bar, borders, messages and copy-mode highlight in the theme's colours.
+/// Every option is set even for Grove's own theme (tmux's stock colours), so
+/// re-sourcing after a theme change leaves nothing of the old one behind.
+/// tmux.local.conf loads after this, so your own colours still win.
+pub fn tmux_theme(t: &Theme) -> String {
+    let c = |c: Color| match c {
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        _ => "default".into(),
+    };
+    let (status, left, current, border, active, message, mode, alert) = if t.bg == Color::Reset {
+        (
+            "bg=green,fg=black".to_string(),
+            "#[bold] GROVE ".to_string(),
+            "#[reverse] #I #W #[default]".to_string(),
+            "default".to_string(),
+            "fg=green".to_string(),
+            "bg=yellow,fg=black".to_string(),
+            "bg=yellow,fg=black".to_string(),
+            "red".to_string(),
+        )
+    } else {
+        let (bg, fg) = (c(t.bg), c(t.fg));
+        (
+            format!("bg={bg},fg={fg}"),
+            format!("#[bg={},fg={bg},bold] GROVE #[default] ", c(t.accent)),
+            format!("#[bg={},fg={bg},bold] #I #W #[default]", c(t.shell)),
+            format!("fg={}", c(t.selected_bg)),
+            format!("fg={}", c(t.shell)),
+            format!("bg={},fg={fg}", c(t.selected_bg)),
+            format!("bg={},fg={fg}", c(t.cursor_bg)),
+            c(t.needs_you),
+        )
+    };
+    format!(
+        "\n# Theme: {name} (theme in config.toml, T on the dashboard).\n\
+         set -g status-style \"{status}\"\n\
+         set -g status-left \"{left}\"\n\
+         setw -g window-status-current-format \"{current}\"\n\
+         setw -g window-status-format \"#{{?#{{m:💧 *,#W}},#[fg={alert}#,bold] #I #W #[default],}}\"\n\
+         set -g pane-border-style \"{border}\"\n\
+         set -g pane-active-border-style \"{active}\"\n\
+         set -g message-style \"{message}\"\n\
+         setw -g mode-style \"{mode}\"\n",
+        name = t.name,
     )
 }
 
@@ -214,7 +263,13 @@ fn brew_opt_path(exe: &Path) -> Option<PathBuf> {
     Some(p)
 }
 
-pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str, statusline: bool) -> Result<()> {
+pub fn write_all(
+    paths: &Paths,
+    grove_bin: &Path,
+    session: &str,
+    statusline: bool,
+    theme: &str,
+) -> Result<()> {
     let pretty = |v: serde_json::Value| serde_json::to_string_pretty(&v).map(String::into_bytes);
     write_atomic(
         &paths.run.join("hooks.json"),
@@ -232,6 +287,7 @@ pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str, statusline: boo
                 &on_path,
             )
             .as_deref(),
+            crate::ui::theme::named(theme).unwrap_or(&crate::ui::theme::GROVE),
         )
         .as_bytes(),
     )
@@ -240,6 +296,7 @@ pub fn write_all(paths: &Paths, grove_bin: &Path, session: &str, statusline: boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::theme::GROVE;
 
     #[test]
     fn brew_cellar_path_maps_to_the_opt_link() {
@@ -316,7 +373,7 @@ mod tests {
     #[test]
     fn tmux_conf_leaves_personal_taste_alone() {
         let (_d, p) = paths();
-        let c = tmux_conf("grove", &p, Some("pbcopy"));
+        let c = tmux_conf("grove", &p, Some("pbcopy"), &GROVE);
         // Movement is vim-style by default; prefix and numbering are yours.
         for personal in [
             "set -g prefix",
@@ -339,7 +396,7 @@ mod tests {
         let (_d, p) = paths();
         std::fs::create_dir_all(&p.home).unwrap();
         let conf = p.home.join("tmux.conf");
-        std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"))).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"), &GROVE)).unwrap();
         let tmux = |args: &[&str]| {
             let out = t.cmd().args(args).output().unwrap();
             String::from_utf8_lossy(&out.stdout).trim().to_string()
@@ -400,7 +457,7 @@ mod tests {
         let (_d, p) = paths();
         let conf = p.home.join("tmux.conf");
         std::fs::create_dir_all(&p.home).unwrap();
-        std::fs::write(&conf, tmux_conf("grove", &p, None)).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None, &GROVE)).unwrap();
         let tmux = |args: &[&str]| {
             let out = t.0.cmd().args(args).output().unwrap();
             String::from_utf8_lossy(&out.stdout).trim().to_string()
@@ -505,7 +562,7 @@ mod tests {
     #[test]
     fn tmux_conf_has_grove_keys_and_loads_local_tweaks_last() {
         let (_d, p) = paths();
-        let c = tmux_conf("g2", &p, None);
+        let c = tmux_conf("g2", &p, None, &GROVE);
         assert!(
             c.contains("bind -n C-g switch-client -t =g2:=dashboard"),
             "{c}"
@@ -568,7 +625,7 @@ mod tests {
     #[test]
     fn copy_without_a_clipboard_tool_uses_tmux_buffer_and_osc52() {
         let (_d, p) = paths();
-        let c = tmux_conf("grove", &p, None);
+        let c = tmux_conf("grove", &p, None, &GROVE);
         assert!(!c.contains("copy-command"), "{c}");
         assert!(c.contains("set -s set-clipboard on"), "{c}");
     }
@@ -576,7 +633,7 @@ mod tests {
     #[test]
     fn copies_pipe_to_the_clipboard_tool() {
         let (_d, p) = paths();
-        let c = tmux_conf("grove", &p, Some("pbcopy"));
+        let c = tmux_conf("grove", &p, Some("pbcopy"), &GROVE);
         assert!(c.contains("set -s copy-command \"pbcopy\""), "{c}");
     }
 
@@ -616,7 +673,7 @@ mod tests {
         )
         .unwrap();
         let conf = p.home.join("tmux.conf");
-        std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"))).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, Some("pbcopy"), &GROVE)).unwrap();
         let tmux = crate::tmux::Tmux {
             config: Some(conf.clone()),
             ..crate::tmux::Tmux::new(format!("grove-test-{}-conf", std::process::id()))
@@ -670,7 +727,7 @@ mod tests {
         let (_d, p) = paths();
         let conf = p.run.join("tmux.conf");
         std::fs::create_dir_all(&p.run).unwrap();
-        std::fs::write(&conf, tmux_conf("grove", &p, None)).unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None, &GROVE)).unwrap();
         let tmux = crate::tmux::Tmux {
             config: Some(conf),
             ..crate::tmux::Tmux::new(format!("grove-test-{}-bar", std::process::id()))
@@ -723,10 +780,71 @@ mod tests {
     }
 
     #[test]
+    fn the_bar_follows_the_theme_and_your_own_colours_win() {
+        let (_d, p) = paths();
+        let conf = p.run.join("tmux.conf");
+        std::fs::create_dir_all(&p.run).unwrap();
+        let mocha = crate::ui::theme::named("catppuccin-mocha").unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None, mocha)).unwrap();
+        let tmux = crate::tmux::Tmux {
+            config: Some(conf.clone()),
+            ..crate::tmux::Tmux::new(format!("grove-test-{}-theme", std::process::id()))
+        };
+        let show = |opt: &str| {
+            let out = tmux
+                .cmd()
+                .args(["show-options", "-gv", opt])
+                .output()
+                .unwrap();
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        let out = tmux
+            .cmd()
+            .args(["new-session", "-d", "-s", "grove", "sleep 30"])
+            .output()
+            .unwrap();
+        let errs = String::from_utf8_lossy(&out.stderr).to_string();
+        let themed = (
+            show("status-style"),
+            show("status-left"),
+            show("pane-active-border-style"),
+        );
+        // Back to Grove's theme: re-sourcing leaves none of Mocha behind.
+        std::fs::write(&conf, tmux_conf("grove", &p, None, &GROVE)).unwrap();
+        tmux.source_file(&conf).unwrap();
+        let stock = (show("status-style"), show("status-left"));
+        // Colours of your own, in tmux.local.conf, beat the theme's.
+        std::fs::write(
+            p.home.join("tmux.local.conf"),
+            "set -g status-style \"bg=#123456\"\n",
+        )
+        .unwrap();
+        std::fs::write(&conf, tmux_conf("grove", &p, None, mocha)).unwrap();
+        tmux.source_file(&conf).unwrap();
+        let yours = show("status-style");
+        tmux.kill_server();
+        assert!(out.status.success() && errs.is_empty(), "{errs}");
+        assert!(
+            themed.0.contains("#1e1e2e") && themed.0.contains("#cdd6f4"),
+            "{themed:?}"
+        );
+        assert!(
+            themed.1.contains("GROVE") && themed.1.contains("#a6e3a1"),
+            "{themed:?}"
+        );
+        assert!(themed.2.contains("#89b4fa"), "{themed:?}");
+        assert!(
+            stock.0.contains("green") && stock.1 == "#[bold] GROVE",
+            "{stock:?}"
+        );
+        assert!(yours.contains("#123456"), "{yours}");
+    }
+
+    #[test]
     fn write_all_writes_valid_files_under_spaced_home() {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path().join("my grove"));
-        write_all(&paths, Path::new("/b/grove"), "grove", true).unwrap();
+        write_all(&paths, Path::new("/b/grove"), "grove", true, "grove").unwrap();
         for f in ["hooks.json", "mcp.json"] {
             let text = std::fs::read_to_string(paths.run.join(f)).unwrap();
             serde_json::from_str::<serde_json::Value>(&text).unwrap();

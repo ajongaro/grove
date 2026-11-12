@@ -353,8 +353,14 @@ Colors in `config.toml` and project files can be **names** as well as
 `#rrggbb`, and named ones follow the theme: `blue` is Catppuccin's blue in
 Catppuccin and Tokyo Night's in Tokyo Night. The names are red, maroon,
 flamingo, rosewater, orange (or peach), yellow, green, teal, cyan (or sky),
-sapphire, blue, lavender, purple (or mauve) and pink. The theme colors the
-dashboard; tmux's own colors stay yours to set in `tmux.local.conf`.
+sapphire, blue, lavender, purple (or mauve) and pink.
+
+The theme also colors the tmux bar at the bottom, pane borders, messages
+and the copy-mode highlight, and a theme picked with `T` reaches them at
+once; `grove` keeps tmux's stock colors. This is Grove's own tmux server
+only: your normal tmux never sees it. Colors you set in
+`~/.grove/tmux.local.conf` still win, since it loads after the theme, so
+delete those if you want the bar to follow the theme.
 
 ### Top bar
 

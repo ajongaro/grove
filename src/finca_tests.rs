@@ -600,6 +600,7 @@ fn finca_session_has_its_own_key_table_and_no_prefix() {
             "grove",
             &crate::config::Paths::new(d.path().join("conf-home")),
             None,
+            &crate::ui::theme::GROVE,
         ),
     )
     .unwrap();
@@ -688,6 +689,7 @@ fn shell_session_keeps_the_prefix_opens_windows_on_the_finca_and_c_q_returns() {
             "grove",
             &crate::config::Paths::new(d.path().join("conf-home")),
             None,
+            &crate::ui::theme::GROVE,
         ),
     )
     .unwrap();
@@ -810,6 +812,7 @@ fn when_the_finca_connection_ends_the_client_returns_to_grove() {
             "grove",
             &crate::config::Paths::new(d.path().join("conf-home")),
             None,
+            &crate::ui::theme::GROVE,
         ),
     )
     .unwrap();

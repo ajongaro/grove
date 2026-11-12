@@ -244,6 +244,16 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
         }
         Action::SaveTheme { name } => {
             crate::config::save_theme(&store.paths, &name)?;
+            // The tmux bar changes with the dashboard.
+            let exe = crate::runfiles::grove_exe()?;
+            crate::runfiles::write_all(
+                &store.paths,
+                &exe,
+                &ctx.cfg.tmux_session,
+                ctx.cfg.statusline,
+                &name,
+            )?;
+            ctx.tmux.source_file(&store.paths.run.join("tmux.conf"))?;
             Outcome::Message(format!("Theme: {name} (saved to config.toml)"))
         }
         Action::SaveTodos { slug, text } => {
