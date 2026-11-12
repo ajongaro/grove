@@ -242,6 +242,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::config::save_header(&store.paths, header)?;
             Outcome::Message(format!("Top bar: {} · B changes it", header.name()))
         }
+        Action::SavePinOrder { order } => {
+            crate::config::save_pin_order(&store.paths, order)?;
+            Outcome::Message(format!("Pins: {} order · o changes it", order.name()))
+        }
         Action::SaveTheme { name } => {
             crate::config::save_theme(&store.paths, &name)?;
             // The tmux bar changes with the dashboard.

@@ -277,7 +277,11 @@ the sessions you're working in, from every project, both Claude accounts and
 your fincas, each with where it lives and its state. `1`–`9` jump straight
 to a pin from anywhere on the dashboard (except the to-do list). Tab or `k`
 from the top of Sessions moves into the box, where `Enter` jumps, `p`
-unpins and `x` kills. A pin goes away when its session ends; a finca
+unpins and `x` kills. `o` there changes the box's order, saved as
+`pin_order`: **added** (the order you pinned them, the default),
+**account** (by Claude account or finca, then project) or **recent**
+(latest activity first, like the Sessions list). The numbers follow the
+order shown. A pin goes away when its session ends; a finca
 that isn't answering keeps its pins, dimmed, until it does. Pins live in
 `~/.grove/pins.json`.
 
@@ -550,6 +554,7 @@ alerts = true                          # desktop alerts when a session needs you
 statusline = true                      # Grove's status line in its sessions
 theme = "grove"                        # dashboard colors: see "Themes"
 header = "full"                        # top bar: full, compact (one plain line) or off (B cycles)
+pin_order = "added"                    # Pinned box: added, account or recent (o cycles)
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```

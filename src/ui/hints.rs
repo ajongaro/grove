@@ -59,6 +59,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 ("enter", "jump"),
                 ("1–9", "jump to pin"),
                 ("p", "unpin"),
+                ("o", "order"),
                 ("x", "kill"),
                 ("s", "shell"),
                 ("J", "sessions"),

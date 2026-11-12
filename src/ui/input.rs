@@ -994,6 +994,21 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     Action::None
                 }
                 KeyCode::Enter => row.map_or(Action::None, |r| jump_to_pin(app, r)),
+                // The box's order; the cursor stays on the same pin.
+                KeyCode::Char('o') => {
+                    let here = row.map(|r| r.pin.clone());
+                    app.cfg.pin_order = app.cfg.pin_order.next();
+                    if let Some(here) = here {
+                        app.pin_idx = app
+                            .pinned_rows()
+                            .iter()
+                            .position(|r| r.pin == here)
+                            .unwrap_or(0);
+                    }
+                    Action::SavePinOrder {
+                        order: app.cfg.pin_order,
+                    }
+                }
                 KeyCode::Char('p') => row.map_or(Action::None, |r| {
                     let pin = r.pin.clone();
                     toggle_pin(app, pin, &r.handle)

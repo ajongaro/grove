@@ -38,6 +38,10 @@ pub struct Config {
     /// The dashboard's top bar: `full` (logo, sky and the day's harvest),
     /// `compact` (one plain line of totals) or `off`. `B` cycles them.
     pub header: Header,
+    /// The Pinned box's order: `added` (the order you pinned them),
+    /// `account` (by account or finca, then project) or `recent` (latest
+    /// activity first). `o` in the box cycles them.
+    pub pin_order: PinOrder,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -67,6 +71,33 @@ impl Header {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PinOrder {
+    #[default]
+    Added,
+    Account,
+    Recent,
+}
+
+impl PinOrder {
+    pub fn name(self) -> &'static str {
+        match self {
+            PinOrder::Added => "added",
+            PinOrder::Account => "account",
+            PinOrder::Recent => "recent",
+        }
+    }
+    /// The next one `o` shows.
+    pub fn next(self) -> Self {
+        match self {
+            PinOrder::Added => PinOrder::Account,
+            PinOrder::Account => PinOrder::Recent,
+            PinOrder::Recent => PinOrder::Added,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -82,6 +113,7 @@ impl Default for Config {
             ticker: TickerConfig::default(),
             theme: String::new(),
             header: Header::Full,
+            pin_order: PinOrder::Added,
         }
     }
 }
@@ -313,6 +345,10 @@ pub fn save_theme(paths: &Paths, name: &str) -> Result<()> {
 
 pub fn save_header(paths: &Paths, header: Header) -> Result<()> {
     save_setting(paths, "header", header.name())
+}
+
+pub fn save_pin_order(paths: &Paths, order: PinOrder) -> Result<()> {
+    save_setting(paths, "pin_order", order.name())
 }
 
 /// Sets a top-level `key = "value"` in config.toml, keeping the rest.

@@ -142,6 +142,10 @@ pub enum Action {
     SaveHeader {
         header: crate::config::Header,
     },
+    /// Write `pin_order = "<added|account|recent>"` to config.toml.
+    SavePinOrder {
+        order: crate::config::PinOrder,
+    },
     /// Write the accounts whose boxes are hidden.
     SaveHidden {
         accounts: std::collections::BTreeSet<String>,
@@ -344,6 +348,9 @@ pub struct PinRow {
     pub account: Option<crate::config::Account>,
     /// `project:name`.
     pub handle: String,
+    /// The two halves of `handle`, for the Pinned pane's columns.
+    pub project: String,
+    pub name: String,
     pub state: State,
     pub updated_at: DateTime<Utc>,
     pub message: Option<String>,
@@ -754,7 +761,8 @@ impl App {
 
     /// The Pinned pane's rows, in pin order.
     pub fn pinned_rows(&self) -> Vec<PinRow> {
-        self.pins
+        let mut rows: Vec<PinRow> = self
+            .pins
             .iter()
             .filter(|p| self.pin_alive(p))
             .filter_map(|pin| match &pin.finca {
@@ -770,6 +778,8 @@ impl App {
                         finca: None,
                         account,
                         handle: format!("{}:{}", s.project, s.name),
+                        project: s.project.clone(),
+                        name: s.name.clone(),
                         state: s.state,
                         updated_at: s.updated_at,
                         message: s.message.clone(),
@@ -790,21 +800,36 @@ impl App {
                                 .map(|s| (p.name.clone(), s))
                         });
                     let unreachable = !matches!(f.reach, Some(crate::finca::Reach::Reachable(_)));
-                    let (handle, state, updated_at, message, window) = match found {
+                    let (project, name, state, updated_at, message, window) = match found {
                         Some((project, s)) => (
-                            format!("{project}:{}", s.name),
+                            project,
+                            s.name.clone(),
                             s.state,
                             s.updated_at,
                             s.message.clone(),
                             s.window.clone(),
                         ),
-                        None => ("?".into(), State::Starting, Utc::now(), None, None),
+                        None => (
+                            "?".into(),
+                            String::new(),
+                            State::Starting,
+                            Utc::now(),
+                            None,
+                            None,
+                        ),
+                    };
+                    let handle = if name.is_empty() {
+                        project.clone()
+                    } else {
+                        format!("{project}:{name}")
                     };
                     Some(PinRow {
                         pin: pin.clone(),
                         finca: Some((f.slug.clone(), f.name.clone(), f.via.clone())),
                         account: None,
                         handle,
+                        project,
+                        name,
                         state,
                         updated_at,
                         message,
@@ -813,7 +838,28 @@ impl App {
                     })
                 }
             })
-            .collect()
+            .collect();
+        // Stable sorts: ties keep the order they were pinned in.
+        match self.cfg.pin_order {
+            crate::config::PinOrder::Added => {}
+            crate::config::PinOrder::Account => rows.sort_by_cached_key(|r| {
+                let origin = match (&r.finca, &r.account) {
+                    (Some((_, name, _)), _) => name.clone(),
+                    (None, Some(a)) => a.name.clone(),
+                    (None, None) => String::new(),
+                };
+                // This machine's accounts before the fincas.
+                (
+                    r.finca.is_some(),
+                    origin.to_lowercase(),
+                    r.project.to_lowercase(),
+                )
+            }),
+            crate::config::PinOrder::Recent => {
+                rows.sort_by_key(|r| std::cmp::Reverse(r.updated_at))
+            }
+        }
+        rows
     }
 
     /// Local sessions needing you plus those on reachable fincas.

@@ -3083,15 +3083,16 @@ fn the_pinned_box_shows_each_pins_origin_and_number() {
     let out = screen(&app, 110, 32);
     for want in [
         "PINNED",
-        "1  🌳 play · beta:fix",
-        "2  🌿 work · acme:api",
-        "3  💧 pi · btt:n0",
+        // Columns: where, project, session, so the names line up.
+        "1  🌳 play  beta  fix  your turn",
+        "2  🌿 work  acme  api  working",
+        "3  💧 pi    btt   n0   needs you",
     ] {
         assert!(out.contains(want), "missing {want:?}:\n{out}");
     }
     // Above the sessions.
     assert!(row_of(&out, "PINNED") < row_of(&out, "SESSIONS"));
-    assert_eq!(fg_of(&app, 110, 32, "work · "), Rgb(0xe8, 0xa3, 0x3d));
+    assert_eq!(fg_of(&app, 110, 32, "work  acme"), Rgb(0xe8, 0xa3, 0x3d));
     // A finca that stops answering: dimmed and marked.
     poll(
         &mut app,
@@ -3100,8 +3101,54 @@ fn the_pinned_box_shows_each_pins_origin_and_number() {
         t0(),
     );
     let out = screen(&app, 110, 32);
-    let line = out.lines().find(|l| l.contains("btt:n0")).unwrap();
+    let line = out.lines().find(|l| l.contains("btt   n0")).unwrap();
     assert!(line.contains("unreachable"), "{line}");
+}
+
+#[test]
+fn o_orders_the_pins_by_added_account_or_recent() {
+    use crate::config::PinOrder;
+    let (_d, s, mut app) = work_and_play(&[("acme", "/w/acme"), ("beta", "/code/beta")]);
+    // Last active: api, then docs, then fix.
+    for (id, project, name, hours) in [
+        ("b1", "beta", "fix", 3),
+        ("w1", "acme", "api", 1),
+        ("b2", "beta", "docs", 2),
+    ] {
+        let mut x = session(id, project, name, State::YourTurn, Some("@1"));
+        x.updated_at = t0() - Duration::hours(hours);
+        s.save_session(&x).unwrap();
+    }
+    crate::pins::save(
+        &s.paths,
+        &[pin(None, "b1"), pin(None, "w1"), pin(None, "b2")],
+    )
+    .unwrap();
+    app.reload(&s);
+    let order =
+        |app: &App| -> Vec<String> { app.pinned_rows().into_iter().map(|r| r.name).collect() };
+    assert_eq!(order(&app), ["fix", "api", "docs"], "as pinned");
+    app.pane = Pane::Pinned;
+    app.pin_idx = 1; // api
+    let a = handle_key(&mut app, key(KeyCode::Char('o')));
+    assert_eq!(
+        a,
+        Action::SavePinOrder {
+            order: PinOrder::Account
+        }
+    );
+    // play before work, then project; the cursor follows its pin.
+    assert_eq!(order(&app), ["fix", "docs", "api"]);
+    assert_eq!(app.pin_idx, 2);
+    handle_key(&mut app, key(KeyCode::Char('o')));
+    assert_eq!(order(&app), ["api", "docs", "fix"], "latest first");
+    assert!(screen(&app, 110, 32).contains("PINNED · recent"));
+    // The numbers follow the order shown.
+    handle_key(&mut app, key(KeyCode::Char('1')));
+    assert_eq!(app.cfg.pin_order, PinOrder::Recent);
+    handle_key(&mut app, key(KeyCode::Char('o')));
+    assert_eq!(app.cfg.pin_order, PinOrder::Added);
+    assert_eq!(order(&app), ["fix", "api", "docs"]);
 }
 
 #[test]
@@ -3115,7 +3162,7 @@ fn help_lists_the_pin_keys() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('?'));
     let out = screen(&app, 110, 32);
-    assert!(out.contains("pin / unpin"), "{out}");
+    assert!(out.contains("pin or unpin / order the pins"), "{out}");
     assert!(out.contains("jump to a pin"), "{out}");
 }
 

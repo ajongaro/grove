@@ -1146,7 +1146,11 @@ fn render_pinned(
 ) {
     let focused = app.pane == Pane::Pinned;
     // Its own colour: green is the focus border's.
-    let block = pane_block(vec![Span::raw("PINNED").fg(pal().key)], focused);
+    let mut title = vec![Span::raw("PINNED").fg(pal().key)];
+    if app.cfg.pin_order != crate::config::PinOrder::Added {
+        title.push(Span::raw(format!(" · {}", app.cfg.pin_order.name())).fg(pal().dim));
+    }
+    let block = pane_block(title, focused);
     let origins: Vec<String> = rows
         .iter()
         .map(|r| match (&r.finca, &r.account) {
@@ -1155,13 +1159,11 @@ fn render_pinned(
             (None, None) => String::new(),
         })
         .collect();
-    let handle_w = rows
-        .iter()
-        .zip(&origins)
-        .map(|(r, o)| o.chars().count() + 3 + r.handle.chars().count())
-        .max()
-        .unwrap_or(0)
-        + 2;
+    // Columns: where it runs, the project, the session's own name.
+    let width = |f: &dyn Fn(usize) -> usize| (0..rows.len()).map(f).max().unwrap_or(0);
+    let origin_w = width(&|i| origins[i].chars().count());
+    let project_w = width(&|i| rows[i].project.chars().count());
+    let name_w = width(&|i| rows[i].name.chars().count());
     let items: Vec<ListItem> = rows
         .iter()
         .zip(&origins)
@@ -1184,13 +1186,13 @@ fn render_pinned(
                 (None, Some(a)) => parse_color(a.color.as_deref()).unwrap_or(pal().muted),
                 (None, None) => pal().muted,
             };
-            let pad = handle_w - (origin.chars().count() + 3 + r.handle.chars().count());
+            let pad = |s: &str, w: usize| format!("{s}{}", " ".repeat(w - s.chars().count() + 2));
             let mut spans = vec![
                 Span::raw(num).fg(pal().dim),
                 Span::styled(format!("{icon} "), Style::new().fg(color)),
-                Span::styled(origin.clone(), Style::new().fg(origin_color)),
-                Span::raw(" · ").fg(pal().dim),
-                Span::raw(format!("{}{}", r.handle, " ".repeat(pad))).bold(),
+                Span::styled(pad(origin, origin_w), Style::new().fg(origin_color)),
+                Span::raw(pad(&r.project, project_w)).fg(pal().muted),
+                Span::raw(pad(&r.name, name_w)).fg(pal().bright).bold(),
                 Span::styled(format!("{label:<12}"), Style::new().fg(color)),
                 Span::raw(format!("{:<5}", format_age(r.updated_at, now))).fg(pal().dim),
             ];
