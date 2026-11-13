@@ -14,7 +14,7 @@ pub enum Pane {
     /// Pinned sessions, at the top of the right column.
     Pinned,
     Sessions,
-    /// The selected project's to-do list, below its sessions.
+    /// The selected project's TODO list, below its sessions.
     Todo,
 }
 
@@ -303,13 +303,13 @@ pub enum Action {
     /// Run the installed grove: refreshes run files and tmux config, and
     /// restarts this dashboard if the binary changed.
     Update,
-    /// Write the project's to-do list, archiving any items cleared.
+    /// Write the project's TODO list, archiving any items cleared.
     SaveTodos {
         slug: String,
         text: String,
         archived: Vec<String>,
     },
-    /// Open the project's to-do file in the editor.
+    /// Open the project's TODO file in the editor.
     EditTodos {
         slug: String,
     },
@@ -363,11 +363,11 @@ pub struct App {
     /// Accounts whose project box is hidden (`H`); their projects aren't
     /// in `projects`.
     pub hidden: std::collections::BTreeSet<String>,
-    /// The to-do list of `todo_slug`.
+    /// The TODO list of `todo_slug`.
     pub todos: crate::todo::Todos,
     /// The project whose list `todos` holds: the selected one, if usable.
     pub todo_slug: Option<String>,
-    /// Unchecked to-dos per project slug, for the project rows.
+    /// Unchecked TODOs per project slug, for the project rows.
     pub open_todos: HashMap<String, usize>,
     /// Shells that stay open, every project's (refreshed from tmux by the
     /// loop); each project's list under its sessions.

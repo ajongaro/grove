@@ -372,7 +372,7 @@ fn list_projects_shows_counts_and_open_todos() {
         .unwrap();
     let out = t.do_list_projects().unwrap();
     assert!(
-        out.contains("no sessions") && out.contains("2 open to-dos"),
+        out.contains("no sessions") && out.contains("2 open TODOs"),
         "{out}"
     );
 }

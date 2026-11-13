@@ -167,7 +167,7 @@ enum Cmd {
     /// Internal: Claude Code's status line for Grove's sessions.
     #[command(hide = true)]
     Statusline,
-    /// MCP server giving Claude Grove's projects, sessions and to-dos.
+    /// MCP server giving Claude Grove's projects, sessions and TODOs.
     /// `grove mcp setup` prints how to add it to each Claude account.
     Mcp {
         /// The Claude account these tools are for (a name from config.toml).
@@ -509,7 +509,7 @@ fn preflight(paths: &Paths) -> Result<Config> {
     if v < (3, 2) {
         bail!("tmux {}.{} is too old; Grove needs 3.2 or newer", v.0, v.1);
     }
-    // Where Claude can't run (a Pi Zero), Grove is for shells and to-dos.
+    // Where Claude can't run (a Pi Zero), Grove is for shells and TODOs.
     if setup::claude_runs_on(std::env::consts::ARCH) {
         claude_dir(&cfg)?;
         if !launch::claude_bin().starts_with('/') {

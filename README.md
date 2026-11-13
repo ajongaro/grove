@@ -3,7 +3,7 @@
 A tmux dashboard for running and supervising Claude Code sessions across your
 projects.
 
-![The Grove dashboard: projects, pinned sessions, sessions, a to-do list and fincas](docs/screenshot.png)
+![The Grove dashboard: projects, pinned sessions, sessions, a TODO list and fincas](docs/screenshot.png)
 
 - **Projects:** each has a folder, a color and a one-line summary.
 - **Sessions:** each Claude Code session runs in its own tmux window. Grove
@@ -12,7 +12,7 @@ projects.
   needs you.
 - **Accounts:** optionally, a project's folder picks its Claude account, for
   example `~/Work/...` on a work account and everything else on a personal one.
-- **To-do lists:** a small vim-style checklist per project.
+- **TODO lists:** a small vim-style checklist per project.
 - **Fincas:** other machines running their own Grove (a home server, a
   Raspberry Pi), listed on your dashboard, one key away over SSH.
 
@@ -81,7 +81,7 @@ grove add --new ~/code/new-thing  # create it (with git init) first
 A project is named after its folder. If that name is taken (a second
 `website`, say), the parent folder's name is added: `globex/website`.
 To rename one, press `e` on it and change `name`. The file name stays the
-project's id, so its sessions, to-dos and windows are untouched.
+project's id, so its sessions, TODOs and windows are untouched.
 
 Check: `grove doctor` lists `✓ project <name>` with the account it will use.
 
@@ -147,7 +147,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `C-h` `C-j` `C-k` `C-l` | anywhere | move between panes: a session and its shell, the desk's columns. With no pane that way, on the dashboard, or in vim or fzf, the key goes to the program as usual |
 | `C-\` | session | a shell below it, in its folder; again to switch between them, `exit` closes it |
 | `j` `k` `↑` `↓` | dashboard | move; off the end of a section, into the next |
-| `J` `K` | dashboard | jump to the next / previous section in the column: each account's projects, the fincas, Pinned, Sessions, the to-do list |
+| `J` `K` | dashboard | jump to the next / previous section in the column: each account's projects, the fincas, Pinned, Sessions, the TODO list |
 | `Tab` `h` `l` | dashboard | switch pane |
 | `Enter` | project | start a session (and jump to it) |
 | `Enter` | session | jump to its window; on an ended one, resume its conversation |
@@ -168,7 +168,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `C` | dashboard | clear all the project's ended sessions |
 | `d` | project | remove it from Grove (asks first; the folder is kept) |
 | `H` | project | hide its account's box, to focus on work or play; again shows every box (see [More than one Claude account](#more-than-one-claude-account)) |
-| `t` | dashboard | jump to the project's to-do list |
+| `t` | dashboard | jump to the project's TODO list |
 | `v` | dashboard | session grid: every live session's screen |
 | `V` | dashboard | the pinned desk: your pinned sessions, live, side by side |
 | `R` | dashboard | restart on a new Grove, after upgrading |
@@ -184,7 +184,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 in your editor.
 
 The bar along the bottom shows the most used keys for whatever is selected
-(a project, a finca, a session, a shell, a pin, a to-do), with its keys in
+(a project, a finca, a session, a shell, a pin, a TODO), with its keys in
 that pane's color. On a narrow screen the rarer ones drop off; `?` lists
 them all.
 
@@ -277,7 +277,7 @@ tools (see [Claude's view of your projects](#claudes-view-of-your-projects-mcp))
 `p` on a session pins it: a Pinned box at the top of the right column lists
 the sessions you're working in, from every project, both Claude accounts and
 your fincas, each with where it lives and its state. `1`–`9` jump straight
-to a pin from anywhere on the dashboard (except the to-do list). Tab or `k`
+to a pin from anywhere on the dashboard (except the TODO list). Tab or `k`
 from the top of Sessions moves into the box, where `Enter` jumps, `p`
 unpins and `x` kills. `o` there changes the box's order, saved as
 `pin_order`: **added** (the order you pinned them, the default),
@@ -400,9 +400,9 @@ The session totals are `💧 needs you  🌳 your turn  🌿 working  🍂 ended
 each an emoji and a count (`💧 0  🌳 17  🌿 2  🍂 4`). Ended counts the
 sessions still listed that you haven't cleared (`c`/`C`).
 
-## To-do lists
+## TODO lists
 
-Each project has a to-do list under its sessions (`t` or `Tab` to get
+Each project has a TODO list under its sessions (`t` or `Tab` to get
 there). Its keys match the rest of the dashboard: `n` new, `r` edit, Enter
 for the main thing, `d` delete, `c`/`C` clear. The vim keys work too.
 
@@ -420,8 +420,16 @@ for the main thing, `d` delete, `c`/`C` clear. The vim keys work too.
 | `h` | back to the projects |
 
 It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
-on every change. It's just for you: Claude sessions don't see it. Projects
-with open items show the count next to their name (`☐3`).
+on every change. Projects with open items show the count next to their
+name (`☐3`).
+
+**Claude keeps it too.** Each new Claude session in the project is told it
+has a TODO list in Grove (its open items, up to ten) and to use it as the
+project's TODO list. It adds follow-ups and things it notices but won't do
+now, and checks items off as it finishes them, through Grove's `get_todos`
+and `edit_todos` tools, so its work shows up on your dashboard. Claude
+still uses its own task list for the steps of the job in hand.
+`claude_todos = false` in `config.toml` turns this off.
 
 ## Claude's view of your projects (MCP)
 
@@ -432,9 +440,9 @@ can see, edit or message the other's.
 
 | Tool | What Claude can do |
 |---|---|
-| `list_projects`, `get_project` | see each project: summary, sessions, to-dos, git branch and recent commits, README and CLAUDE.md |
+| `list_projects`, `get_project` | see each project: summary, sessions, TODOs, git branch and recent commits, README and CLAUDE.md |
 | `list_sessions`, `read_session` | see which sessions are working, need you or wait for you, and read one's screen |
-| `get_todos`, `edit_todos` | read and edit a project's to-do list |
+| `get_todos`, `edit_todos` | read and edit a project's TODO list |
 | `update_project` | set a project's summary or color |
 | `start_session` | start a session in a project, with a first prompt |
 | `send_prompt` | send a prompt to a session that's waiting for you ("your turn") |
@@ -572,7 +580,7 @@ than `~/.claude`, set `claude_config_dir` in that machine's
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
 projects/<id>.toml        name (a free label), path, color, summary
-todos/<id>.md             the project's to-do list (Markdown checklist)
+todos/<id>.md             the project's TODO list (Markdown checklist)
 sessions/<uuid>.json      one per session: state, window, message
 stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
@@ -595,6 +603,7 @@ theme = "grove"                        # dashboard colors: see "Themes"
 header = "full"                        # top bar: full, compact (one plain line) or off (B cycles)
 pin_order = "added"                    # Pinned box: added, account or recent (o cycles)
 update_check = true                    # once a day, ask GitHub whether a newer Grove is out
+claude_todos = true                    # tell new Claude sessions to keep the project's TODO list
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
@@ -647,7 +656,7 @@ Each file does one job, so new features usually touch one or two:
 | `src/finca.rs` | finca files, SSH probe, poller, connect, shells, installing grove there |
 | `src/transfer.rs` | `grove send` and `C-v` in finca windows: clipboard, inbox |
 | `src/setup.rs` | `grove finca setup`: the guided wizard and its machine checks |
-| `src/todo.rs` | to-do lists and their vim keys (pure) |
+| `src/todo.rs` | TODO lists and their vim keys (pure) |
 | `src/ui/` | dashboard: `app.rs` state, `input.rs` keys, `render.rs` drawing, `flair.rs` the sky, olive trees, harvest and quips, `search.rs` finding a session (`/`), `tape.rs` the ticker line, `grid.rs` the session grid, `run.rs` actions + loop, `help.rs` the `?` list |
 | `src/screens.rs` | `grove screens` and `grove type-prompt`: live screens and replies, here and fetched from fincas |
 | `src/prompt.rs` | the checks for typing a reply into a session (grid, fincas, MCP) |

@@ -1243,7 +1243,7 @@ fn left_column_in_equal_thirds_and_right_in_halves() {
     assert_eq!(row_of(&out, "╭ PLAY "), 3, "{out}");
     assert_eq!(row_of(&out, "╭ WORK "), 13, "{out}");
     assert_eq!(row_of(&out, "╭ FINCAS "), 23, "{out}");
-    assert_eq!(row_of(&out, "TO-DO"), 18, "{out}");
+    assert_eq!(row_of(&out, "TODO"), 18, "{out}");
 }
 
 #[test]
@@ -1288,7 +1288,7 @@ fn d_in_the_sessions_pane_does_nothing() {
     assert_eq!(app.mode, Mode::Normal);
 }
 
-// ---------- to-do ----------
+// ---------- TODO ----------
 
 /// Types `s` as individual key presses.
 fn type_keys(app: &mut App, s: &str) -> Vec<Action> {
@@ -1425,7 +1425,7 @@ fn todo_list_sits_below_the_sessions() {
         .unwrap();
     app.reload(&s);
     let out = screen(&app, 100, 20);
-    let (sessions, todo) = (row_of(&out, "SESSIONS — "), row_of(&out, "╭ TO-DO "));
+    let (sessions, todo) = (row_of(&out, "SESSIONS — "), row_of(&out, "╭ TODO "));
     assert!(sessions < todo, "{out}");
     assert!(row_of(&out, "[ ] buy milk") > todo, "{out}");
     assert!(out.contains("[x] ship grove"), "{out}");
@@ -1434,7 +1434,7 @@ fn todo_list_sits_below_the_sessions() {
 #[test]
 fn todo_pane_shows_insert_mode_and_an_empty_hint() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
-    assert!(screen(&app, 100, 20).contains("No to-dos — press o (or a) to add one"));
+    assert!(screen(&app, 100, 20).contains("No TODOs — press n to add one"));
     handle_key(&mut app, ch('t'));
     type_keys(&mut app, "omilk");
     let out = screen(&app, 100, 20);
@@ -1668,7 +1668,7 @@ fn each_pane_title_has_its_own_color_whatever_has_focus() {
             "{pane:?}"
         );
         assert_eq!(
-            fg_of(&app, 100, 24, "TO-DO"),
+            fg_of(&app, 100, 24, "TODO"),
             Rgb(0x7d, 0xcf, 0xff),
             "{pane:?}"
         );
@@ -1713,7 +1713,7 @@ fn j_and_k_are_letters_when_no_list_is_open() {
     assert_eq!(prompt_text(&app), format!("{base}jk"));
 }
 
-// ---------- open to-do counts ----------
+// ---------- open TODO counts ----------
 
 #[test]
 fn project_rows_show_their_open_todo_count() {
@@ -1851,7 +1851,7 @@ fn s_on_a_broken_project_says_why() {
     assert!(app.footer.is_some());
 }
 
-// ---------- moving between sessions and to-do ----------
+// ---------- moving between sessions and TODO ----------
 
 #[test]
 fn j_off_the_last_session_moves_into_the_todo_list() {
@@ -1889,7 +1889,7 @@ fn k_off_the_top_of_the_todo_list_goes_back_to_the_same_session() {
     s.write_todos("alpha", "- [ ] a\n- [ ] b\n").unwrap();
     app.reload(&s);
     app.pane = Pane::Sessions;
-    type_keys(&mut app, "jj"); // s2, then into To-do
+    type_keys(&mut app, "jj"); // s2, then into TODO
     assert_eq!(app.pane, Pane::Todo);
     handle_key(&mut app, ch('j'));
     assert_eq!(app.todos.idx, 1, "j moves within the list");
@@ -4114,7 +4114,7 @@ fn shift_j_and_k_jump_between_sections_in_each_column() {
     handle_key(&mut app, shift('K'));
     assert_eq!(app.selected_project().unwrap().slug, "alpha");
     assert!(app.todo_slug.is_some());
-    // Right: Pinned → Sessions → To-do, each on its first row.
+    // Right: Pinned → Sessions → TODO, each on its first row.
     app.pane = Pane::Pinned;
     app.pin_idx = 1;
     handle_key(&mut app, shift('J'));
@@ -4125,7 +4125,7 @@ fn shift_j_and_k_jump_between_sections_in_each_column() {
     assert!(app.todos.at_top());
     handle_key(&mut app, ch('j'));
     handle_key(&mut app, shift('J'));
-    assert_eq!(app.pane, Pane::Todo, "nothing below the to-do list");
+    assert_eq!(app.pane, Pane::Todo, "nothing below the TODO list");
     handle_key(&mut app, shift('K'));
     assert_eq!((app.pane, app.sess_idx), (Pane::Sessions, 0));
     handle_key(&mut app, shift('K'));

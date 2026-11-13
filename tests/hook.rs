@@ -238,3 +238,49 @@ fn an_earlier_runs_hooks_are_ignored() {
     run_hook_as(&home, &fixture("stop"), Some("new-run"));
     assert_eq!(state(), "your_turn");
 }
+
+#[test]
+fn session_start_shares_the_todo_list_and_how_to_keep_it() {
+    let dir = setup("starting");
+    let todos = home(&dir).join("todos");
+    std::fs::create_dir_all(&todos).unwrap();
+    std::fs::write(
+        todos.join("demo.md"),
+        "- [ ] fix the flaky test\n- [x] ship it\n- [ ] write the docs\n",
+    )
+    .unwrap();
+    let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
+    assert!(out.contains("TODO list is kept in Grove"), "{out}");
+    assert!(out.contains("edit_todos"), "{out}");
+    assert!(out.contains("Open TODOs (2):"), "{out}");
+    assert!(
+        out.contains("- fix the flaky test\n- write the docs\n"),
+        "{out}"
+    );
+    assert!(!out.contains("ship it"), "done items aren't listed: {out}");
+}
+
+#[test]
+fn session_start_lists_ten_open_todos_and_counts_the_rest() {
+    let dir = setup("starting");
+    let todos = home(&dir).join("todos");
+    std::fs::create_dir_all(&todos).unwrap();
+    let list: String = (1..=12).map(|i| format!("- [ ] item {i}\n")).collect();
+    std::fs::write(todos.join("demo.md"), list).unwrap();
+    let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
+    assert!(out.contains("Open TODOs (12):"), "{out}");
+    assert!(
+        out.contains("- item 10\n") && !out.contains("- item 11\n"),
+        "{out}"
+    );
+    assert!(out.contains("and 2 more"), "{out}");
+}
+
+#[test]
+fn claude_todos_off_leaves_the_todo_list_out() {
+    let dir = setup("starting");
+    std::fs::write(home(&dir).join("config.toml"), "claude_todos = false\n").unwrap();
+    let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
+    assert!(out.contains("Grove project: Demo"), "{out}");
+    assert!(!out.contains("TODO"), "{out}");
+}

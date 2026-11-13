@@ -33,6 +33,9 @@ pub struct Config {
     /// Check once a day whether a newer Grove is out (GitHub's latest
     /// release) and say so in the top bar. Nothing is sent but the request.
     pub update_check: bool,
+    /// Tell each new Claude session about the project's TODO list and to
+    /// keep it current with Grove's get_todos / edit_todos tools.
+    pub claude_todos: bool,
     /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
     pub ticker: TickerConfig,
     /// The dashboard's colors: `grove` (the default) or another theme by
@@ -114,6 +117,7 @@ impl Default for Config {
             alerts: true,
             statusline: true,
             update_check: true,
+            claude_todos: true,
             ticker: TickerConfig::default(),
             theme: String::new(),
             header: Header::Full,

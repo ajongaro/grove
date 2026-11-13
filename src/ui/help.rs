@@ -1,5 +1,5 @@
 //! The `?` key help: every key the dashboard handles, by where it works.
-//! Keep in step with input.rs (and todo.rs for the to-do list).
+//! Keep in step with input.rs (and todo.rs for the TODO list).
 
 pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
@@ -17,7 +17,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("j k / J K", "move / by section (crosses at ends)"),
             ("Tab h l", "switch pane"),
             ("1–9", "jump to a pin"),
-            ("t", "to-do list"),
+            ("t", "TODO list"),
             ("v V /", "session grid / pinned desk / find"),
             ("a", "add a project"),
             ("R T B", "update Grove / theme / top bar"),
@@ -56,7 +56,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
-        "To-do",
+        "TODO",
         &[
             ("j k gg G", "move"),
             ("n O", "add below / above"),

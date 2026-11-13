@@ -827,7 +827,7 @@ fn event_loop(
                 ready = event::poll(Duration::ZERO)?;
                 continue;
             };
-            // A to-do's text changes nothing on disk, and a reload per
+            // A TODO's text changes nothing on disk, and a reload per
             // letter is what a slow machine feels.
             let typing = app.pane == Pane::Todo && app.todos.inserting();
             let action = handle_key(app, key);

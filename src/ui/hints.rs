@@ -39,7 +39,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 ("enter", "start"),
                 ("n", "named"),
                 ("s/S", "shell"),
-                ("t", "to-do"),
+                ("t", "TODO"),
             ];
             h.extend(ANYWHERE);
             if waiting {
@@ -113,7 +113,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             ];
             h.extend(ANYWHERE);
             if app.todo_slug.is_some() {
-                h.push(("J", "to-do"));
+                h.push(("J", "TODO"));
             }
             (p.shell, h)
         }
@@ -142,7 +142,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 h.push(("U", "restart waiting"));
             }
             if app.todo_slug.is_some() {
-                h.push(("J", "to-do"));
+                h.push(("J", "TODO"));
             }
             (p.sessions, h)
         }

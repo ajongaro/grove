@@ -15,7 +15,7 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     /// The project's file name (`projects/<id>.toml`), set when loaded. It's
-    /// the project's identity: sessions, to-dos and tmux windows use it, so
+    /// the project's identity: sessions, TODOs and tmux windows use it, so
     /// renaming (`name`) moves nothing. Unset, it's the slug of `name`.
     #[serde(skip)]
     pub id: Option<String>,

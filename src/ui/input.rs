@@ -378,7 +378,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             Action::None
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            // Off the bottom of the sessions and shells: down into the to-do list.
+            // Off the bottom of the sessions and shells: down into the TODO list.
             let last = app.session_rows().saturating_sub(1);
             if app.pane == Pane::Sessions && app.todo_slug.is_some() && app.sess_idx >= last {
                 app.pane = Pane::Todo;
@@ -702,7 +702,7 @@ fn usable_project(app: &mut App) -> Option<String> {
     Some(p.slug.clone())
 }
 
-/// The to-do pane: every key goes to the list (todo.rs), except Tab, h, q
+/// The TODO pane: every key goes to the list (todo.rs), except Tab, h, q
 /// outside insert mode.
 fn todo_key(app: &mut App, key: KeyEvent) -> Action {
     let Some(slug) = app.todo_slug.clone() else {
@@ -758,7 +758,7 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
     }
 }
 
-/// Projects → Pinned (when there are pins) → Sessions → To-do (when a
+/// Projects → Pinned (when there are pins) → Sessions → TODO (when a
 /// project is selected) and around.
 /// `H`: hides the selected project's account box, or, with any box
 /// hidden, shows them all again.
@@ -789,7 +789,7 @@ fn toggle_hidden(app: &mut App) -> Action {
 
 /// A run of rows `J`/`K` jump between. The left pane's are each account's
 /// box of projects and then the fincas, by the row each starts on; the
-/// right column's are Pinned, Sessions and To-do.
+/// right column's are Pinned, Sessions and TODO.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Section {
     Left(usize),

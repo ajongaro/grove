@@ -696,10 +696,10 @@ fn name_width<'a>(names: impl Iterator<Item = &'a str>) -> usize {
 
 fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.pane == Pane::Todo;
-    let block = pane_block(vec![Span::raw("TO-DO").fg(pal().todo)], focused);
+    let block = pane_block(vec![Span::raw("TODO").fg(pal().todo)], focused);
     let t = &app.todos;
     if t.items.is_empty() {
-        let p = Paragraph::new("No to-dos — press o (or a) to add one (t or Tab to get here).")
+        let p = Paragraph::new("No TODOs — press n to add one (t or Tab to get here).")
             .wrap(Wrap { trim: true })
             .fg(pal().dim)
             .block(block);
@@ -821,7 +821,7 @@ fn render_help(frame: &mut Frame) {
             let color = match *section {
                 "Projects" => pal().accent,
                 "Sessions" => pal().sessions,
-                "To-do" => pal().todo,
+                "TODO" => pal().todo,
                 "Fincas" => pal().fincas,
                 _ => pal().bright,
             };

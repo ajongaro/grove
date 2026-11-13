@@ -122,21 +122,21 @@ impl Store {
         }
     }
 
-    /// The project's to-do list (a Markdown checklist, see todo.rs).
+    /// The project's TODO list (a Markdown checklist, see todo.rs).
     pub fn todos_file(&self, slug: &str) -> PathBuf {
         self.paths.todos.join(format!("{slug}.md"))
     }
-    /// The to-do file's text; empty when there isn't one yet.
+    /// The TODO file's text; empty when there isn't one yet.
     pub fn read_todos(&self, slug: &str) -> String {
         std::fs::read_to_string(self.todos_file(slug)).unwrap_or_default()
     }
-    /// Where cleared to-dos go: `todos/<slug>.done.md`, a checklist with
+    /// Where cleared TODOs go: `todos/<slug>.done.md`, a checklist with
     /// the date each was cleared.
     pub fn todos_archive(&self, slug: &str) -> PathBuf {
         self.paths.todos.join(format!("{slug}.done.md"))
     }
 
-    /// Appends cleared to-dos to the project's archive.
+    /// Appends cleared TODOs to the project's archive.
     pub fn archive_todos(&self, slug: &str, texts: &[String], day: &str) -> Result<()> {
         use std::io::Write;
         if texts.is_empty() {

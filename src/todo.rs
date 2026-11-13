@@ -1,4 +1,4 @@
-//! A project's to-do list and its vim-style editing. Pure: the dashboard
+//! A project's TODO list and its vim-style editing. Pure: the dashboard
 //! saves when a key returns `Effect::Changed`.
 //!
 //! Stored as a Markdown checklist (`- [ ] text` / `- [x] text`).
@@ -324,9 +324,9 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
     let text_ok = |t: &str| -> Result<String, String> {
         let t = t.trim();
         if t.is_empty() {
-            Err("a to-do needs some text".into())
+            Err("a TODO needs some text".into())
         } else if t.contains(['\n', '\r']) {
-            Err("a to-do is one line; add each one separately".into())
+            Err("a TODO is one line; add each one separately".into())
         } else {
             Ok(t.to_string())
         }
@@ -368,7 +368,7 @@ pub fn serialize_items(items: &[Item]) -> String {
         .collect()
 }
 
-/// Unchecked items in a to-do file's text.
+/// Unchecked items in a TODO file's text.
 pub fn open_count(text: &str) -> usize {
     parse(text).iter().filter(|i| !i.done).count()
 }

@@ -77,10 +77,50 @@ fn session_context(store: &Store, slug: &str) -> String {
         Ok(p) => (p.name, p.path.display().to_string(), p.summary),
         Err(_) => (slug.to_string(), "unknown path".to_string(), None),
     };
-    format!(
+    let mut out = format!(
         "Grove project: {name} ({path})\nSummary: {}\n",
         summary
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "none yet (set it with the grove update_project tool)".into())
-    )
+    );
+    let cfg = crate::config::load_config(&store.paths).unwrap_or_default();
+    if cfg.claude_todos {
+        out.push_str(&todo_context(&store.read_todos(slug)));
+    }
+    out
+}
+
+/// How many open TODO items to list at the start of a session; the rest
+/// are a get_todos away.
+const TODOS_SHOWN: usize = 10;
+
+/// The project's TODO list and how Claude should keep it.
+fn todo_context(text: &str) -> String {
+    let open: Vec<String> = crate::todo::parse(text)
+        .into_iter()
+        .filter(|i| !i.done)
+        .map(|i| i.text)
+        .collect();
+    let mut out = String::from(
+        "\nThis project's TODO list is kept in Grove, where the user sees it on their dashboard. \
+         Use it as the project's TODO list instead of a TODO file or code comments: read it with \
+         the grove get_todos tool, and with edit_todos add follow-ups and things you notice but \
+         won't do now, and check items off when you finish them. Your own task list is still \
+         for the steps of the current job.\n",
+    );
+    if open.is_empty() {
+        out.push_str("Open TODOs: none.\n");
+    } else {
+        out.push_str(&format!("Open TODOs ({}):\n", open.len()));
+        for t in open.iter().take(TODOS_SHOWN) {
+            out.push_str(&format!("- {t}\n"));
+        }
+        if open.len() > TODOS_SHOWN {
+            out.push_str(&format!(
+                "- …and {} more (get_todos)\n",
+                open.len() - TODOS_SHOWN
+            ));
+        }
+    }
+    out
 }

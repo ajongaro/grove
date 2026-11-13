@@ -170,7 +170,7 @@ impl GroveMcp {
                 let sessions = mcp_overview::live(self.store.list_sessions(Some(&p.slug())));
                 let open = crate::todo::open_count(&self.store.read_todos(&p.slug()));
                 format!(
-                    "- {} — {} — {summary}\n  sessions: {}; {open} open to-do{}",
+                    "- {} — {} — {summary}\n  sessions: {}; {open} open TODO{}",
                     p.name,
                     p.path.display(),
                     mcp_overview::counts(&sessions),
@@ -209,7 +209,7 @@ impl GroveMcp {
         }
         let todos = crate::todo::parse(&self.store.read_todos(&slug));
         out.push_str(&format!(
-            "\nTo-dos:\n{}\n\n{}\n",
+            "\nTODOs:\n{}\n\n{}\n",
             numbered(&todos),
             mcp_overview::git(&p.path)
         ));
@@ -438,10 +438,10 @@ impl GroveMcp {
     }
 }
 
-/// `1. [ ] text` lines, or `(no to-dos)`.
+/// `1. [ ] text` lines, or `(no TODOs)`.
 fn numbered(items: &[crate::todo::Item]) -> String {
     if items.is_empty() {
-        return "(no to-dos)".into();
+        return "(no TODOs)".into();
     }
     items
         .iter()
@@ -593,13 +593,13 @@ impl GroveMcp {
         result(self.do_send_prompt(a.session, a.text))
     }
 
-    #[tool(description = "A Grove project's to-do list, numbered.")]
+    #[tool(description = "A Grove project's TODO list, numbered.")]
     fn get_todos(&self, Parameters(a): Parameters<ProjectArg>) -> CallToolResult {
         result(self.do_get_todos(a.project))
     }
 
     #[tool(
-        description = "Edit a Grove project's to-do list: add, check, uncheck, reword or remove items by number. Returns the new list."
+        description = "Edit a Grove project's TODO list: add, check, uncheck, reword or remove items by number. Returns the new list."
     )]
     fn edit_todos(&self, Parameters(a): Parameters<EditTodosArgs>) -> CallToolResult {
         result(self.do_edit_todos(a.project, a.ops))
