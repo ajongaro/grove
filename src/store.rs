@@ -130,6 +130,29 @@ impl Store {
     pub fn read_todos(&self, slug: &str) -> String {
         std::fs::read_to_string(self.todos_file(slug)).unwrap_or_default()
     }
+    /// Where cleared to-dos go: `todos/<slug>.done.md`, a checklist with
+    /// the date each was cleared.
+    pub fn todos_archive(&self, slug: &str) -> PathBuf {
+        self.paths.todos.join(format!("{slug}.done.md"))
+    }
+
+    /// Appends cleared to-dos to the project's archive.
+    pub fn archive_todos(&self, slug: &str, texts: &[String], day: &str) -> Result<()> {
+        use std::io::Write;
+        if texts.is_empty() {
+            return Ok(());
+        }
+        std::fs::create_dir_all(&self.paths.todos)?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.todos_archive(slug))?;
+        for t in texts {
+            writeln!(f, "- [x] {t} ({day})")?;
+        }
+        Ok(())
+    }
+
     pub fn write_todos(&self, slug: &str, text: &str) -> Result<()> {
         write_atomic(&self.todos_file(slug), text.as_bytes())
     }

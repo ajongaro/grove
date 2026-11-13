@@ -41,6 +41,8 @@ pub struct Todos {
     undo: Option<Snapshot>,
     /// First key of `dd`, `gg` or `cc`.
     pending: Option<char>,
+    /// Done items `c`/`C` cleared, waiting to be archived by the caller.
+    cleared: Vec<Item>,
     insert: Option<Insert>,
 }
 
@@ -87,6 +89,11 @@ impl Todos {
         self.idx = 0;
     }
 
+    /// The items `c`/`C` cleared since the last call, to archive.
+    pub fn take_cleared(&mut self) -> Vec<Item> {
+        std::mem::take(&mut self.cleared)
+    }
+
     pub fn inserting(&self) -> bool {
         self.insert.is_some()
     }
@@ -115,6 +122,29 @@ impl Todos {
                 Effect::Nothing
             }
             (Some('c'), KeyCode::Char('c')) => self.begin_insert(None, true),
+            // c on a done item clears it, like a session list; on an open
+            // one it starts cc.
+            (_, KeyCode::Char('c')) if self.items.get(self.idx).is_some_and(|i| i.done) => self
+                .change(|t| {
+                    let item = t.items.remove(t.idx);
+                    t.cleared.push(item);
+                    t.clamp();
+                }),
+            (_, KeyCode::Char('C')) if self.items.iter().any(|i| i.done) => self.change(|t| {
+                let at = t.idx;
+                let before = t.items[..at.min(t.items.len())]
+                    .iter()
+                    .filter(|i| !i.done)
+                    .count();
+                let (done, open): (Vec<Item>, Vec<Item>) = std::mem::take(&mut t.items)
+                    .into_iter()
+                    .partition(|i| i.done);
+                t.items = open;
+                t.cleared.extend(done);
+                // The cursor stays on the open item it was on, or the next.
+                t.idx = before;
+                t.clamp();
+            }),
             (_, KeyCode::Char(c @ ('d' | 'g' | 'c'))) => {
                 self.pending = Some(c);
                 Effect::Nothing

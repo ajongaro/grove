@@ -122,19 +122,22 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             }
             (p.sessions, h)
         }
-        Pane::Todo => (
-            p.todo,
-            vec![
-                ("o", "add"),
-                ("x", "done"),
+        Pane::Todo => {
+            let on_done = app.todos.items.get(app.todos.idx).is_some_and(|i| i.done);
+            let mut h = vec![("o", "add"), ("x", "done")];
+            if on_done {
+                h.push(("c", "clear"));
+            }
+            h.extend([
                 ("i", "edit"),
                 ("dd", "delete"),
                 ("p", "paste"),
                 ("u", "undo"),
                 ("E", "vim"),
                 ("K", "sessions"),
-            ],
-        ),
+            ]);
+            (p.todo, h)
+        }
     }
 }
 

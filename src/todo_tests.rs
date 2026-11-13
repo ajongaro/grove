@@ -118,10 +118,10 @@ fn i_and_a_append_to_the_item_and_backspace_deletes() {
 
 #[test]
 fn cc_replaces_the_text() {
-    let mut t = loaded("- [x] old\n");
+    let mut t = loaded("- [ ] old\n");
     keys(&mut t, "ccnew");
     press(&mut t, KeyCode::Enter);
-    assert_eq!(texts(&t), ["x new"]);
+    assert_eq!(texts(&t), ["new"]);
 }
 
 #[test]
@@ -367,4 +367,44 @@ fn a_i_and_cc_in_an_empty_list_start_the_first_item() {
         assert_eq!(press(&mut t, KeyCode::Esc), Effect::Nothing, "{start}");
         assert!(t.items.is_empty(), "{start}");
     }
+}
+
+// ---------- clearing done items ----------
+
+#[test]
+fn c_clears_a_done_item_and_hands_it_over_for_the_archive() {
+    let mut t = loaded("- [ ] a\n- [x] b\n- [ ] c\n");
+    t.idx = 1;
+    assert_eq!(keys(&mut t, "c"), [Effect::Changed]);
+    assert_eq!(texts(&t), ["a", "c"]);
+    assert_eq!(t.idx, 1, "the cursor moves on to the next item");
+    let cleared = t.take_cleared();
+    assert_eq!(cleared.len(), 1);
+    assert_eq!(cleared[0].text, "b");
+    assert!(t.take_cleared().is_empty(), "handed over once");
+    // u brings it back.
+    keys(&mut t, "u");
+    assert_eq!(texts(&t), ["a", "x b", "c"]);
+}
+
+#[test]
+fn c_on_an_open_item_still_starts_cc() {
+    let mut t = loaded("- [ ] a\n- [x] b\n");
+    keys(&mut t, "ccnew");
+    press(&mut t, KeyCode::Esc);
+    assert_eq!(texts(&t), ["new", "x b"]);
+    assert!(t.take_cleared().is_empty());
+}
+
+#[test]
+fn shift_c_clears_every_done_item_keeping_the_cursor_on_its_item() {
+    let mut t = loaded("- [x] a\n- [ ] b\n- [x] c\n- [ ] d\n- [x] e\n");
+    t.idx = 3; // d
+    assert_eq!(keys(&mut t, "C"), [Effect::Changed]);
+    assert_eq!(texts(&t), ["b", "d"]);
+    assert_eq!(t.items[t.idx].text, "d");
+    let cleared: Vec<String> = t.take_cleared().into_iter().map(|i| i.text).collect();
+    assert_eq!(cleared, ["a", "c", "e"]);
+    // Nothing done: nothing happens.
+    assert_eq!(keys(&mut t, "C"), [Effect::Nothing]);
 }

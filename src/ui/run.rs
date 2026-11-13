@@ -344,7 +344,14 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             ctx.tmux.source_file(&store.paths.run.join("tmux.conf"))?;
             Outcome::Message(format!("Theme: {name} (saved to config.toml)"))
         }
-        Action::SaveTodos { slug, text } => {
+        Action::SaveTodos {
+            slug,
+            text,
+            archived,
+        } => {
+            // Archived first: a failed write then loses nothing.
+            let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+            store.archive_todos(&slug, &archived, &day)?;
             store.write_todos(&slug, &text)?;
             Outcome::Nothing
         }

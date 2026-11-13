@@ -303,10 +303,11 @@ pub enum Action {
     /// Run the installed grove: refreshes run files and tmux config, and
     /// restarts this dashboard if the binary changed.
     Update,
-    /// Write the project's to-do list.
+    /// Write the project's to-do list, archiving any items cleared.
     SaveTodos {
         slug: String,
         text: String,
+        archived: Vec<String>,
     },
     /// Open the project's to-do file in the editor.
     EditTodos {

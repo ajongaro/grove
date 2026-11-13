@@ -1326,7 +1326,8 @@ fn todo_keys_save_the_selected_projects_list() {
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::SaveTodos {
             slug: "beta".into(),
-            text: "- [ ] hi\n".into()
+            text: "- [ ] hi\n".into(),
+            archived: vec![],
         }
     );
 }
@@ -1411,7 +1412,8 @@ fn dd_in_one_project_then_p_in_another_moves_the_item() {
         handle_key(&mut app, ch('p')),
         Action::SaveTodos {
             slug: "beta".into(),
-            text: "- [ ] carry me\n".into()
+            text: "- [ ] carry me\n".into(),
+            archived: vec![],
         }
     );
 }

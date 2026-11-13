@@ -412,6 +412,7 @@ there), edited with vim keys:
 | `i` `a` `A` / `cc` | edit the item / replace its text |
 | `Enter` `Esc` | leave insert mode (saves; an empty item is dropped) |
 | `x` `space` | toggle done |
+| `c` / `C` | clear the done item under the cursor / every done item. They move to `~/.grove/todos/<project>.done.md` with the day, and `u` brings the last clear back. (On a done item `c` clears, so use `i` or `A` to edit its text.) |
 | `dd` / `p` `P` | delete / paste it below or above (works across projects) |
 | `u` | undo the last change |
 | `E` | open the list in your editor |

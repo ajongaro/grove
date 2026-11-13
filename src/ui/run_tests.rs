@@ -538,11 +538,35 @@ fn save_todos_writes_the_projects_checklist() {
         Action::SaveTodos {
             slug: "p".into(),
             text: "- [ ] a\n".into(),
+            archived: vec![],
         },
     )
     .unwrap();
     assert_eq!(out, Outcome::Nothing);
     assert_eq!(t.ctx.store.read_todos("p"), "- [ ] a\n");
+}
+
+#[test]
+fn cleared_todos_are_archived_with_the_day() {
+    let t = setup("todoarchive");
+    for (text, archived) in [
+        ("- [ ] a\n", vec!["b".to_string()]),
+        ("", vec!["a".to_string()]),
+    ] {
+        perform(
+            &t.ctx,
+            Action::SaveTodos {
+                slug: "p".into(),
+                text: text.into(),
+                archived,
+            },
+        )
+        .unwrap();
+    }
+    let archive = std::fs::read_to_string(t.ctx.store.todos_archive("p")).unwrap();
+    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+    assert_eq!(archive, format!("- [x] b ({day})\n- [x] a ({day})\n"));
+    assert_eq!(t.ctx.store.read_todos("p"), "");
 }
 
 fn window_name(tm: &Tmux, id: &str) -> String {

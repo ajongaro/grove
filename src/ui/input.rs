@@ -747,6 +747,12 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
         Effect::Changed => Action::SaveTodos {
             slug,
             text: app.todos.serialize(),
+            archived: app
+                .todos
+                .take_cleared()
+                .into_iter()
+                .map(|i| i.text)
+                .collect(),
         },
         Effect::OpenEditor => Action::EditTodos { slug },
     }

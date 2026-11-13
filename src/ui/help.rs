@@ -62,7 +62,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("o O", "add below / above"),
             ("i a A cc", "edit / replace text"),
             ("Enter Esc", "save (empty item is dropped)"),
-            ("x space", "toggle done"),
+            ("x c C", "toggle done / clear it / all done"),
             ("dd p P", "delete / paste below, above"),
             ("u", "undo"),
             ("E", "open in your editor"),
