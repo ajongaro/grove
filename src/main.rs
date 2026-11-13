@@ -29,6 +29,7 @@ mod tmux;
 mod todo;
 mod transfer;
 mod ui;
+mod update;
 
 use std::io::Read;
 use std::os::unix::process::CommandExt;

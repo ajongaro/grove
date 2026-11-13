@@ -336,6 +336,16 @@ Then press `R` on the dashboard. It refreshes Grove's generated files and tmux
 config and restarts the dashboard on the new build. Running sessions aren't
 touched.
 
+The version you're running is in the top bar (`v0.1.43`) and the `?` list's
+title. Once a day Grove asks GitHub for the latest release, and when a newer
+one is out the top bar says so (`→ 0.1.44 out`) and the footer says how to
+upgrade for the way you installed. The request is the only thing sent: no
+id, no usage. `update_check = false` in `config.toml` turns it off.
+
+A finca running a different Grove shows its version beside its name in the
+Fincas box, and its pane says which side to update: `grove finca update
+<name>` for an older finca, or this machine when the finca is newer.
+
 ### Themes
 
 **`T`** opens the theme picker. Moving through the list redraws the
@@ -540,7 +550,8 @@ stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
 run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
                           (titles/ caches what each conversation is about,
-                          ticker.json the ticker's last prices)
+                          ticker.json the ticker's last prices, update.json
+                          the last update check)
 grove.log                 errors from hooks / MCP
 ```
 
@@ -555,6 +566,7 @@ statusline = true                      # Grove's status line in its sessions
 theme = "grove"                        # dashboard colors: see "Themes"
 header = "full"                        # top bar: full, compact (one plain line) or off (B cycles)
 pin_order = "added"                    # Pinned box: added, account or recent (o cycles)
+update_check = true                    # once a day, ask GitHub whether a newer Grove is out
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
@@ -562,6 +574,27 @@ pin_order = "added"                    # Pinned box: added, account or recent (o
 Grove never edits `~/.claude*/settings.json`. Hooks and the status line are
 passed per session with `--settings run/hooks.json` and the MCP server with
 `--mcp-config run/mcp.json`.
+
+## What stays stable
+
+Grove is 0.x while these settle. From 1.0 they change only in a major
+release, and a minor one only adds to them:
+
+- **`config.toml`**: the keys above keep their names and meaning; new keys
+  are optional with the old behavior as the default.
+- **Your files in `~/.grove`**: `projects/`, `todos/`, `fincas/`,
+  `tmux.local.conf`, `pins.json`. A project's id is its file name and never
+  changes. `run/`, `sessions/` and `stats/` are Grove's own and may change.
+- **Commands**: `grove`, `add`, `rm`, `doctor`, `kill`, `finca`, `status`,
+  `send`, `mcp`, and their flags.
+- **MCP tools**: the names and inputs in the table above.
+- **Fincas**: a laptop and a finca on different Groves keep working
+  together. `grove status --json` carries a format version; an added field
+  doesn't change it, so mixed versions read each other, and a laptop that
+  can't read a finca says which side to update. Updating every machine to
+  the same release is still the way to get every feature.
+
+The dashboard's keys and look aren't on this list: they keep improving.
 
 ## Extending it
 
@@ -593,9 +626,10 @@ Each file does one job, so new features usually touch one or two:
 | `src/shells.rs` | shells that stay open (`S`): tmux windows tagged with their project |
 | `src/side.rs` | the shell below a session (`C-\`) |
 | `src/pins.rs` | pinned sessions: `~/.grove/pins.json` |
+| `src/update.rs` | the daily check for a newer Grove (GitHub's latest release) |
 
 ```sh
-cargo test     # ~500 tests, including real tmux servers on throwaway sockets
+cargo test     # ~650 tests, including real tmux servers on throwaway sockets
 cargo clippy --all-targets -- -D warnings
 ```
 

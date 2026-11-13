@@ -11,6 +11,10 @@ pub const STATUS_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
     pub version: u32,
+    /// The Grove release that answered, so the laptop can say which side
+    /// to update. Groves before 0.1.43 don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grove: Option<String>,
     pub host: String,
     pub generated_at: DateTime<Utc>,
     pub needs_you: usize,
@@ -110,6 +114,7 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
     let all = projects.iter().flat_map(|p| &p.sessions);
     Status {
         version: STATUS_VERSION,
+        grove: Some(crate::update::this_version().to_string()),
         host: host.to_string(),
         generated_at: Utc::now(),
         needs_you: all.clone().filter(|s| s.state == State::NeedsYou).count(),

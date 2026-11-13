@@ -662,12 +662,25 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
         ));
     }
     app.reload(&ctx.store);
-    let ticker = crate::ticker::Ticker::start(ctx.store.paths.clone());
+    let feeds = Feeds {
+        ticker: crate::ticker::Ticker::start(ctx.store.paths.clone()),
+        updates: ctx
+            .cfg
+            .update_check
+            .then(|| crate::update::start(ctx.store.paths.clone())),
+    };
 
     let mut terminal = ratatui::init();
-    let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller, &ticker);
+    let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller, &feeds);
     ratatui::restore();
     result
+}
+
+/// What background threads send the dashboard.
+struct Feeds {
+    ticker: crate::ticker::Ticker,
+    /// A newer Grove's version; None when update_check is off.
+    updates: Option<mpsc::Receiver<String>>,
 }
 
 /// How long the dashboard waits for a key before redrawing anyway.
@@ -682,7 +695,7 @@ fn event_loop(
     rx: &mpsc::Receiver<()>,
     finca_rx: &mpsc::Receiver<()>,
     poller: &crate::finca::Poller,
-    ticker: &crate::ticker::Ticker,
+    feeds: &Feeds,
 ) -> Result<()> {
     let mut flagged = HashMap::new();
     let mut alerts = crate::alert::Alerts::default();
@@ -778,7 +791,18 @@ fn event_loop(
         while let Ok(r) = poller.results.try_recv() {
             app.apply_poll(r);
         }
-        while let Ok(u) = ticker.results.try_recv() {
+        if let Some(v) = feeds.updates.as_ref().and_then(|r| r.try_iter().last())
+            && app.update.as_ref().is_none_or(|(had, _)| *had != v)
+        {
+            let how = crate::runfiles::grove_exe()
+                .map_or("re-run install.sh", |e| crate::update::how_to_upgrade(&e));
+            app.footer = Some(format!(
+                "Grove {v} is out ({} here): {how}, then R",
+                crate::update::this_version()
+            ));
+            app.update = Some((v, how));
+        }
+        while let Ok(u) = feeds.ticker.results.try_recv() {
             match u {
                 crate::ticker::Update::Off => app.ticker = None,
                 crate::ticker::Update::Prices(tape) => app.ticker = Some(tape),

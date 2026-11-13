@@ -409,6 +409,11 @@ fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
                 (None, Some(Reach::Reachable(st))) => {
                     let mut v = vec![Span::styled("● ", Style::new().fg(color)), name];
                     v.push(Span::raw(format!("  {} live", st.live)).fg(pal().dim));
+                    // A different Grove there: its version, in warning colour.
+                    if crate::finca::version_gap(&f.name, &f.slug, st.grove.as_deref()).is_some() {
+                        let there = st.grove.as_deref().unwrap_or("old");
+                        v.push(Span::raw(format!("  v{there}")).fg(pal().warn));
+                    }
                     if st.needs_you > 0 {
                         v.push(
                             Span::raw(format!("  {}{}", State::NeedsYou.glyph(), st.needs_you))
@@ -428,7 +433,7 @@ fn render_fincas(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
                         Span::raw(format!("  unreachable · {since}")).fg(pal().dim),
                     ]
                 }
-                (None, Some(Reach::NeedsUpdate)) => {
+                (None, Some(Reach::NeedsUpdate { .. })) => {
                     vec![
                         Span::raw("◐ ").fg(pal().warn),
                         name,
@@ -463,17 +468,28 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
     let mut lines: Vec<Line> = Vec::new();
     match &f.reach {
         None => lines.push(Line::raw("Checking…").fg(pal().dim)),
-        Some(Reach::NeedsUpdate) => lines.push(
-            Line::raw(format!("{}'s grove is too old to report status — run scripts/deploy-fincas.sh. Enter still connects.", f.name))
-                .fg(pal().warn),
+        Some(Reach::NeedsUpdate { here }) => lines.push(
+            Line::raw(format!(
+                "{}. Enter still connects.",
+                crate::finca::needs_update_advice(&f.name, &f.slug, *here)
+            ))
+            .fg(pal().warn),
         ),
         Some(Reach::Unreachable { error }) => {
-            let since = f.last_ok.map_or("never reachable".to_string(), |t| format!("last reachable {} ago", format_age(t, now)));
+            let since = f.last_ok.map_or("never reachable".to_string(), |t| {
+                format!("last reachable {} ago", format_age(t, now))
+            });
             lines.push(Line::raw(format!("Unreachable: {error}")).fg(pal().error));
             lines.push(Line::raw(format!("({since}; showing last known sessions)")).fg(pal().dim));
             lines.push(Line::raw(""));
         }
-        Some(Reach::Reachable(_)) => {}
+        Some(Reach::Reachable(st)) => {
+            if let Some((_, gap)) = crate::finca::version_gap(&f.name, &f.slug, st.grove.as_deref())
+            {
+                lines.push(Line::raw(gap).fg(pal().warn));
+                lines.push(Line::raw(""));
+            }
+        }
     }
     let items = app.finca_items();
     let name_w = name_width(items.iter().filter_map(|i| match i {
@@ -831,7 +847,11 @@ fn render_help(frame: &mut Frame) {
         .border_style(Style::new().fg(pal().dim))
         .title(Line::from(vec![
             Span::raw(" Keys ").fg(pal().accent).bold(),
-            Span::raw("(any key closes) ").fg(pal().dim),
+            Span::raw(format!(
+                "(any key closes) · Grove {} ",
+                crate::update::this_version()
+            ))
+            .fg(pal().dim),
         ]))
         .title_bottom(state_legend());
     let inner = block.inner(area);
@@ -960,8 +980,9 @@ fn header_totals(app: &App) -> Line<'static> {
     ])
 }
 
-/// This machine, and how many fincas are up.
-fn header_place(app: &App) -> String {
+/// This machine, how many fincas are up, and Grove's version (with a newer
+/// one that's out, update.rs).
+fn header_place(app: &App) -> Vec<Span<'static>> {
     let mut place = app.host.clone();
     if !app.fincas.is_empty() {
         let up = app
@@ -971,7 +992,12 @@ fn header_place(app: &App) -> String {
             .count();
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
-    place
+    let mut spans =
+        vec![Span::raw(format!("{place} · v{}", crate::update::this_version())).fg(pal().dim)];
+    if let Some((v, _)) = &app.update {
+        spans.push(Span::raw(format!(" → {v} out")).fg(pal().warn));
+    }
+    spans
 }
 
 /// The compact top bar (`header = "compact"`, or a short window): the name
@@ -979,9 +1005,11 @@ fn header_place(app: &App) -> String {
 fn render_compact_header(frame: &mut Frame, app: &App, area: Rect) {
     let totals = header_totals(app);
     let mut left = vec![Span::raw(" grove").fg(pal().accent).bold()];
-    let place = format!("  {}", header_place(app));
-    if 6 + place.chars().count() + totals.width() < area.width as usize {
-        left.push(Span::raw(place).fg(pal().dim));
+    let place = header_place(app);
+    let place_w: usize = place.iter().map(Span::width).sum();
+    if 8 + place_w + totals.width() < area.width as usize {
+        left.push(Span::raw("  "));
+        left.extend(place);
     }
     frame.render_widget(Paragraph::new(Line::from(left)), area);
     frame.render_widget(
@@ -995,10 +1023,8 @@ fn render_compact_header(frame: &mut Frame, app: &App, area: Rect) {
 /// harvest on the right.
 fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let totals = header_totals(app);
-    let place = Line::from(vec![
-        Span::raw(header_place(app)).fg(pal().dim),
-        Span::raw(" "),
-    ]);
+    let mut place = Line::from(header_place(app));
+    place.spans.push(Span::raw(" "));
 
     let local = now.with_timezone(&chrono::Local);
     let today = local.format("%Y-%m-%d").to_string();

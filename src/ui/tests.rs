@@ -643,6 +643,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
     }
     Status {
         version: 1,
+        grove: Some(crate::update::this_version().into()),
         host: host.into(),
         generated_at: t0(),
         needs_you: needy,
@@ -731,7 +732,7 @@ fn fincas_listed_under_projects_with_counts() {
         },
         t0(),
     );
-    poll(&mut app, "old", Reach::NeedsUpdate, t0());
+    poll(&mut app, "old", Reach::NeedsUpdate { here: false }, t0());
     let s = screen(&app, 110, 24);
     for needle in [
         "FINCAS",
@@ -952,7 +953,7 @@ fn reload_keeps_finca_selection_and_poll_state() {
 #[test]
 fn poll_for_unknown_finca_is_ignored() {
     let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
-    poll(&mut app, "ghost", Reach::NeedsUpdate, t0());
+    poll(&mut app, "ghost", Reach::NeedsUpdate { here: false }, t0());
     assert_eq!(app.fincas.len(), 1);
 }
 
@@ -3149,6 +3150,51 @@ fn o_orders_the_pins_by_added_account_or_recent() {
     handle_key(&mut app, key(KeyCode::Char('o')));
     assert_eq!(app.cfg.pin_order, PinOrder::Added);
     assert_eq!(order(&app), ["fix", "api", "docs"]);
+}
+
+#[test]
+fn the_version_shows_and_a_newer_one_is_announced() {
+    use crate::config::Header;
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    let here = format!("v{}", crate::update::this_version());
+    assert!(screen(&app, 110, 32).contains(&here));
+    app.cfg.header = Header::Compact;
+    assert!(screen(&app, 110, 32).contains(&here));
+    app.update = Some(("9.9.9".into(), "brew upgrade grove"));
+    assert!(screen(&app, 110, 32).contains("→ 9.9.9 out"));
+    app.cfg.header = Header::Off;
+    handle_key(&mut app, ch('?'));
+    let help = screen(&app, 110, 32);
+    assert!(
+        help.contains(&format!("Grove {}", crate::update::this_version())),
+        "{help}"
+    );
+}
+
+#[test]
+fn a_finca_on_another_grove_says_which_side_to_update() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["pi", "box"]);
+    let mut old = remote_status("pi", 0, 1);
+    old.grove = Some("0.0.1".into());
+    poll(&mut app, "pi", Reach::Reachable(old), t0());
+    let mut same = remote_status("box", 0, 1);
+    same.grove = Some(crate::update::this_version().into());
+    poll(&mut app, "box", Reach::Reachable(same), t0());
+    let out = screen(&app, 110, 32);
+    let row = |name: &str| {
+        out.lines()
+            .find(|l| l.contains(&format!("● {name}")))
+            .unwrap()
+            .to_string()
+    };
+    assert!(row("pi").contains("v0.0.1"), "{out}");
+    assert!(!row("box").contains(" v"), "{out}");
+    let (_, msg) = crate::finca::version_gap("pi", "pi", Some("0.0.1")).unwrap();
+    assert!(msg.ends_with("grove finca update pi"), "{msg}");
+    let (here, msg) = crate::finca::version_gap("pi", "pi", Some("99.0.0")).unwrap();
+    assert!(here && msg.ends_with("update Grove here"), "{msg}");
+    // One that doesn't say is from before Grove reported it: older.
+    assert!(!crate::finca::version_gap("pi", "pi", None).unwrap().0);
 }
 
 #[test]

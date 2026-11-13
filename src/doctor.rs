@@ -233,10 +233,10 @@ fn fincas(store: &Store, probes: &Probes, out: &mut Vec<Check>) {
                             st.needs_you
                         ),
                     )),
-                    (Reach::NeedsUpdate, _) => out.push(check(
+                    (Reach::NeedsUpdate { here }, _) => out.push(check(
                         Level::Fail,
                         what,
-                        "its grove is a different version; update it (scripts/deploy-fincas.sh)",
+                        crate::finca::needs_update_advice(&f.name, &f.slug(), here),
                     )),
                     (Reach::Unreachable { error }, _) => out.push(check(Level::Warn, what, error)),
                 }

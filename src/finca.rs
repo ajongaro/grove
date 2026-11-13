@@ -130,8 +130,45 @@ pub enum Reach {
     Unreachable {
         error: String,
     },
-    /// Grove is there but too old (or too new) to report status.
-    NeedsUpdate,
+    /// Grove is there but can't report status to this one: older, or
+    /// (`here`) newer, so it's this machine's Grove that needs updating.
+    NeedsUpdate {
+        here: bool,
+    },
+}
+
+/// What to say when a finca's Grove isn't this one's version: which side
+/// is behind and how to update it. None when they match. A finca that
+/// doesn't say (before 0.1.43) is older.
+pub fn version_gap(name: &str, slug: &str, there: Option<&str>) -> Option<(bool, String)> {
+    use std::cmp::Ordering;
+    let here = crate::update::this_version();
+    match there.map(|v| crate::update::cmp(v, here)) {
+        Some(Ordering::Equal) => None,
+        Some(Ordering::Greater) => Some((
+            true,
+            format!(
+                "{name} has Grove {} and this machine {here}: update Grove here",
+                there.unwrap_or_default()
+            ),
+        )),
+        _ => Some((
+            false,
+            format!(
+                "{name} has Grove {} and this machine {here}: grove finca update {slug}",
+                there.unwrap_or("older")
+            ),
+        )),
+    }
+}
+
+/// The advice for a finca whose status this Grove can't read.
+pub fn needs_update_advice(name: &str, slug: &str, here: bool) -> String {
+    if here {
+        format!("{name}'s Grove is newer than this one; update Grove here")
+    } else {
+        format!("{name}'s Grove is too old to report status; grove finca update {slug}")
+    }
 }
 
 /// One poll result, sent from the poller thread.
@@ -316,7 +353,9 @@ fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
         // The JSON is one line; anything a login profile prints comes before it.
         Some(0) => match crate::status::parse(stdout.trim().lines().last().unwrap_or("")) {
             Ok(st) => Reach::Reachable(st),
-            Err(crate::status::ParseError::WrongVersion(_)) => Reach::NeedsUpdate,
+            Err(crate::status::ParseError::WrongVersion(n)) => Reach::NeedsUpdate {
+                here: n > crate::status::STATUS_VERSION,
+            },
             Err(crate::status::ParseError::Invalid(e)) => Reach::Unreachable {
                 error: format!("bad status output: {e}"),
             },
@@ -326,7 +365,7 @@ fn poll_dest(f: &Finca, dest: &str, timeout: std::time::Duration) -> Reach {
             error: stderr.trim().to_string(),
         },
         // grove ran but didn't know `status` (clap usage error) or failed.
-        _ => Reach::NeedsUpdate,
+        _ => Reach::NeedsUpdate { here: false },
     }
 }
 

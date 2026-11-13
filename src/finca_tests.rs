@@ -200,7 +200,7 @@ fn poll_old_grove_needs_update() {
     );
     let ssh = fake_ssh(d.path(), None);
     let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
-    assert_eq!(r, Reach::NeedsUpdate);
+    assert_eq!(r, Reach::NeedsUpdate { here: false });
 }
 
 #[test]
@@ -210,7 +210,8 @@ fn poll_newer_status_version_needs_update() {
     let bin = fake_grove(d.path(), &json);
     let ssh = fake_ssh(d.path(), None);
     let r = with_env(&ssh, d.path(), || poll_one(&finca_with_bin(&bin), ANSWERS));
-    assert_eq!(r, Reach::NeedsUpdate);
+    // Newer than this Grove: it is this machine that needs updating.
+    assert_eq!(r, Reach::NeedsUpdate { here: true });
 }
 
 #[test]

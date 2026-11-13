@@ -484,6 +484,7 @@ fn observe_names_local_and_finca_sessions() {
     app.sessions = vec![sess("1", "alpha", State::NeedsYou, Some("@3"))];
     let st = crate::status::Status {
         version: crate::status::STATUS_VERSION,
+        grove: None,
         host: "homebox".into(),
         generated_at: chrono::Utc::now(),
         needs_you: 1,

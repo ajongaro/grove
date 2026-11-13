@@ -30,6 +30,9 @@ pub struct Config {
     /// Grove's status line in its sessions (statusline.rs). Off leaves your
     /// own Claude Code status line.
     pub statusline: bool,
+    /// Check once a day whether a newer Grove is out (GitHub's latest
+    /// release) and say so in the top bar. Nothing is sent but the request.
+    pub update_check: bool,
     /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
     pub ticker: TickerConfig,
     /// The dashboard's colors: `grove` (the default) or another theme by
@@ -110,6 +113,7 @@ impl Default for Config {
             claude_args: Vec::new(),
             alerts: true,
             statusline: true,
+            update_check: true,
             ticker: TickerConfig::default(),
             theme: String::new(),
             header: Header::Full,

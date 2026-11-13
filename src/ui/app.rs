@@ -334,6 +334,8 @@ pub struct App {
     pub pins: Vec<crate::pins::Pin>,
     /// The ticker's last prices (ticker.rs), if it's on.
     pub ticker: Option<crate::ticker::Tape>,
+    /// A newer Grove that's out (update.rs), and how to get it.
+    pub update: Option<(String, &'static str)>,
     /// Selected row of the Pinned pane.
     pub pin_idx: usize,
 }
@@ -414,6 +416,7 @@ impl App {
             pins: Vec::new(),
             pin_idx: 0,
             ticker: None,
+            update: None,
         }
     }
 
