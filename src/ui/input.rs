@@ -416,16 +416,20 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             }
             Action::None
         }
-        KeyCode::Enter if app.pane == Pane::Sessions => match app.selected_session() {
-            Some(s) if state_is_live(s.state) => match &s.tmux_window {
-                Some(w) => Action::Jump { window: w.clone() },
+        // With no session to open, Enter falls through and starts one, as
+        // the empty list says.
+        KeyCode::Enter if app.pane == Pane::Sessions && app.selected_session().is_some() => {
+            match app.selected_session() {
+                Some(s) if state_is_live(s.state) => match &s.tmux_window {
+                    Some(w) => Action::Jump { window: w.clone() },
+                    None => Action::None,
+                },
+                Some(s) => Action::Resume {
+                    session_id: s.id.clone(),
+                },
                 None => Action::None,
-            },
-            Some(s) => Action::Resume {
-                session_id: s.id.clone(),
-            },
-            None => Action::None,
-        },
+            }
+        }
         KeyCode::Char('r') => {
             if let Some(s) = app
                 .selected_session()

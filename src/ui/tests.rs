@@ -3518,6 +3518,16 @@ fn header_shows_grove_and_harvest() {
 }
 
 #[test]
+fn enter_in_an_empty_sessions_list_starts_one() {
+    let (_d, _s, mut app) = loaded(&["alpha"], &[]);
+    app.pane = Pane::Sessions;
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::NewSession { ref slug, name: None } if slug == "alpha"
+    ));
+}
+
+#[test]
 fn quiet_grove_when_nothing_runs() {
     let (_d, _s, app) = loaded(&["alpha"], &[]);
     let out = screen(&app, 120, 30);
