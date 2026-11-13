@@ -2092,15 +2092,27 @@ fn header_shows_the_logo_and_session_totals() {
         "{out}"
     );
     assert!(out.lines().nth(3).unwrap().contains("╭ "), "{out}");
-    assert!(
-        top[0].contains("💧1 needs you  🌳2 your turn  🌿1 working"),
-        "{out}"
-    );
+    assert!(top[0].contains("💧 1  🌳 2  🌿 1  🍂 1"), "{out}");
     assert!(top[1].contains("testbox"), "{out}");
     use ratatui::style::Color;
-    assert_eq!(fg_of(&app, 110, 30, "💧1 needs"), Color::Red);
-    assert_eq!(fg_of(&app, 110, 30, "🌳2 your"), Color::Yellow);
-    assert_eq!(fg_of(&app, 110, 30, "🌿1 working"), Color::Green);
+    assert_eq!(fg_of(&app, 110, 30, "💧 1"), Color::Red);
+    assert_eq!(fg_of(&app, 110, 30, "🌳 2"), Color::Yellow);
+    assert_eq!(fg_of(&app, 110, 30, "🌿 1"), Color::Green);
+}
+
+#[test]
+fn header_counts_ended_sessions_still_listed() {
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::Ended, None),
+            session("2", "alpha", "s2", State::Ended, None),
+            session("3", "alpha", "s3", State::YourTurn, Some("@3")),
+        ],
+    );
+    let out = screen(&app, 110, 30);
+    let top = out.lines().next().unwrap();
+    assert!(top.trim_end().ends_with("💧 0  🌳 1  🌿 0  🍂 2"), "{out}");
 }
 
 #[test]
@@ -2140,7 +2152,7 @@ fn a_short_window_gets_the_compact_bar_then_none() {
         )),
         "{out}"
     );
-    assert!(top.trim_end().ends_with("🌿0 working"), "{out}");
+    assert!(top.trim_end().ends_with("🌿 0  🍂 0"), "{out}");
     assert!(out.lines().nth(1).unwrap().contains("alpha"), "{out}");
     let out = screen(&app, 110, 14);
     assert!(out.lines().next().unwrap().contains("alpha"), "{out}");
@@ -2165,23 +2177,17 @@ fn compact_and_off_headers() {
         )),
         "{out}"
     );
-    assert!(
-        top.contains("💧1 needs you  🌳0 your turn  🌿0 working"),
-        "{out}"
-    );
+    assert!(top.contains("💧 1  🌳 0  🌿 0  🍂 0"), "{out}");
     assert!(out.lines().nth(1).unwrap().contains("╭ "), "{out}");
     // Narrow: the place goes before the totals do.
-    let out = screen(&app, 50, 40);
+    let out = screen(&app, 40, 40);
     let top = out.lines().next().unwrap();
-    assert!(
-        !top.contains("testbox") && top.contains("💧1 needs you"),
-        "{out}"
-    );
+    assert!(!top.contains("testbox") && top.contains("💧 1"), "{out}");
 
     app.cfg.header = Header::Off;
     let out = screen(&app, 110, 40);
     assert!(out.lines().next().unwrap().contains("╭ "), "{out}");
-    assert!(!out.contains("needs you  🌳"), "{out}");
+    assert!(!out.contains("💧 1  🌳"), "{out}");
 }
 
 #[test]
@@ -3513,7 +3519,7 @@ fn header_shows_grove_and_harvest() {
     app.reload(&s);
     let out = screen_at(&app, 120, 30, Utc::now());
     let rows: Vec<&str> = out.lines().collect();
-    assert!(rows[0].contains("needs you"), "{out}");
+    assert!(rows[0].contains("💧 "), "{out}");
     assert!(rows[2].contains("🧺 $2.50"), "{out}");
 }
 
@@ -3611,11 +3617,11 @@ fn narrow_header_shrinks_the_sky_before_the_totals() {
         let out = screen(&app, w, 30);
         let top = out.lines().next().unwrap();
         assert!(top.contains("▟█●▙"), "{w}: {out}");
-        assert!(top.contains("💧0 needs you"), "{w}: {out}");
+        assert!(top.contains("💧 0"), "{w}: {out}");
     }
-    let out = screen(&app, 70, 30);
+    let out = screen(&app, 50, 30);
     let top = out.lines().next().unwrap();
-    assert!(!top.contains('●') && top.contains("💧0 needs you"), "{out}");
+    assert!(!top.contains('●') && top.contains("💧 0"), "{out}");
 }
 
 #[test]

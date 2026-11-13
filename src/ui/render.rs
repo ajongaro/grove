@@ -950,7 +950,9 @@ use crate::config::Header;
 /// stem is a run of upper half blocks, so it sits where the rows meet.
 const WORDMARK: [&str; 2] = ["█▀▀ █▀█ █▀█ █ █ █▀▀", "█▄█ █▀▄ █▄█ ▀▄▀ ██▄"];
 
-/// Sessions needing you, waiting on you and working, in their colors.
+/// How many sessions need you, wait on you, are working and have ended
+/// (still listed, not cleared): each state's emoji and its count, in its
+/// color while nonzero.
 fn header_totals(app: &App) -> Line<'static> {
     let count = |want: &[State]| {
         app.sessions
@@ -958,24 +960,23 @@ fn header_totals(app: &App) -> Line<'static> {
             .filter(|s| want.contains(&s.state))
             .count()
     };
-    let total = |n: usize, label: &str, state: State| {
+    let total = |want: &[State], state: State| {
+        let n = count(want);
         let style = if n > 0 {
             Style::new().fg(state_color(state))
         } else {
             Style::new().fg(pal().dim)
         };
-        Span::styled(format!("{}{n} {label}", state.glyph()), style)
+        Span::styled(format!("{} {n}", state.glyph()), style)
     };
     Line::from(vec![
-        total(count(&[State::NeedsYou]), "needs you", State::NeedsYou),
+        total(&[State::NeedsYou], State::NeedsYou),
         Span::raw("  "),
-        total(count(&[State::YourTurn]), "your turn", State::YourTurn),
+        total(&[State::YourTurn], State::YourTurn),
         Span::raw("  "),
-        total(
-            count(&[State::Working, State::Starting]),
-            "working",
-            State::Working,
-        ),
+        total(&[State::Working, State::Starting], State::Working),
+        Span::raw("  "),
+        total(&[State::Ended], State::Ended),
         Span::raw(" "),
     ])
 }

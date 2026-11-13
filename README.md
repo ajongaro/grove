@@ -384,6 +384,10 @@ harvest), **compact** (one plain line: the host and the session totals)
 or **off**. In a short window the full bar falls back to compact, and
 below 16 rows there's no bar at all.
 
+The session totals are `💧 needs you  🌳 your turn  🌿 working  🍂 ended`,
+each an emoji and a count (`💧 0  🌳 17  🌿 2  🍂 4`). Ended counts the
+sessions still listed that you haven't cleared (`c`/`C`).
+
 ## To-do lists
 
 Each project has a to-do list under its sessions (`t` or `Tab` to get
