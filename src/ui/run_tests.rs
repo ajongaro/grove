@@ -45,6 +45,7 @@ fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session 
         state,
         message: None,
         conversation: None,
+        launch: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }

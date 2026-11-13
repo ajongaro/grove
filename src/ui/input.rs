@@ -57,6 +57,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
+        Mode::ConfirmRestart { session_ids, .. } => {
+            app.mode = Mode::Normal;
+            match key.code {
+                KeyCode::Char('y' | 'Y') => Action::Restart {
+                    session_ids,
+                    jump: false,
+                },
+                _ => Action::None,
+            }
+        }
         Mode::ConfirmShell { window, label } => {
             app.mode = Mode::Normal;
             match key.code {
@@ -307,6 +317,9 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             .collect();
         return Action::OpenDesk { pins };
     }
+    if key.code == KeyCode::Char('U') {
+        return restart_all(app);
+    }
     if key.code == KeyCode::Char('/') {
         app.mode = Mode::Search {
             query: String::new(),
@@ -444,6 +457,24 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             }
             Action::None
         }
+        KeyCode::Char('u') if app.pane == Pane::Sessions => match app.selected_session() {
+            Some(s) if matches!(s.state, State::Working | State::Starting) => {
+                app.footer = Some(format!(
+                    "{} is working: u restarts it once it's your turn (x stops it now)",
+                    s.name
+                ));
+                Action::None
+            }
+            Some(s) if state_is_live(s.state) => Action::Restart {
+                session_ids: vec![s.id.clone()],
+                jump: true,
+            },
+            Some(s) => {
+                app.footer = Some(format!("{} has ended: Enter resumes it", s.name));
+                Action::None
+            }
+            None => Action::None,
+        },
         KeyCode::Char('x') => match app.selected_session() {
             Some(s) if app.pane == Pane::Sessions && state_is_live(s.state) => {
                 app.mode = Mode::Confirm {
@@ -504,6 +535,29 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
 
 /// The selected project's slug, unless there is none or it failed to parse
 /// (in which case the footer says why).
+/// `U`: asks to restart every session waiting on you, so each picks up the
+/// `claude` installed now. Working ones and ones needing you are left be:
+/// a restart would cut off their turn or their question.
+fn restart_all(app: &mut App) -> Action {
+    let session_ids: Vec<String> = app
+        .sessions
+        .iter()
+        .filter(|s| s.state == State::YourTurn)
+        .map(|s| s.id.clone())
+        .collect();
+    let busy = app
+        .sessions
+        .iter()
+        .filter(|s| s.state != State::Ended && s.state != State::YourTurn)
+        .count();
+    if session_ids.is_empty() {
+        app.footer = Some("No session is waiting on you, so there's nothing to restart".into());
+        return Action::None;
+    }
+    app.mode = Mode::ConfirmRestart { session_ids, busy };
+    Action::None
+}
+
 fn usable_project(app: &mut App) -> Option<String> {
     let p = app.selected_project()?;
     if let Some(err) = &p.error {

@@ -136,6 +136,21 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         Mode::Themes { sel, .. } => render_themes(frame, *sel),
         Mode::Search { query, sel } => render_search(frame, app, query, *sel, now),
         Mode::Confirm { label, .. } => kill_popup(frame, label),
+        Mode::ConfirmRestart { session_ids, busy } => {
+            let n = session_ids.len();
+            let mut text = format!(
+                "Restart {n} session{} waiting on you, with the Claude installed now?",
+                if n == 1 { "" } else { "s" }
+            );
+            if *busy > 0 {
+                text.push_str(&format!(
+                    " {busy} busy one{} left alone.",
+                    if *busy == 1 { "" } else { "s" }
+                ));
+            }
+            text.push_str("  y / n");
+            wide_confirm_popup(frame, &text)
+        }
         Mode::ConfirmShell { label, .. } => {
             confirm_popup(frame, &format!("Close shell {label}?  y / n"))
         }
@@ -1169,6 +1184,32 @@ fn confirm_popup(frame: &mut Frame, text: &str) {
                 .title(" Confirm ")
                 .fg(pal().error),
         ),
+        area,
+    );
+}
+
+/// Like `confirm_popup`, as wide as its text (wrapping in a narrow window).
+fn wide_confirm_popup(frame: &mut Frame, text: &str) {
+    let full = frame.area();
+    let w = (text.chars().count() as u16 + 4).min(full.width);
+    let inner = w.saturating_sub(2).max(1) as usize;
+    let h = (text.chars().count().div_ceil(inner) as u16 + 2).min(full.height);
+    let area = Rect {
+        x: full.x + (full.width - w) / 2,
+        y: full.y + (full.height - h) / 2,
+        width: w,
+        height: h,
+    };
+    blank(frame, area);
+    frame.render_widget(
+        Paragraph::new(text.to_string())
+            .wrap(ratatui::widgets::Wrap { trim: true })
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .title(" Confirm ")
+                    .fg(pal().accent),
+            ),
         area,
     );
 }

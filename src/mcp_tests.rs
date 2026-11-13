@@ -445,6 +445,7 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         state,
         message: None,
         conversation: None,
+        launch: None,
         created_at: now,
         updated_at: now,
     };

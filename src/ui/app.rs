@@ -91,6 +91,12 @@ pub enum Mode {
         /// `project:name`.
         label: String,
     },
+    /// `U`: restart these sessions (the ones waiting on you)? y / n.
+    /// `busy` counts the ones left alone (working or needing you).
+    ConfirmRestart {
+        session_ids: Vec<String>,
+        busy: usize,
+    },
     /// Kill this grid tile's session? y / n, then back to the grid.
     GridKill {
         sel: usize,
@@ -134,6 +140,12 @@ pub struct FincaRow {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
+    /// Restart these live sessions with the `claude` installed now
+    /// (`u`, `U`); `jump` goes to the restarted window (only for one).
+    Restart {
+        session_ids: Vec<String>,
+        jump: bool,
+    },
     /// Write `theme = "<name>"` to config.toml.
     SaveTheme {
         name: String,

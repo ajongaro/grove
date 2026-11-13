@@ -25,6 +25,13 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
         .ok()
         .and_then(|id| store.get_session(&id))
         .or_else(|| store.get_session(&ev.session_id))?;
+    // An event from an earlier run of this session's window: the old Claude
+    // of a restart, still exiting while the new one starts.
+    if let (Ok(run), Some(current)) = (std::env::var("GROVE_LAUNCH"), &session.launch)
+        && run != *current
+    {
+        return None;
+    }
 
     // Which conversation to resume once the window has gone.
     let follow = session.conversation_id() != ev.session_id;

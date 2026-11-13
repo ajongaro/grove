@@ -518,6 +518,7 @@ mod tests {
                 state: State::Working,
                 message: None,
                 conversation: None,
+                launch: None,
                 created_at: now,
                 updated_at: now,
             })

@@ -16,7 +16,16 @@ fn fixture(name: &str) -> String {
 
 /// Runs `grove hook` with `input` on stdin; returns (exit code, stdout).
 fn run_hook(home: &Path, input: &str) -> (i32, String) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_grove"))
+    run_hook_as(home, input, None)
+}
+
+/// `run_hook` from the window run `launch` (`GROVE_LAUNCH`), if given.
+fn run_hook_as(home: &Path, input: &str, launch: Option<&str>) -> (i32, String) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_grove"));
+    if let Some(l) = launch {
+        cmd.env("GROVE_LAUNCH", l);
+    }
+    let mut child = cmd
         .arg("hook")
         .env("GROVE_HOME", home)
         .stdin(Stdio::piped())
@@ -203,4 +212,26 @@ fn hooks_follow_the_conversation_through_clear() {
     let s = session(&dir);
     assert_eq!(s["conversation"], "conv-3");
     assert_eq!(s["state"], "working");
+}
+
+#[test]
+fn an_earlier_runs_hooks_are_ignored() {
+    let dir = setup("starting");
+    let home = dir.path().join("grove home");
+    let file = home.join(format!("sessions/{SID}.json"));
+    let mut s: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    s["launch"] = "new-run".into();
+    std::fs::write(&file, s.to_string()).unwrap();
+    let state = || -> String {
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        v["state"].as_str().unwrap().to_string()
+    };
+    // The old Claude of a restart, exiting: no effect.
+    run_hook_as(&home, &fixture("session_end"), Some("old-run"));
+    assert_eq!(state(), "starting");
+    // The new run's events land.
+    run_hook_as(&home, &fixture("stop"), Some("new-run"));
+    assert_eq!(state(), "your_turn");
 }

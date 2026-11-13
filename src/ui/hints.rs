@@ -109,6 +109,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                     ("enter", "jump"),
                     ("p", "pin"),
                     ("r", "rename"),
+                    ("u", "restart"),
                     ("x", "kill"),
                 ],
                 None => vec![("enter", "start"), ("n", "named")],

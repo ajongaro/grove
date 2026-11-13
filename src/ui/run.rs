@@ -86,6 +86,39 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
             Outcome::Message(format!("Resumed {} in {}", s.name, project.name))
         }
+        Action::Restart { session_ids, jump } => {
+            let cfg = load_config(&store.paths)?;
+            let (mut done, mut failed) = (Vec::new(), Vec::new());
+            for id in &session_ids {
+                let result = store
+                    .get_session(id)
+                    .context("no such session")
+                    .and_then(|s| store.get_project(&s.project))
+                    .and_then(|p| launch::restart(&ctx.tmux, store, &cfg, &p, id));
+                match result {
+                    Ok(s) => done.push(s),
+                    Err(e) => failed.push(format!("{e:#}")),
+                }
+            }
+            if jump && let Some(w) = done.first().and_then(|s| s.tmux_window.as_ref()) {
+                ctx.tmux.select_window(w)?;
+            }
+            let mut msg = match done.as_slice() {
+                [] => String::new(),
+                [one] => format!("Restarted {}", one.name),
+                many => format!("Restarted {} sessions", many.len()),
+            };
+            if let Some(first) = failed.first() {
+                if !msg.is_empty() {
+                    msg.push_str(" · ");
+                }
+                msg.push_str(&match failed.len() {
+                    1 => format!("couldn't restart one: {first}"),
+                    n => format!("couldn't restart {n}, e.g. {first}"),
+                });
+            }
+            Outcome::Message(msg)
+        }
         Action::Kill { session_id } => {
             let name = store.get_session(&session_id).map(|s| s.name);
             match crate::launch::kill(&ctx.tmux, store, &session_id)? {

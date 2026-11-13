@@ -153,6 +153,7 @@ fn next_session_name_skips_live_names() {
         state,
         message: None,
         conversation: None,
+        launch: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -517,6 +518,7 @@ fn ended(e: &Env, store: &Store, id: &str, name: &str, conversation: &str, saved
             state: State::Ended,
             message: None,
             conversation: Some(conversation.into()),
+            launch: None,
             created_at: now,
             updated_at: now,
         })
@@ -641,5 +643,50 @@ fn resume_leaves_live_sessions_alone() {
     s.state = State::Working;
     store.save_session(&s).unwrap();
     assert!(resume(&tmux, &store, &cfg(&e), &project(&e), "grove-id").is_err());
+    assert_eq!(store.get_session("grove-id").unwrap(), s);
+}
+
+#[test]
+fn restart_reopens_a_live_session_in_a_new_window_as_a_new_run() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-restart", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    ended(&e, &store, "grove-id", "s1", "conv-2", true);
+    let (stub, args_file) = recording_stub(&e);
+    let bin = stub.to_str().unwrap();
+    let first = resume_with_bin(&tmux, &store, &cfg(&e), &project(&e), "grove-id", bin);
+    let mut live = store.get_session("grove-id").unwrap();
+    live.state = State::YourTurn;
+    store.save_session(&live).unwrap();
+    let _ = read_args(&args_file);
+    std::fs::remove_file(&args_file).unwrap();
+    let again = restart_with_bin(&tmux, &store, &cfg(&e), &project(&e), "grove-id", bin);
+    let args = read_args(&args_file);
+    let windows = tmux.list_windows("grove").unwrap_or_default();
+    tmux.kill_server();
+    let (first, again) = (first.unwrap(), again.unwrap());
+    assert_eq!((again.id.as_str(), again.name.as_str()), ("grove-id", "s1"));
+    assert_eq!(again.state, State::Starting);
+    assert_ne!(again.tmux_window, first.tmux_window);
+    assert!(!windows.contains(first.tmux_window.as_ref().unwrap()));
+    assert!(windows.contains(again.tmux_window.as_ref().unwrap()));
+    assert!(first.launch.is_some() && again.launch.is_some());
+    assert_ne!(again.launch, first.launch, "each run has its own token");
+    assert!(args.lines().any(|a| a == "conv-2"), "{args}");
+}
+
+#[test]
+fn restart_without_a_saved_conversation_leaves_the_session_running() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-restartnone", std::process::id()));
+    ended(&e, &store, "grove-id", "s1", "conv-2", false);
+    let mut s = store.get_session("grove-id").unwrap();
+    s.state = State::YourTurn;
+    store.save_session(&s).unwrap();
+    let err = restart(&tmux, &store, &cfg(&e), &project(&e), "grove-id").unwrap_err();
+    assert!(err.to_string().contains("can't be restarted"), "{err}");
     assert_eq!(store.get_session("grove-id").unwrap(), s);
 }

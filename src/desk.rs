@@ -173,6 +173,7 @@ mod tests {
                 state,
                 message: None,
                 conversation: None,
+                launch: None,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             })

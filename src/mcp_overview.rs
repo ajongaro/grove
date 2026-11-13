@@ -129,6 +129,7 @@ mod tests {
             state,
             message: None,
             conversation: None,
+            launch: None,
             created_at: t,
             updated_at: t,
         }

@@ -75,6 +75,11 @@ pub struct Session {
     /// it: /clear and /resume start a new one in the same window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation: Option<String>,
+    /// This run of its window, also in the window's `GROVE_LAUNCH`: hooks
+    /// from an earlier run (a restarted session's old Claude, exiting) are
+    /// ignored rather than marking the new run ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -129,6 +134,7 @@ mod tests {
         assert_eq!(s.conversation_id(), "abc");
         let s = Session {
             conversation: Some("def".into()),
+            launch: None,
             ..s
         };
         assert_eq!(s.conversation_id(), "def");

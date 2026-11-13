@@ -24,6 +24,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         state,
         message: None,
         conversation: None,
+        launch: None,
         created_at: t0(),
         updated_at: t0(),
     }
@@ -3531,6 +3532,92 @@ fn enter_in_an_empty_sessions_list_starts_one() {
         handle_key(&mut app, key(KeyCode::Enter)),
         Action::NewSession { ref slug, name: None } if slug == "alpha"
     ));
+}
+
+#[test]
+fn u_restarts_the_session_under_the_cursor_unless_its_working() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::YourTurn, Some("@1")),
+            session("2", "alpha", "s2", State::Working, Some("@2")),
+        ],
+    );
+    app.pane = Pane::Sessions;
+    let at = |app: &App, name: &str| {
+        app.visible_sessions()
+            .iter()
+            .position(|s| s.name == name)
+            .unwrap()
+    };
+    app.sess_idx = at(&app, "s1");
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Char('u'))),
+        Action::Restart { ref session_ids, jump: true } if session_ids == &["1".to_string()]
+    ));
+    app.sess_idx = at(&app, "s2");
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Char('u'))),
+        Action::None
+    ));
+    assert!(app.footer.as_deref().unwrap().contains("s2 is working"));
+}
+
+#[test]
+fn shift_u_asks_then_restarts_only_the_sessions_waiting_on_you() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "s1", State::YourTurn, Some("@1")),
+            session("2", "alpha", "s2", State::Working, Some("@2")),
+            session("3", "alpha", "s3", State::YourTurn, Some("@3")),
+            session("4", "alpha", "s4", State::NeedsYou, Some("@4")),
+            session("5", "alpha", "s5", State::Ended, None),
+        ],
+    );
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Char('U'))),
+        Action::None
+    ));
+    let out = screen(&app, 120, 30);
+    assert!(
+        out.contains("Restart 2 sessions waiting on you") && out.contains("2 busy ones left alone"),
+        "{out}"
+    );
+    match handle_key(&mut app, key(KeyCode::Char('y'))) {
+        Action::Restart {
+            mut session_ids,
+            jump,
+        } => {
+            session_ids.sort();
+            assert_eq!(session_ids, ["1", "3"]);
+            assert!(!jump);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(app.mode, Mode::Normal));
+    // n backs out.
+    handle_key(&mut app, key(KeyCode::Char('U')));
+    assert!(matches!(
+        handle_key(&mut app, key(KeyCode::Char('n'))),
+        Action::None
+    ));
+}
+
+#[test]
+fn shift_u_with_nobody_waiting_says_so() {
+    let (_d, _s, mut app) = loaded(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::Working, Some("@1"))],
+    );
+    handle_key(&mut app, key(KeyCode::Char('U')));
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(
+        app.footer
+            .as_deref()
+            .unwrap()
+            .contains("nothing to restart")
+    );
 }
 
 #[test]

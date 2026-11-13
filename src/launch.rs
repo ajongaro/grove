@@ -213,6 +213,7 @@ pub fn start_with_bin(
         state: State::Starting,
         message: None,
         conversation: None,
+        launch: None,
         created_at: now,
         updated_at: now,
     };
@@ -285,6 +286,43 @@ pub fn resume_with_bin(
     Ok(session)
 }
 
+/// Restarts live session `id`: closes its window and resumes its
+/// conversation in a new one, with the `claude` installed now (after an
+/// update, the new version). It keeps its id, name and history.
+pub fn restart(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    id: &str,
+) -> Result<Session> {
+    restart_with_bin(tmux, store, cfg, project, id, &claude_bin())
+}
+
+/// `restart` with the program to run swapped out (tests use a stand-in).
+pub fn restart_with_bin(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    project: &Project,
+    id: &str,
+    bin: &str,
+) -> Result<Session> {
+    let Some(old) = store.get_session(id).filter(|s| s.state != State::Ended) else {
+        bail!("only a running session can be restarted");
+    };
+    // Check there's a conversation to come back to before closing anything.
+    let account = account_dir(&cfg.account_for(&project.path))?;
+    if crate::titles::transcript(&account, old.conversation_id()).is_none() {
+        bail!(
+            "{} has no saved conversation yet, so it can't be restarted",
+            old.name
+        );
+    }
+    kill(tmux, store, id)?;
+    resume_with_bin(tmux, store, cfg, project, id, bin)
+}
+
 /// Opens `spec`'s window for `session`, tags it, and records the window.
 fn open_window(
     tmux: &Tmux,
@@ -294,11 +332,17 @@ fn open_window(
     spec: &LaunchSpec,
     session: &mut Session,
 ) -> Result<()> {
+    // A token for this run, saved before Claude can send its first hook.
+    let run = uuid::Uuid::new_v4().to_string();
+    session.launch = Some(run.clone());
+    store.save_session(session)?;
+    let mut env = spec.env.clone();
+    env.push(("GROVE_LAUNCH".into(), run));
     let window = tmux.new_window(
         &cfg.tmux_session,
         &spec.window_name,
         &spec.cwd,
-        &spec.env,
+        &env,
         &spec.argv,
     )?;
     let hex = |c: &str| crate::ui::theme::hex(c, &cfg.theme);

@@ -28,6 +28,7 @@ fn sess(id: &str, project: &str) -> Session {
         state: State::Starting,
         message: None,
         conversation: None,
+        launch: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

@@ -160,6 +160,8 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `s` `S` | Pinned | the same for a pinned session's project, or a shell on its finca |
 | `r` | session | rename it, or a shell (tmux window too) |
 | `x` | session | kill it, or close a shell (asks first) |
+| `u` | session | restart it with the Claude installed now (keeps its conversation) |
+| `U` | dashboard | restart every session waiting on you, after a Claude update (asks first) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
 | `1`–`9` | dashboard | jump to that pinned session |
 | `c` | dashboard | clear the ended session under the cursor |
@@ -375,6 +377,16 @@ once; `grove` keeps tmux's stock colors. This is Grove's own tmux server
 only: your normal tmux never sees it. Colors you set in
 `~/.grove/tmux.local.conf` still win, since it loads after the theme, so
 delete those if you want the bar to follow the theme.
+
+### Restarting sessions after a Claude update
+
+Claude Code updates often, and a running session keeps the version it
+started with. **`u`** on a session restarts it: Grove closes its window and
+resumes the same conversation in a new one with the `claude` installed now.
+It keeps its name, history and stats. **`U`** does that for every session
+waiting on you (🌳), after asking. Sessions that are working or waiting on a
+permission answer are left alone, so nothing is cut off mid-turn; `u` them
+once they're done.
 
 ### Top bar
 
