@@ -533,7 +533,8 @@ mod tests {
         std::fs::create_dir_all(&slow).unwrap();
         let doc = r#"{"version":1,"host":"x","sessions":[]}"#;
         let fast_bin = crate::finca::tests::script(&fast, "grove", &format!("echo '{doc}'"));
-        let slow_bin = crate::finca::tests::script(&slow, "grove", "sleep 5");
+        // Far slower than the test may take, even on a loaded machine.
+        let slow_bin = crate::finca::tests::script(&slow, "grove", "sleep 30");
         let named = |name: &str, bin: &std::path::Path| crate::finca::Finca {
             name: name.into(),
             ..finca_at(bin)
@@ -548,7 +549,7 @@ mod tests {
             ]);
             let start = std::time::Instant::now();
             let mut fast_results = 0;
-            while fast_results < 3 && start.elapsed() < std::time::Duration::from_secs(4) {
+            while fast_results < 3 && start.elapsed() < std::time::Duration::from_secs(20) {
                 if let Ok(r) = fetcher
                     .results
                     .recv_timeout(std::time::Duration::from_millis(500))
@@ -557,8 +558,8 @@ mod tests {
                     fast_results += 1;
                 }
             }
+            // Three answers from fast, all well before slow's first.
             assert_eq!(fast_results, 3, "fast finca waited on the slow one");
-            assert!(start.elapsed() < std::time::Duration::from_secs(3));
         });
     }
 }

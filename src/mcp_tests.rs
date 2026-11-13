@@ -635,6 +635,7 @@ fn send_prompt_strips_control_characters() {
     add(&t, "alpha");
     let session = t.cfg().tmux_session;
     let out = t.dir.path().join("typed");
+    let ready = t.dir.path().join("ready");
     // Records exactly what arrives on the pane's input.
     t.tmux
         .new_session_detached(
@@ -644,16 +645,29 @@ fn send_prompt_strips_control_characters() {
             &[
                 "sh".into(),
                 "-c".into(),
-                format!("stty raw -echo; head -c 200 > '{}'", out.display()),
+                // dd writes each byte as it comes, so the test can watch.
+                format!(
+                    "stty raw -echo; touch '{ready}'; exec dd bs=1 of='{}' 2>/dev/null",
+                    out.display(),
+                    ready = ready.display()
+                ),
             ],
         )
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
     let window = t.tmux.list_windows_as(&session, "#{window_id}").unwrap()[0].clone();
+    // Polls rather than sleeping a fixed time, which a busy machine outruns.
+    let wait_for = |done: &dyn Fn() -> bool| {
+        let start = std::time::Instant::now();
+        while !done() && start.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    // The terminal is raw before the ready file appears.
+    wait_for(&|| ready.exists());
     add_session(&t, "alpha", "wait", State::YourTurn, Some(&window));
     // An end-of-paste marker plus a fake "approve" keystroke, and a bell.
     let sent = t.do_send_prompt("wait".into(), "hi\u{1b}[201~1\r\u{7}there".into());
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    wait_for(&|| std::fs::read(&out).is_ok_and(|b| String::from_utf8_lossy(&b).contains("there")));
     t.tmux.kill_server();
     sent.unwrap();
     let got = std::fs::read(&out).unwrap_or_default();
