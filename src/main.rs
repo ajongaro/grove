@@ -149,6 +149,18 @@ enum Cmd {
     /// session, from another machine).
     #[command(hide = true)]
     ResumeSession { session: String },
+    /// Internal: start a session in a project and print its window (from
+    /// another machine).
+    #[command(hide = true)]
+    StartSession {
+        project: String,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Internal: restart a live session with the claude installed now and
+    /// print its new window (from another machine).
+    #[command(hide = true)]
+    RestartSession { session: String },
     /// Internal: called by Claude Code hooks with the event JSON on stdin.
     #[command(hide = true)]
     Hook,
@@ -260,6 +272,10 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Some(Cmd::StartSession { project, name }) => {
+            print_or_exit(start_session(&paths, &project, name))
+        }
+        Some(Cmd::RestartSession { session }) => print_or_exit(restart_session(&paths, &session)),
         Some(Cmd::Screens { lines, .. }) => {
             let st = screens::local(
                 &Store::new(paths.clone()),
@@ -503,6 +519,67 @@ fn preflight(paths: &Paths) -> Result<Config> {
     Ok(cfg)
 }
 
+/// Grove's tmux session with a current dashboard in window 0, created if
+/// needed (without attaching): what `grove` does before it attaches, and
+/// what a session started from another machine needs.
+fn bring_up(paths: &Paths) -> Result<(Config, tmux::Tmux)> {
+    let cfg = preflight(paths)?;
+    paths.ensure()?;
+    let exe = runfiles::grove_exe()?;
+    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline, &cfg.theme)?;
+
+    let tmux = grove_tmux(paths);
+    let session = &cfg.tmux_session;
+    if tmux.has_session(session) {
+        // Pick up tmux.conf changes from a newer grove.
+        let conf = paths.run.join("tmux.conf");
+        let _ = tmux.cmd().args(["source-file"]).arg(&conf).status();
+    }
+    // Also brings window 0 back if the dashboard ever died.
+    let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
+    let stamp = launch::build_stamp(&exe);
+    if launch::ensure_dashboard(&tmux, session, &paths.home, &argv)? {
+        tmux.set_window_option(&launch::dashboard_target(session), "@grove_build", &stamp)?;
+    } else {
+        // After a reinstall, the running dashboard is still the old code.
+        launch::ensure_fresh_dashboard(&tmux, session, &stamp)?;
+    }
+    Ok((cfg, tmux))
+}
+
+/// Grove up and able to run Claude here, for a session asked for by
+/// another machine.
+fn ready_for_claude(paths: &Paths) -> Result<(Config, tmux::Tmux, Store)> {
+    if !setup::claude_runs_on(std::env::consts::ARCH) {
+        bail!(
+            "Claude Code doesn't run on this machine ({})",
+            std::env::consts::ARCH
+        );
+    }
+    let (cfg, tmux) = bring_up(paths)?;
+    Ok((cfg, tmux, Store::new(paths.clone())))
+}
+
+/// `grove start-session`: a new session in `project`; prints its window.
+fn start_session(paths: &Paths, project: &str, name: Option<String>) -> Result<String> {
+    let (cfg, tmux, store) = ready_for_claude(paths)?;
+    let project = store.get_project(project)?;
+    let s = launch::start(&tmux, &store, &cfg, &project, name, None)?;
+    Ok(s.tmux_window.unwrap_or_default())
+}
+
+/// `grove restart-session`: restarts a live session with the `claude`
+/// installed here now; prints its new window.
+fn restart_session(paths: &Paths, id: &str) -> Result<String> {
+    let (cfg, tmux, store) = ready_for_claude(paths)?;
+    let Some(s) = store.get_session(id) else {
+        bail!("no session {id}");
+    };
+    let project = store.get_project(&s.project)?;
+    let s = launch::restart(&tmux, &store, &cfg, &project, id)?;
+    Ok(s.tmux_window.unwrap_or_default())
+}
+
 /// `grove refresh`: what starting Grove does to a running one, without
 /// attaching; says whether it was running.
 fn refresh(paths: &Paths) -> Result<()> {
@@ -529,27 +606,8 @@ fn start(paths: &Paths) -> Result<()> {
         println!("You're already in Grove: exit this shell (C-d) for the dashboard.");
         return Ok(());
     }
-    let cfg = preflight(paths)?;
-    paths.ensure()?;
-    let exe = runfiles::grove_exe()?;
-    runfiles::write_all(paths, &exe, &cfg.tmux_session, cfg.statusline, &cfg.theme)?;
-
-    let tmux = grove_tmux(paths);
+    let (cfg, tmux) = bring_up(paths)?;
     let session = &cfg.tmux_session;
-    if tmux.has_session(session) {
-        // Pick up tmux.conf changes from a newer grove.
-        let conf = paths.run.join("tmux.conf");
-        let _ = tmux.cmd().args(["source-file"]).arg(&conf).status();
-    }
-    // Also brings window 0 back if the dashboard ever died.
-    let argv = vec![exe.to_string_lossy().into_owned(), "dashboard".to_string()];
-    let stamp = launch::build_stamp(&exe);
-    if launch::ensure_dashboard(&tmux, session, &paths.home, &argv)? {
-        tmux.set_window_option(&launch::dashboard_target(session), "@grove_build", &stamp)?;
-    } else {
-        // After a reinstall, the running dashboard is still the old code.
-        launch::ensure_fresh_dashboard(&tmux, session, &stamp)?;
-    }
     // The dashboard offers this folder as the default for `a` (add project).
     if let Ok(cwd) = std::env::current_dir() {
         let _ = tmux.set_environment(session, "GROVE_CWD", &cwd.to_string_lossy());
@@ -588,14 +646,25 @@ fn type_prompt(paths: &Paths, id: &str, text: &str) -> std::result::Result<Strin
 
 /// Resumes ended session `id` here; the new window's id.
 fn resume_session(paths: &Paths, id: &str) -> Result<String> {
-    let store = Store::new(paths.clone());
+    let (cfg, tmux, store) = ready_for_claude(paths)?;
     let Some(s) = store.get_session(id) else {
         anyhow::bail!("no session {id}");
     };
-    let cfg = load_config(paths)?;
     let project = store.get_project(&s.project)?;
-    let s = launch::resume(&grove_tmux(paths), &store, &cfg, &project, id)?;
+    let s = launch::resume(&tmux, &store, &cfg, &project, id)?;
     Ok(s.tmux_window.unwrap_or_default())
+}
+
+/// Prints `r`'s value, or its error and exits 1 (commands another machine
+/// runs over ssh: it reads the last line of either).
+fn print_or_exit(r: Result<String>) {
+    match r {
+        Ok(v) => println!("{v}"),
+        Err(e) => {
+            eprintln!("{e:#}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn print_status(paths: &Paths, json: bool) {

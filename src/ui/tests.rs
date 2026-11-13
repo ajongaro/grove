@@ -867,6 +867,104 @@ fn session_keys_on_a_finca_point_to_connecting() {
 }
 
 #[test]
+fn n_on_a_finca_picks_one_of_its_projects_then_starts_there() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
+    let mut st = remote_status("homebox", 0, 0);
+    let mut other = st.projects[0].clone();
+    other.slug = "notes".into();
+    other.name = "Notes".into();
+    other.sessions.clear();
+    st.projects.push(other);
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    app.proj_idx = 1;
+    app.pane = Pane::Projects;
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    let out = screen(&app, 120, 30);
+    assert!(
+        out.contains("New session on homebox") && out.contains("Notes"),
+        "{out}"
+    );
+    handle_key(&mut app, ch('j'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaStart {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            project: "notes".into(),
+            name: None,
+        }
+    );
+    // n in the picker names it first.
+    handle_key(&mut app, ch('n'));
+    handle_key(&mut app, ch('n'));
+    for c in "fix".chars() {
+        handle_key(&mut app, ch(c));
+    }
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaStart {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            project: "btt".into(),
+            name: Some("fix".into()),
+        }
+    );
+}
+
+#[test]
+fn n_on_an_unreachable_finca_says_so() {
+    let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Unreachable {
+            error: "no route".into(),
+        },
+        t0(),
+    );
+    app.proj_idx = 1;
+    assert_eq!(handle_key(&mut app, ch('n')), Action::None);
+    assert!(app.footer.as_deref().unwrap().contains("isn't answering"));
+}
+
+#[test]
+fn shift_u_includes_waiting_sessions_on_fincas() {
+    let (_d, _s, mut app) = with_fincas(
+        &["alpha"],
+        &[session("1", "alpha", "s1", State::YourTurn, Some("@1"))],
+        &["homebox"],
+    );
+    let mut st = remote_status("homebox", 0, 1);
+    let mut waiting = st.projects[0].sessions.first().cloned();
+    if let Some(w) = waiting.as_mut() {
+        w.state = State::YourTurn;
+        w.id = Some("remote-1".into());
+        st.projects[0].sessions = vec![w.clone()];
+    }
+    assert!(waiting.is_some(), "remote_status gives a session to reuse");
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    handle_key(&mut app, ch('U'));
+    let out = screen(&app, 140, 30);
+    assert!(
+        out.contains("Restart 2 sessions") && out.contains("1 on fincas"),
+        "{out}"
+    );
+    match handle_key(&mut app, ch('y')) {
+        Action::Restart {
+            session_ids,
+            fincas,
+            ..
+        } => {
+            assert_eq!(session_ids, ["1"]);
+            assert_eq!(fincas.len(), 1);
+            assert_eq!(fincas[0].slug, "homebox");
+            assert_eq!(fincas[0].session_ids, ["remote-1"]);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn n_and_shift_s_work_in_a_fincas_empty_session_list() {
     let (_d, _s, mut app) = with_fincas(&["alpha"], &[], &["homebox"]);
     poll(
@@ -878,12 +976,14 @@ fn n_and_shift_s_work_in_a_fincas_empty_session_list() {
     app.proj_idx = 1;
     for pane in [Pane::Projects, Pane::Sessions] {
         app.pane = pane;
-        // n: its own dashboard, where n starts one in a project of its.
+        // n: a session in its only project, started from here.
         assert_eq!(
             handle_key(&mut app, ch('n')),
-            Action::ConnectFinca {
+            Action::FincaStart {
                 slug: "homebox".into(),
-                via: Some("me@homebox".into())
+                via: Some("me@homebox".into()),
+                project: "btt".into(),
+                name: None,
             },
             "{pane:?}"
         );
@@ -3553,7 +3653,7 @@ fn u_restarts_the_session_under_the_cursor_unless_its_working() {
     app.sess_idx = at(&app, "s1");
     assert!(matches!(
         handle_key(&mut app, key(KeyCode::Char('u'))),
-        Action::Restart { ref session_ids, jump: true } if session_ids == &["1".to_string()]
+        Action::Restart { ref session_ids, jump: true, .. } if session_ids == &["1".to_string()]
     ));
     app.sess_idx = at(&app, "s2");
     assert!(matches!(
@@ -3588,6 +3688,7 @@ fn shift_u_asks_then_restarts_only_the_sessions_waiting_on_you() {
         Action::Restart {
             mut session_ids,
             jump,
+            ..
         } => {
             session_ids.sort();
             assert_eq!(session_ids, ["1", "3"]);

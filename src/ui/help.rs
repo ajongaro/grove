@@ -75,6 +75,7 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("s", "open a shell there (r renames it)"),
             ("Enter", "connect, or jump into a session"),
+            ("n u", "start a session there / restart one"),
             ("F", "add a finca (or a on a finca)"),
         ],
     ),

@@ -38,6 +38,12 @@ pub enum PromptKind {
     RenameSession {
         session_id: String,
     },
+    /// The name for a new session on a finca (`n` in its project picker).
+    NameFincaSession {
+        slug: String,
+        via: Option<String>,
+        project: String,
+    },
     /// A shell's window: a project's (`finca` None) or a finca's.
     RenameShell {
         window: String,
@@ -91,11 +97,21 @@ pub enum Mode {
         /// `project:name`.
         label: String,
     },
-    /// `U`: restart these sessions (the ones waiting on you)? y / n.
-    /// `busy` counts the ones left alone (working or needing you).
+    /// `U`: restart these sessions (the ones waiting on you, here and on
+    /// reachable fincas)? y / n. `busy` counts the ones left alone
+    /// (working or needing you).
     ConfirmRestart {
         session_ids: Vec<String>,
+        fincas: Vec<FincaRestart>,
         busy: usize,
+    },
+    /// `n` on a finca: which of its projects to start a session in.
+    FincaProjects {
+        slug: String,
+        via: Option<String>,
+        /// (slug, name) of each of the finca's projects.
+        projects: Vec<(String, String)>,
+        sel: usize,
     },
     /// Kill this grid tile's session? y / n, then back to the grid.
     GridKill {
@@ -136,15 +152,40 @@ pub struct FincaRow {
     pub via: Option<String>,
 }
 
+/// A finca's sessions to restart (`U`), at the destination that last
+/// answered.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FincaRestart {
+    pub slug: String,
+    pub via: Option<String>,
+    pub session_ids: Vec<String>,
+}
+
 /// What the event loop should do after a key press.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
     /// Restart these live sessions with the `claude` installed now
-    /// (`u`, `U`); `jump` goes to the restarted window (only for one).
+    /// (`u`, `U`), and the fincas' with theirs; `jump` goes to the
+    /// restarted window (only for one local session).
     Restart {
         session_ids: Vec<String>,
+        fincas: Vec<FincaRestart>,
         jump: bool,
+    },
+    /// Restart a live finca session onto the claude installed there now,
+    /// and go to it.
+    FincaRestart {
+        slug: String,
+        via: Option<String>,
+        session_id: String,
+    },
+    /// Start a session in a finca's project and go to it.
+    FincaStart {
+        slug: String,
+        via: Option<String>,
+        project: String,
+        name: Option<String>,
     },
     /// Write `theme = "<name>"` to config.toml.
     SaveTheme {

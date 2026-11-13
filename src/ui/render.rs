@@ -118,6 +118,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 }
                 PromptKind::RenameSession { .. } => " Rename session (Enter saves, Esc cancels) ",
                 PromptKind::RenameShell { .. } => " Rename shell (Enter saves, Esc cancels) ",
+                PromptKind::NameFincaSession { .. } => {
+                    " Name the new session (Enter starts, Esc cancels) "
+                }
             };
             let area = popup(frame.area(), 70, 3);
             blank(frame, area);
@@ -134,14 +137,28 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
         }
         Mode::Help => render_help(frame),
         Mode::Themes { sel, .. } => render_themes(frame, *sel),
+        Mode::FincaProjects {
+            slug,
+            projects,
+            sel,
+            ..
+        } => render_finca_projects(frame, app, slug, projects, *sel),
         Mode::Search { query, sel } => render_search(frame, app, query, *sel, now),
         Mode::Confirm { label, .. } => kill_popup(frame, label),
-        Mode::ConfirmRestart { session_ids, busy } => {
-            let n = session_ids.len();
+        Mode::ConfirmRestart {
+            session_ids,
+            fincas,
+            busy,
+        } => {
+            let remote: usize = fincas.iter().map(|f| f.session_ids.len()).sum();
+            let n = session_ids.len() + remote;
             let mut text = format!(
                 "Restart {n} session{} waiting on you, with the Claude installed now?",
                 if n == 1 { "" } else { "s" }
             );
+            if remote > 0 {
+                text.push_str(&format!(" ({remote} on fincas, with theirs.)"));
+            }
             if *busy > 0 {
                 text.push_str(&format!(
                     " {busy} busy one{} left alone.",
@@ -1289,6 +1306,74 @@ fn render_pinned(
 }
 
 /// The `T` picker: each theme's name beside swatches of its pane colors.
+/// `n` on a finca: its projects, to start a session in one.
+fn render_finca_projects(
+    frame: &mut Frame,
+    app: &App,
+    slug: &str,
+    projects: &[(String, String)],
+    sel: usize,
+) {
+    let name = app
+        .fincas
+        .iter()
+        .find(|f| f.slug == slug)
+        .map_or(slug, |f| f.name.as_str());
+    let widest = projects
+        .iter()
+        .map(|(_, n)| n.chars().count())
+        .max()
+        .unwrap_or(0);
+    let hint = " j/k move · Enter start · n name it · Esc cancel";
+    let w = (widest + 6).max(hint.chars().count() + 2).max(30) as u16;
+    let full = frame.area();
+    let w = w.min(full.width);
+    let h = (projects.len() as u16 + 4).min(full.height);
+    let area = Rect {
+        x: full.x + (full.width - w) / 2,
+        y: full.y + (full.height - h) / 2,
+        width: w,
+        height: h,
+    };
+    blank(frame, area);
+    let mut lines: Vec<Line> = projects
+        .iter()
+        .enumerate()
+        .map(|(i, (_, n))| {
+            let here = i == sel;
+            let line = Line::from(vec![
+                Span::raw(if here { " ▸ " } else { "   " }).fg(pal().accent),
+                Span::raw(n.clone()).fg(if here { pal().bright } else { pal().muted }),
+            ]);
+            if here {
+                line.bg(pal().selected_bg)
+            } else {
+                line
+            }
+        })
+        .collect();
+    let rows = usize::from(h.saturating_sub(4)).max(1);
+    if lines.len() > rows {
+        let start = sel.saturating_sub(rows / 2).min(lines.len() - rows);
+        lines = lines.drain(start..start + rows).collect();
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::raw(hint).fg(pal().dim));
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(pal().fincas))
+                .title(
+                    Span::raw(format!(" New session on {name} "))
+                        .fg(pal().fincas)
+                        .bold(),
+                ),
+        ),
+        area,
+    );
+}
+
 fn render_themes(frame: &mut Frame, sel: usize) {
     let themes = super::theme::all();
     let area = popup(frame.area(), 40, themes.len() as u16 + 4);

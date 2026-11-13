@@ -124,7 +124,7 @@ pub fn type_prompt_remote(
     session_id: &str,
     text: &str,
 ) -> Result<String, String> {
-    run_on_finca(f, dest, "type-prompt", session_id, Some(text), "reply")
+    run_on_finca(f, dest, "type-prompt", &[session_id], Some(text), "reply")
 }
 
 /// Kills a finca session with `grove kill-session`; its handle on success.
@@ -133,7 +133,14 @@ pub fn kill_session_remote(
     dest: &str,
     session_id: &str,
 ) -> Result<String, String> {
-    run_on_finca(f, dest, "kill-session", session_id, None, "kill sessions")
+    run_on_finca(
+        f,
+        dest,
+        "kill-session",
+        &[session_id],
+        None,
+        "kill sessions",
+    )
 }
 
 /// Resumes an ended finca session with `grove resume-session`; its new
@@ -147,28 +154,61 @@ pub fn resume_session_remote(
         f,
         dest,
         "resume-session",
-        session_id,
+        &[session_id],
         None,
         "resume sessions",
     )
 }
 
-/// Runs `grove <cmd> <session_id>` on a finca, `input` on stdin. Its last
+/// Starts a session in the finca's project `slug` (named `name`, else the
+/// next free name) with `grove start-session`; its window on success.
+pub fn start_session_remote(
+    f: &crate::finca::Finca,
+    dest: &str,
+    slug: &str,
+    name: Option<&str>,
+) -> Result<String, String> {
+    let mut args = vec![slug];
+    if let Some(n) = name {
+        args.extend(["--name", n]);
+    }
+    run_on_finca(f, dest, "start-session", &args, None, "start sessions")
+}
+
+/// Restarts a live finca session onto the claude installed there now, with
+/// `grove restart-session`; its new window on success.
+pub fn restart_session_remote(
+    f: &crate::finca::Finca,
+    dest: &str,
+    session_id: &str,
+) -> Result<String, String> {
+    run_on_finca(
+        f,
+        dest,
+        "restart-session",
+        &[session_id],
+        None,
+        "restart sessions",
+    )
+}
+
+/// Runs `grove <cmd> <args…>` on a finca, `input` on stdin. Its last
 /// line of output, or of its error. `doing` finishes "too old to … from
 /// here" for a Grove without the command.
 fn run_on_finca(
     f: &crate::finca::Finca,
     dest: &str,
     cmd: &str,
-    session_id: &str,
+    args: &[&str],
     input: Option<&str>,
     doing: &str,
 ) -> Result<String, String> {
     use crate::finca::{login_shell_cmd, sh_quote};
+    let args: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
     let line = login_shell_cmd(&format!(
         "{} {cmd} {}",
         sh_quote(&f.grove_bin),
-        sh_quote(session_id)
+        args.join(" ")
     ));
     let out = crate::finca::run_timed(
         dest,
@@ -499,6 +539,51 @@ mod tests {
         assert_eq!(ok, Ok("@12".into()));
         let err = via_fake_ssh(d.path(), || resume_session_remote(&f, "me@pi", "zz")).unwrap_err();
         assert!(err.contains("nothing to resume"), "{err}");
+    }
+
+    #[test]
+    fn start_session_remote_passes_the_project_and_name() {
+        let d = tempfile::tempdir().unwrap();
+        // Echoes its arguments as the "window", so the test sees them.
+        let bin = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "[ \"$1\" = start-session ] || { echo \"error: unrecognized subcommand '$1'\" >&2; exit 2; }; shift; echo \"$*\"",
+        );
+        let f = finca_at(&bin);
+        let plain = via_fake_ssh(d.path(), || start_session_remote(&f, "me@pi", "blog", None));
+        assert_eq!(plain, Ok("blog".into()));
+        let named = via_fake_ssh(d.path(), || {
+            start_session_remote(&f, "me@pi", "blog", Some("fix the build"))
+        });
+        assert_eq!(named, Ok("blog --name fix the build".into()));
+        let old = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "echo \"error: unrecognized subcommand 'start-session'\" >&2; exit 2",
+        );
+        let err = via_fake_ssh(d.path(), || {
+            start_session_remote(&finca_at(&old), "me@pi", "blog", None)
+        })
+        .unwrap_err();
+        assert!(err.contains("too old to start sessions"), "{err}");
+    }
+
+    #[test]
+    fn restart_session_remote_returns_the_new_window() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = crate::finca::tests::script(
+            d.path(),
+            "grove",
+            "[ \"$1\" = restart-session ] || exit 2; if [ \"$2\" = sid ]; then echo '@40'; else echo \"no session $2\" >&2; exit 1; fi",
+        );
+        let f = finca_at(&bin);
+        assert_eq!(
+            via_fake_ssh(d.path(), || restart_session_remote(&f, "me@pi", "sid")),
+            Ok("@40".into())
+        );
+        let err = via_fake_ssh(d.path(), || restart_session_remote(&f, "me@pi", "zz")).unwrap_err();
+        assert!(err.contains("no session zz"), "{err}");
     }
 
     #[test]

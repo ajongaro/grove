@@ -486,8 +486,13 @@ the footer counts remote sessions that need you.
 
 - **Enter** on a finca opens that machine's own Grove dashboard. Every key
   goes to it.
-- **`n`** on a finca (or in its session list, even an empty one) opens
-  its dashboard too, where `n` starts a session in one of its projects.
+- **`n`** on a finca (or in its session list, even an empty one) starts a
+  session there without leaving your dashboard: pick one of its projects
+  (Enter starts, `n` names it first) and you land in the new session. A
+  finca with one project skips the picker.
+- **`u`** on a finca session restarts it with the Claude installed on
+  that finca. **`U`** on your dashboard restarts the sessions waiting on
+  you here *and* on every finca that's answering.
 - **`s`** (or `S`) on a finca opens a plain login shell there. Your tmux prefix
   works in it, and new windows and splits (`prefix c`, `prefix v`) open
   shells on the finca too.
@@ -496,7 +501,7 @@ the footer counts remote sessions that need you.
 - Selecting a finca lists its sessions and the shells you've opened there.
   `l` (or Tab) moves into the list; **Enter** on a session connects
   straight into that session's window, Enter on a shell goes back to
-  it, and `r` on a shell names it. To start, kill or edit sessions, connect.
+  it, and `r` on a shell names it. To kill or edit sessions, connect.
 - **`C-v`** in a finca window (its Grove or a shell there) sends a file
   you copied in Finder (⌘C) or an image on the clipboard (a screenshot
   taken with ⌘⇧⌃4) to the finca's `~/.grove/inbox`, and pastes its path.

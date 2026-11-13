@@ -86,7 +86,11 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             }
             Outcome::Message(format!("Resumed {} in {}", s.name, project.name))
         }
-        Action::Restart { session_ids, jump } => {
+        Action::Restart {
+            session_ids,
+            fincas,
+            jump,
+        } => {
             let cfg = load_config(&store.paths)?;
             let (mut done, mut failed) = (Vec::new(), Vec::new());
             for id in &session_ids {
@@ -96,17 +100,38 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                     .and_then(|s| store.get_project(&s.project))
                     .and_then(|p| launch::restart(&ctx.tmux, store, &cfg, &p, id));
                 match result {
-                    Ok(s) => done.push(s),
+                    Ok(s) => done.push(s.name),
                     Err(e) => failed.push(format!("{e:#}")),
                 }
             }
-            if jump && let Some(w) = done.first().and_then(|s| s.tmux_window.as_ref()) {
-                ctx.tmux.select_window(w)?;
+            if jump
+                && let Some(w) = session_ids
+                    .first()
+                    .and_then(|id| store.get_session(id))
+                    .and_then(|s| s.tmux_window)
+            {
+                ctx.tmux.select_window(&w)?;
+            }
+            for fr in &fincas {
+                let Ok(f) = store.get_finca(&fr.slug) else {
+                    continue;
+                };
+                let dest = fr.via.as_deref().unwrap_or(&f.ssh);
+                for id in &fr.session_ids {
+                    match crate::screens::restart_session_remote(&f, dest, id) {
+                        Ok(_) => done.push(format!("{id} on {}", f.name)),
+                        Err(e) => failed.push(format!("{}: {e}", f.name)),
+                    }
+                }
             }
             let mut msg = match done.as_slice() {
                 [] => String::new(),
-                [one] => format!("Restarted {}", one.name),
-                many => format!("Restarted {} sessions", many.len()),
+                [one] if fincas.is_empty() => format!("Restarted {one}"),
+                many => format!(
+                    "Restarted {} session{}",
+                    many.len(),
+                    if many.len() == 1 { "" } else { "s" }
+                ),
             };
             if let Some(first) = failed.first() {
                 if !msg.is_empty() {
@@ -118,6 +143,31 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 });
             }
             Outcome::Message(msg)
+        }
+        Action::FincaStart {
+            slug,
+            via,
+            project,
+            name,
+        } => {
+            let f = store.get_finca(&slug)?;
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            let dest = via.as_deref().unwrap_or(&f.ssh);
+            let window = crate::screens::start_session_remote(&f, dest, &project, name.as_deref())
+                .map_err(|e| anyhow::anyhow!("{}: {e}", f.name))?;
+            return perform(ctx, Action::FincaJump { slug, via, window });
+        }
+        Action::FincaRestart {
+            slug,
+            via,
+            session_id,
+        } => {
+            let f = store.get_finca(&slug)?;
+            let via = via.filter(|v| f.destinations().any(|d| d == v));
+            let dest = via.as_deref().unwrap_or(&f.ssh);
+            let window = crate::screens::restart_session_remote(&f, dest, &session_id)
+                .map_err(|e| anyhow::anyhow!("{}: {e}", f.name))?;
+            return perform(ctx, Action::FincaJump { slug, via, window });
         }
         Action::Kill { session_id } => {
             let name = store.get_session(&session_id).map(|s| s.name);
@@ -777,8 +827,14 @@ fn event_loop(
             let quiet = typing && matches!(action, Action::None);
             let was_reply = matches!(action, Action::GridReply { .. });
             let was_kill = matches!(action, Action::GridKill { .. });
-            if matches!(action, Action::FincaResume { .. }) {
-                app.footer = Some("resuming…".into());
+            let slow = match &action {
+                Action::FincaResume { .. } => Some("resuming…"),
+                Action::FincaStart { .. } => Some("starting…"),
+                Action::FincaRestart { .. } | Action::Restart { .. } => Some("restarting…"),
+                _ => None,
+            };
+            if let Some(what) = slow {
+                app.footer = Some(what.into());
                 terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
             }
             let was_shell = matches!(action, Action::NewShell { .. } | Action::CloseShell { .. });

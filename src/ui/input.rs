@@ -57,11 +57,16 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
-        Mode::ConfirmRestart { session_ids, .. } => {
+        Mode::ConfirmRestart {
+            session_ids,
+            fincas,
+            ..
+        } => {
             app.mode = Mode::Normal;
             match key.code {
                 KeyCode::Char('y' | 'Y') => Action::Restart {
                     session_ids,
+                    fincas,
                     jump: false,
                 },
                 _ => Action::None,
@@ -80,6 +85,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
         }
         Mode::Search { query, sel } => search_key(app, query, sel, key),
         Mode::Themes { sel, was } => themes_key(app, sel, was, key),
+        Mode::FincaProjects {
+            slug,
+            via,
+            projects,
+            sel,
+        } => finca_projects_key(app, slug, via, projects, sel, key),
         Mode::Normal => normal_key(app, key),
         Mode::Grid { sel, reply } => grid_key(app, sel, reply, key),
         Mode::GridKill {
@@ -200,6 +211,12 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
             app.mode = Mode::Normal;
             let text = input.trim().to_string();
             match kind {
+                PromptKind::NameFincaSession { slug, via, project } => Action::FincaStart {
+                    slug,
+                    via,
+                    project,
+                    name: (!text.is_empty()).then_some(text),
+                },
                 PromptKind::NewSession => match app.selected_project() {
                     Some(p) => Action::NewSession {
                         slug: p.slug.clone(),
@@ -467,6 +484,7 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
             }
             Some(s) if state_is_live(s.state) => Action::Restart {
                 session_ids: vec![s.id.clone()],
+                fincas: Vec::new(),
                 jump: true,
             },
             Some(s) => {
@@ -550,11 +568,128 @@ fn restart_all(app: &mut App) -> Action {
         .iter()
         .filter(|s| s.state != State::Ended && s.state != State::YourTurn)
         .count();
-    if session_ids.is_empty() {
+    let mut busy = busy;
+    let mut fincas = Vec::new();
+    for f in &app.fincas {
+        let Some(crate::finca::Reach::Reachable(st)) = &f.reach else {
+            continue;
+        };
+        let live = st.projects.iter().flat_map(|p| &p.sessions);
+        let ids: Vec<String> = live
+            .clone()
+            .filter(|s| s.state == State::YourTurn)
+            .filter_map(|s| s.id.clone())
+            .collect();
+        busy += live.filter(|s| s.state != State::YourTurn).count();
+        if !ids.is_empty() {
+            fincas.push(crate::ui::app::FincaRestart {
+                slug: f.slug.clone(),
+                via: f.via.clone(),
+                session_ids: ids,
+            });
+        }
+    }
+    if session_ids.is_empty() && fincas.is_empty() {
         app.footer = Some("No session is waiting on you, so there's nothing to restart".into());
         return Action::None;
     }
-    app.mode = Mode::ConfirmRestart { session_ids, busy };
+    app.mode = Mode::ConfirmRestart {
+        session_ids,
+        fincas,
+        busy,
+    };
+    Action::None
+}
+
+/// `n` on a finca: its projects to pick from (straight to the one if it
+/// has only one).
+fn finca_new_session(app: &mut App, slug: String, via: Option<String>) -> Action {
+    let Some(f) = app.fincas.iter().find(|f| f.slug == slug) else {
+        return Action::None;
+    };
+    let Some(crate::finca::Reach::Reachable(st)) = &f.reach else {
+        app.footer = Some(format!(
+            "{} isn't answering, so a session can't be started there",
+            f.name
+        ));
+        return Action::None;
+    };
+    let projects: Vec<(String, String)> = st
+        .projects
+        .iter()
+        .map(|p| (p.slug.clone(), p.name.clone()))
+        .collect();
+    match projects.as_slice() {
+        [] => {
+            app.footer = Some(format!(
+                "{} has no projects yet: Enter connects, a there adds one",
+                f.name
+            ));
+            Action::None
+        }
+        [(project, _)] => Action::FincaStart {
+            slug,
+            via,
+            project: project.clone(),
+            name: None,
+        },
+        _ => {
+            app.mode = Mode::FincaProjects {
+                slug,
+                via,
+                projects,
+                sel: 0,
+            };
+            Action::None
+        }
+    }
+}
+
+/// The finca project picker: j/k move, Enter starts a session, n names it
+/// first, Esc closes.
+fn finca_projects_key(
+    app: &mut App,
+    slug: String,
+    via: Option<String>,
+    projects: Vec<(String, String)>,
+    sel: usize,
+    key: KeyEvent,
+) -> Action {
+    let n = projects.len().max(1);
+    let sel = match key.code {
+        KeyCode::Char('j') | KeyCode::Down => (sel + 1) % n,
+        KeyCode::Char('k') | KeyCode::Up => (sel + n - 1) % n,
+        KeyCode::Enter | KeyCode::Char('n') => {
+            app.mode = Mode::Normal;
+            let Some((project, _)) = projects.get(sel).cloned() else {
+                return Action::None;
+            };
+            if key.code == KeyCode::Char('n') {
+                app.mode = Mode::Prompt {
+                    kind: PromptKind::NameFincaSession { slug, via, project },
+                    input: String::new(),
+                };
+                return Action::None;
+            }
+            return Action::FincaStart {
+                slug,
+                via,
+                project,
+                name: None,
+            };
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.mode = Mode::Normal;
+            return Action::None;
+        }
+        _ => sel,
+    };
+    app.mode = Mode::FincaProjects {
+        slug,
+        via,
+        projects,
+        sel,
+    };
     Action::None
 }
 
@@ -821,14 +956,34 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
             }
             None => Action::FincaShell { slug, via },
         }),
-        // A new session needs one of the finca's projects: its own
-        // dashboard, where n starts one.
+        // A new session in one of the finca's projects, started over ssh.
         KeyCode::Char('n') => Some(match error {
             Some(e) => {
                 app.footer = Some(format!("{name} can't be used: {e}"));
                 Action::None
             }
-            None => Action::ConnectFinca { slug, via },
+            None => finca_new_session(app, slug, via),
+        }),
+        KeyCode::Char('u') => Some(match item {
+            Some(FincaItem::Session { session, .. })
+                if matches!(session.state, State::Working | State::Starting) =>
+            {
+                app.footer = Some(format!(
+                    "{} is working: u restarts it once it's your turn",
+                    session.name
+                ));
+                Action::None
+            }
+            Some(FincaItem::Session { session, .. })
+                if session.state != State::Ended && session.id.is_some() =>
+            {
+                Action::FincaRestart {
+                    slug,
+                    via,
+                    session_id: session.id.unwrap_or_default(),
+                }
+            }
+            _ => Action::None,
         }),
         KeyCode::Char('e' | 'c' | 'x') => {
             app.footer = Some(format!(
