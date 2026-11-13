@@ -980,8 +980,7 @@ fn header_totals(app: &App) -> Line<'static> {
     ])
 }
 
-/// This machine, how many fincas are up, and Grove's version (with a newer
-/// one that's out, update.rs).
+/// This machine, and how many fincas are up.
 fn header_place(app: &App) -> Vec<Span<'static>> {
     let mut place = app.host.clone();
     if !app.fincas.is_empty() {
@@ -992,10 +991,14 @@ fn header_place(app: &App) -> Vec<Span<'static>> {
             .count();
         place = format!("{place} · fincas {up}/{} up", app.fincas.len());
     }
-    let mut spans =
-        vec![Span::raw(format!("{place} · v{}", crate::update::this_version())).fg(pal().dim)];
+    vec![Span::raw(place).fg(pal().dim)]
+}
+
+/// Grove's version, and a newer one that's out (update.rs).
+fn version_spans(app: &App) -> Vec<Span<'static>> {
+    let mut spans = vec![Span::raw(format!("v{}", crate::update::this_version())).fg(pal().dim)];
     if let Some((v, _)) = &app.update {
-        spans.push(Span::raw(format!(" → {v} out")).fg(pal().warn));
+        spans.push(Span::raw(format!(" → {v}")).fg(pal().warn).bold());
     }
     spans
 }
@@ -1004,10 +1007,12 @@ fn header_place(app: &App) -> Vec<Span<'static>> {
 /// and place on the left, the totals on the right, no art.
 fn render_compact_header(frame: &mut Frame, app: &App, area: Rect) {
     let totals = header_totals(app);
-    let mut left = vec![Span::raw(" grove").fg(pal().accent).bold()];
+    let mut left = vec![Span::raw(" grove ").fg(pal().accent).bold()];
+    left.extend(version_spans(app));
     let place = header_place(app);
     let place_w: usize = place.iter().map(Span::width).sum();
-    if 8 + place_w + totals.width() < area.width as usize {
+    let used: usize = left.iter().map(Span::width).sum();
+    if used + 2 + place_w + totals.width() < area.width as usize {
         left.push(Span::raw("  "));
         left.extend(place);
     }
@@ -1058,10 +1063,16 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
     let logo: Vec<Line> = (0..3)
         .map(|i| {
             let mut spans = vec![Span::raw(" ")];
-            spans.push(match WORDMARK.get(i) {
-                Some(w) => Span::styled(*w, Style::new().fg(pal().accent).bold()),
-                None => Span::raw(" ".repeat(wordmark_w)),
-            });
+            match WORDMARK.get(i) {
+                Some(w) => spans.push(Span::styled(*w, Style::new().fg(pal().accent).bold())),
+                // The version under the wordmark, right-aligned to it.
+                None => {
+                    let v = version_spans(app);
+                    let w: usize = v.iter().map(Span::width).sum();
+                    spans.push(Span::raw(" ".repeat(wordmark_w.saturating_sub(w))));
+                    spans.extend(v);
+                }
+            }
             if let Some(sky) = &sky {
                 spans.push(Span::raw("  "));
                 spans.extend(sky[i].spans.iter().cloned());

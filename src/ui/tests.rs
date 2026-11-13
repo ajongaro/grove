@@ -2133,7 +2133,13 @@ fn a_short_window_gets_the_compact_bar_then_none() {
     let out = screen(&app, 110, 18);
     assert!(!out.contains("█▀▀"), "{out}");
     let top = out.lines().next().unwrap();
-    assert!(top.starts_with(" grove  testbox"), "{out}");
+    assert!(
+        top.starts_with(&format!(
+            " grove v{}  testbox",
+            crate::update::this_version()
+        )),
+        "{out}"
+    );
     assert!(top.trim_end().ends_with("🌿0 working"), "{out}");
     assert!(out.lines().nth(1).unwrap().contains("alpha"), "{out}");
     let out = screen(&app, 110, 14);
@@ -2152,7 +2158,13 @@ fn compact_and_off_headers() {
     let out = screen(&app, 110, 40);
     let top = out.lines().next().unwrap();
     assert!(!out.contains("█▀▀") && !out.contains("harvest"), "{out}");
-    assert!(top.starts_with(" grove  testbox"), "{out}");
+    assert!(
+        top.starts_with(&format!(
+            " grove v{}  testbox",
+            crate::update::this_version()
+        )),
+        "{out}"
+    );
     assert!(
         top.contains("💧1 needs you  🌳0 your turn  🌿0 working"),
         "{out}"
@@ -3161,7 +3173,7 @@ fn the_version_shows_and_a_newer_one_is_announced() {
     app.cfg.header = Header::Compact;
     assert!(screen(&app, 110, 32).contains(&here));
     app.update = Some(("9.9.9".into(), "brew upgrade grove"));
-    assert!(screen(&app, 110, 32).contains("→ 9.9.9 out"));
+    assert!(screen(&app, 110, 32).contains("→ 9.9.9"));
     app.cfg.header = Header::Off;
     handle_key(&mut app, ch('?'));
     let help = screen(&app, 110, 32);
