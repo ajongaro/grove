@@ -27,8 +27,9 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
         .or_else(|| store.get_session(&ev.session_id))?;
     // An event from an earlier run of this session's window: the old Claude
     // of a restart, still exiting while the new one starts.
-    if let (Ok(run), Some(current)) = (std::env::var("GROVE_LAUNCH"), &session.launch)
-        && run != *current
+    // A window from before runs had tokens has none, and is old too.
+    if let Some(current) = &session.launch
+        && std::env::var("GROVE_LAUNCH").ok().as_ref() != Some(current)
     {
         return None;
     }

@@ -231,6 +231,9 @@ fn an_earlier_runs_hooks_are_ignored() {
     // The old Claude of a restart, exiting: no effect.
     run_hook_as(&home, &fixture("session_end"), Some("old-run"));
     assert_eq!(state(), "starting");
+    // So is one from a window older than tokens.
+    run_hook_as(&home, &fixture("session_end"), None);
+    assert_eq!(state(), "starting");
     // The new run's events land.
     run_hook_as(&home, &fixture("stop"), Some("new-run"));
     assert_eq!(state(), "your_turn");
