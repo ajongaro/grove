@@ -533,6 +533,11 @@ Grove shares one SSH connection per finca (`ControlMaster`, sockets in
 windows and reconnects skip the login handshake. Your `~/.ssh/config` isn't
 touched.
 
+If the link drops (the laptop slept, the Wi-Fi changed), the finca's window
+reconnects by itself, trying for about ten seconds. If it can't get back it
+says why and waits for Enter. Opening that finca or one of its sessions
+again from the dashboard starts a fresh connection instead.
+
 The finca's Grove runs through its login shell over SSH, so Homebrew and
 `~/.local/bin` tools are found. If Claude Code there uses a folder other
 than `~/.claude`, set `claude_config_dir` in that machine's

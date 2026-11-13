@@ -814,17 +814,31 @@ pub fn shell_argv(f: &Finca, dest: &str) -> Vec<String> {
     vec!["sh".into(), "-c".into(), ssh_script(f, dest, None)]
 }
 
-/// Interactive ssh to `dest`, running `remote` there if given; on failure it
-/// pauses so the error can be read.
+/// Interactive ssh to `dest`, running `remote` there if given. A link that
+/// drops after it was up reconnects on its own; otherwise a failure pauses
+/// so the error can be read.
 fn ssh_script(f: &Finca, dest: &str, remote: Option<&str>) -> String {
-    ssh_script_with(f, dest, remote, CONNECT_GRACE_SECS)
+    ssh_script_with(f, dest, remote, CONNECT_GRACE_SECS, RECONNECT)
 }
 
 /// How long ssh must have run for a failure to count as a lost connection
 /// rather than one that never got going.
 const CONNECT_GRACE_SECS: u64 = 10;
 
-fn ssh_script_with(f: &Finca, dest: &str, remote: Option<&str>, grace: u64) -> String {
+/// After a lost connection: how many more tries, and the seconds between
+/// them (a laptop just woken may need a moment for its network).
+const RECONNECT: (u32, u64) = (5, 2);
+
+/// The line a finca window shows while it waits to be closed.
+pub const PAUSED: &str = "Press Enter to close.";
+
+fn ssh_script_with(
+    f: &Finca,
+    dest: &str,
+    remote: Option<&str>,
+    grace: u64,
+    (retries, wait): (u32, u64),
+) -> String {
     // Keep-alives end ssh within ~45s of a dead link (laptop slept, network
     // changed) instead of leaving a frozen session; share_opts has them.
     let mut opts = share_opts();
@@ -860,13 +874,30 @@ fn ssh_script_with(f: &Finca, dest: &str, remote: Option<&str>, grace: u64) -> S
     // asked for, which would otherwise arrive as typing at the prompt.
     format!(
         r#"name={name}
-start=$(date +%s)
 err=$(mktemp "${{TMPDIR:-/tmp}}/grove-ssh.XXXXXX" 2>/dev/null) || err=/dev/null
-{ssh} 2>"$err"
-code=$?
-if [ "$code" -ne 0 ]; then
+reset() {{ printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033[?2031l\033[?25h\033[0m\033[2J\033[H'; }}
+lost=0
+tries=0
+while :; do
+  start=$(date +%s)
+  {ssh} 2>"$err"
+  code=$?
+  [ "$code" -eq 0 ] && break
   if [ "$code" -eq 255 ]; then
     if [ $(( $(date +%s) - start )) -ge {grace} ]; then
+      lost=1
+      tries=0
+    fi
+    if [ "$lost" -eq 1 ] && [ "$tries" -lt {retries} ]; then
+      [ "$tries" -gt 0 ] && sleep {wait}
+      tries=$((tries + 1))
+      reset
+      printf '
+  Lost the connection to %s. Reconnecting…
+' "$name"
+      continue
+    fi
+    if [ "$lost" -eq 1 ]; then
       msg="Lost the connection to $name"
     else
       msg="Couldn't connect to $name"
@@ -875,23 +906,46 @@ if [ "$code" -ne 0 ]; then
     msg="{other}"
   fi
   why=$(grep -v '^[[:space:]]*$' "$err" | tail -n 1)
-  printf '\033[?1049l\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?1004l\033[?2004l\033[?2031l\033[?25h\033[0m\033[2J\033[H'
-  printf '\n  %s\n' "$msg"
-  [ -n "$why" ] && printf '  %s\n' "$why"
-  printf '\n  Press Enter to close.'
+  reset
+  printf '
+  %s
+' "$msg"
+  [ -n "$why" ] && printf '  %s
+' "$why"
+  printf '
+  {paused}'
   stty -echo 2>/dev/null
   read _
   stty echo 2>/dev/null
-fi
+  break
+done
 [ "$err" = /dev/null ] || rm -f "$err""#,
         name = sh_quote(&f.name),
+        paused = PAUSED,
     )
+}
+
+/// Whether the finca window `target` is paused on an error, waiting for
+/// Enter: worth replacing with a fresh connection rather than showing.
+pub fn is_paused(tmux: &crate::tmux::Tmux, target: &str) -> bool {
+    tmux.capture(target, 0).is_ok_and(|screen| {
+        screen
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .is_some_and(|l| l.trim() == PAUSED)
+    })
 }
 
 pub fn ensure_finca_session(tmux: &crate::tmux::Tmux, f: &Finca, dest: &str) -> Result<bool> {
     let name = session_name(&f.slug());
     if tmux.has_session(&name) {
-        return Ok(false);
+        // A connection that failed while you were elsewhere is replaced,
+        // not shown: you came here to see the finca, not the error.
+        if !is_paused(tmux, &format!("={name}:")) {
+            return Ok(false);
+        }
+        tmux.kill_session(&name)?;
     }
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
@@ -1039,7 +1093,18 @@ pub fn focus(f: &Finca, dest: &str, window: &str) -> Result<()> {
 /// Switches the current client to a shell on the finca, like `connect`.
 pub fn open_shell(tmux: &crate::tmux::Tmux, f: &Finca, via: Option<&str>) -> Result<()> {
     ensure_shell_session(tmux, f, via.unwrap_or(&f.ssh))?;
-    tmux.switch_client(&format!("={}", shell_session_name(&f.slug())))
+    let name = shell_session_name(&f.slug());
+    revive(tmux, &format!("={name}:"))?;
+    tmux.switch_client(&format!("={name}"))
+}
+
+/// Restarts the finca window `target` if it's paused on an error, so going
+/// there reconnects instead of showing it.
+pub fn revive(tmux: &crate::tmux::Tmux, target: &str) -> Result<()> {
+    if is_paused(tmux, target) {
+        tmux.respawn_window(target)?;
+    }
+    Ok(())
 }
 
 /// Connects the current client to the finca (creating the session if

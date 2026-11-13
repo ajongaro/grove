@@ -181,6 +181,7 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             Outcome::Nothing
         }
         Action::FincaShellWindow { slug, window } => {
+            crate::finca::revive(&ctx.tmux, &window)?;
             ctx.tmux.select_window(&window)?;
             ctx.tmux
                 .switch_client(&format!("={}", crate::finca::shell_session_name(&slug)))?;

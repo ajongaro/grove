@@ -466,7 +466,7 @@ fn run_failed_ssh(body: &str, remote: Option<&str>, grace: u64) -> String {
         backup: None,
     };
     let sh = with_env(&ssh, d.path(), || {
-        ssh_script_with(&f, &f.ssh, remote, grace)
+        ssh_script_with(&f, &f.ssh, remote, grace, (2, 0))
     });
     let out = std::process::Command::new("sh")
         .args(["-c", &sh])
@@ -508,15 +508,52 @@ fn connect_failure_resets_the_screen_first() {
     assert!(reset < text.find("Couldn't").unwrap(), "{text:?}");
 }
 
+/// A fake ssh body: up for a second then dropped on its first run; each
+/// later run does `then`. `$0`'s folder keeps the count.
+fn drops_once_then(then: &str) -> String {
+    format!(
+        "c=\"$(dirname \"$0\")/runs\"; n=$(cat \"$c\" 2>/dev/null || echo 0); echo $((n + 1)) > \"$c\"; \
+         if [ \"$n\" -eq 0 ]; then sleep 1; echo 'Shared connection to x closed.' >&2; exit 255; fi; {then}"
+    )
+}
+
 #[test]
-fn a_dropped_connection_says_it_was_lost() {
+fn a_dropped_connection_reconnects_by_itself() {
     let text = run_failed_ssh(
-        "echo 'Shared connection to x closed.' >&2; exit 255",
+        &drops_once_then("echo BACK ON PI; exit 0"),
         Some("grove"),
-        0,
+        1,
     );
-    assert!(text.contains("Lost the connection to pi"), "{text}");
-    assert!(text.contains("Shared connection to x closed."), "{text}");
+    assert!(
+        text.contains("Lost the connection to pi. Reconnecting"),
+        "{text}"
+    );
+    assert!(text.contains("BACK ON PI"), "{text}");
+    assert!(!text.contains("Enter"), "{text}");
+}
+
+#[test]
+fn a_dropped_connection_that_cant_come_back_says_it_was_lost() {
+    let text = run_failed_ssh(
+        &drops_once_then("echo 'ssh: connect to host x: Host is down' >&2; exit 255"),
+        Some("grove"),
+        1,
+    );
+    assert!(text.contains("Reconnecting"), "{text}");
+    assert!(text.contains("Lost the connection to pi\n"), "{text}");
+    assert!(text.contains("Host is down"), "{text}");
+    assert!(text.contains("Press Enter to close"), "{text}");
+}
+
+#[test]
+fn a_connection_that_never_got_going_does_not_retry() {
+    let text = run_failed_ssh(
+        &drops_once_then("exit 255").replace("sleep 1; ", ""),
+        Some("grove"),
+        5,
+    );
+    assert!(text.contains("Couldn't connect to pi"), "{text}");
+    assert!(!text.contains("Reconnecting"), "{text}");
 }
 
 #[test]
@@ -589,6 +626,22 @@ fn a_failed_connection_leaves_a_clean_pane() {
         "#{alternate_on} #{mouse_any_flag}",
     ]);
     assert_eq!(flags.trim(), "0 0");
+    // Going there again replaces the paused connection with a fresh one.
+    assert!(is_paused(&tmux, "=finca-pi:"));
+    let live = script(d.path(), "live ssh", "echo CONNECTED; sleep 30");
+    let fresh = with_env(&live, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap();
+    assert!(fresh, "the paused session is replaced");
+    for _ in 0..50 {
+        screen = show(&["capture-pane", "-p", "-t", "=finca-pi:"]);
+        if screen.contains("CONNECTED") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    assert!(screen.contains("CONNECTED"), "{screen}");
+    assert!(!is_paused(&tmux, "=finca-pi:"));
+    let again = with_env(&live, d.path(), || ensure_finca_session(&tmux, &f, &f.ssh)).unwrap();
+    assert!(!again, "a live connection is kept");
 }
 
 #[test]
