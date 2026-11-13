@@ -279,7 +279,9 @@ the sessions you're working in, from every project, both Claude accounts and
 your fincas, each with where it lives and its state. `1`–`9` jump straight
 to a pin from anywhere on the dashboard (except the TODO list). Tab or `k`
 from the top of Sessions moves into the box, where `Enter` jumps, `p`
-unpins and `x` kills. `o` there changes the box's order, saved as
+unpins and `x` kills. Moving through the pins selects each one's project
+(or finca), so the Sessions and TODO panes below show that pin's. `o`
+there changes the box's order, saved as
 `pin_order`: **added** (the order you pinned them, the default),
 **account** (by Claude account or finca, then project) or **recent**
 (latest activity first, like the Sessions list). The numbers follow the

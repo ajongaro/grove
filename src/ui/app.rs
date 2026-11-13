@@ -514,6 +514,9 @@ impl App {
     /// Re-reads projects and sessions, keeping the selection on the same
     /// project/session when they still exist.
     pub fn reload(&mut self, store: &Store) {
+        if self.pane == Pane::Pinned {
+            self.follow_pin();
+        }
         let keep_project = self.selected_project().map(|p| p.slug.clone());
         let keep_finca = self.selected_finca().map(|f| f.slug.clone());
         let keep_session = self.selected_session().map(|s| s.id.clone());
@@ -656,6 +659,39 @@ impl App {
             Some(slug) => self.todos.load(&store.read_todos(slug)),
             None if self.pane == Pane::Todo => self.pane = Pane::Projects,
             None => {}
+        }
+    }
+
+    /// In the Pinned box, the left pane follows the pin under the cursor:
+    /// its project (and the session in it), or its finca. So the sessions
+    /// and TODO list below are the pin's.
+    fn follow_pin(&mut self) {
+        let Some(row) = self.pinned_rows().into_iter().nth(self.pin_idx) else {
+            return;
+        };
+        match &row.pin.finca {
+            None => {
+                let Some(at) = self.projects.iter().position(|p| p.slug == row.project) else {
+                    return;
+                };
+                if self.proj_idx != at {
+                    self.proj_idx = at;
+                    self.sess_idx = 0;
+                }
+                if let Some(i) = self
+                    .visible_sessions()
+                    .iter()
+                    .position(|s| s.id == row.pin.id)
+                {
+                    self.sess_idx = i;
+                }
+            }
+            Some(slug) => {
+                if let Some(i) = self.fincas.iter().position(|f| &f.slug == slug) {
+                    self.proj_idx = self.projects.len() + i;
+                    self.sess_idx = 0;
+                }
+            }
         }
     }
 

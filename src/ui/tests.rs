@@ -4424,3 +4424,44 @@ fn the_theme_picker_scrolls_in_a_short_window() {
         "{out}"
     );
 }
+
+#[test]
+fn moving_through_pins_shows_each_pins_project_and_todo_list() {
+    let (_d, s, mut app) = with_fincas(
+        &["alpha", "beta"],
+        &[
+            session("a1", "alpha", "s1", State::YourTurn, Some("@1")),
+            session("b1", "beta", "s1", State::Working, Some("@2")),
+            session("b2", "beta", "s2", State::YourTurn, Some("@3")),
+        ],
+        &["pi"],
+    );
+    poll(
+        &mut app,
+        "pi",
+        Reach::Reachable(remote_status("pi", 1, 0)),
+        t0(),
+    );
+    crate::pins::save(
+        &s.paths,
+        &[pin(None, "a1"), pin(None, "b2"), pin(Some("pi"), "pi-n0")],
+    )
+    .unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    app.reload(&s);
+    assert_eq!(app.todo_slug.as_deref(), Some("alpha"));
+    handle_key(&mut app, ch('j'));
+    app.reload(&s);
+    assert_eq!(app.todo_slug.as_deref(), Some("beta"));
+    assert_eq!(
+        app.selected_session().unwrap().id,
+        "b2",
+        "on the pinned session"
+    );
+    handle_key(&mut app, ch('j'));
+    app.reload(&s);
+    assert_eq!(app.selected_finca().map(|f| f.slug.as_str()), Some("pi"));
+    assert_eq!(app.todo_slug, None, "a finca has no TODO list here");
+}
