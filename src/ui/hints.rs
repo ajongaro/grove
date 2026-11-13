@@ -14,32 +14,43 @@ pub type Hint = (&'static str, &'static str);
 /// Always last, and kept when nothing else fits.
 pub const HELP: Hint = ("?", "help");
 
-/// The focused section's hints, and the color its title is drawn in.
+/// Keys that work from every list, after each section's own.
+const ANYWHERE: [Hint; 2] = [("v", "grid"), ("/", "find")];
+
+/// The focused section's hints, and the color its title is drawn in. Most
+/// needed first: a narrow footer drops them from the end.
 pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
     let p = pal();
+    let waiting = app.sessions.iter().any(|s| s.state == State::YourTurn);
     match app.pane {
-        Pane::Projects if app.selected_finca().is_some() => (
-            p.fincas,
-            vec![
+        Pane::Projects if app.selected_finca().is_some() => {
+            let mut h = vec![
                 ("enter", "connect"),
                 ("n", "new session there"),
                 ("s", "shell there"),
                 ("l", "its sessions"),
-                ("a", "add finca"),
-                ("K", "projects"),
-            ],
-        ),
+            ];
+            h.extend(ANYWHERE);
+            h.extend([("a", "add finca"), ("K", "projects")]);
+            (p.fincas, h)
+        }
         Pane::Projects => {
             let mut h = vec![
                 ("enter", "start"),
                 ("n", "named"),
                 ("s/S", "shell"),
                 ("t", "to-do"),
-                ("e", "edit"),
-                ("C", "clear ended"),
-                ("a", "add"),
-                ("d", "remove"),
             ];
+            h.extend(ANYWHERE);
+            if waiting {
+                h.push(("U", "restart waiting"));
+            }
+            h.extend([
+                ("e", "edit"),
+                ("a", "add"),
+                ("C", "clear ended"),
+                ("d", "remove"),
+            ]);
             if !app.fincas.is_empty() || app.groups().len() > 1 {
                 h.push(("J/K", "section"));
             }
@@ -53,70 +64,83 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             h.extend([("T", "theme"), ("B", "top bar")]);
             (p.accent, h)
         }
-        Pane::Pinned => (
-            p.key,
-            vec![
+        Pane::Pinned => {
+            let mut h = vec![
                 ("enter", "jump"),
                 ("1–9", "jump to pin"),
+                ("V", "desk"),
+                ("x", "kill"),
                 ("p", "unpin"),
                 ("o", "order"),
-                ("x", "kill"),
                 ("s", "shell"),
-                ("J", "sessions"),
-            ],
-        ),
-        Pane::Sessions if app.selected_finca().is_some() => (
-            p.fincas,
-            match app.selected_finca_item() {
-                Some(FincaItem::Shell(_)) => {
-                    vec![("enter", "open"), ("r", "rename"), ("h", "fincas")]
-                }
-                Some(FincaItem::Session { .. }) => {
-                    vec![
-                        ("enter", "jump"),
-                        ("p", "pin"),
-                        ("u", "restart"),
-                        ("n", "new"),
-                        ("s", "shell"),
-                        ("h", "fincas"),
-                    ]
-                }
+            ];
+            h.extend(ANYWHERE);
+            h.push(("J", "sessions"));
+            (p.key, h)
+        }
+        Pane::Sessions if app.selected_finca().is_some() => {
+            let mut h = match app.selected_finca_item() {
+                Some(FincaItem::Shell(_)) => vec![
+                    ("enter", "open"),
+                    ("r", "rename"),
+                    ("s", "shell"),
+                    ("n", "new session"),
+                ],
+                Some(FincaItem::Session { .. }) => vec![
+                    ("enter", "jump"),
+                    ("n", "new"),
+                    ("u", "restart"),
+                    ("p", "pin"),
+                    ("s", "shell"),
+                ],
                 None => vec![
                     ("enter", "connect"),
                     ("n", "new session there"),
                     ("s", "shell"),
-                    ("h", "fincas"),
                 ],
-            },
-        ),
-        Pane::Sessions if app.selected_shell().is_some() => (
-            p.shell,
-            vec![
+            };
+            h.extend(ANYWHERE);
+            h.push(("h", "fincas"));
+            (p.fincas, h)
+        }
+        Pane::Sessions if app.selected_shell().is_some() => {
+            let mut h = vec![
                 ("enter", "open"),
                 ("r", "rename"),
                 ("x", "close"),
                 ("S", "new shell"),
-            ],
-        ),
+                ("n", "new session"),
+            ];
+            h.extend(ANYWHERE);
+            if app.todo_slug.is_some() {
+                h.push(("J", "to-do"));
+            }
+            (p.shell, h)
+        }
         Pane::Sessions => {
             let mut h = match app.selected_session() {
                 Some(s) if s.state == State::Ended => vec![
                     ("enter", "resume"),
-                    ("r", "rename"),
-                    ("p", "pin"),
+                    ("n", "new"),
                     ("c", "clear it"),
                     ("C", "clear all ended"),
+                    ("r", "rename"),
+                    ("p", "pin"),
                 ],
                 Some(_) => vec![
                     ("enter", "jump"),
-                    ("p", "pin"),
+                    ("n", "new"),
                     ("r", "rename"),
+                    ("p", "pin"),
                     ("u", "restart"),
                     ("x", "kill"),
                 ],
-                None => vec![("enter", "start"), ("n", "named")],
+                None => vec![("enter", "start"), ("n", "named"), ("s/S", "shell")],
             };
-            h.extend([("v", "grid"), ("/", "find")]);
+            h.extend(ANYWHERE);
+            if waiting {
+                h.push(("U", "restart waiting"));
+            }
             if app.todo_slug.is_some() {
                 h.push(("J", "to-do"));
             }
@@ -124,16 +148,19 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
         }
         Pane::Todo => {
             let on_done = app.todos.items.get(app.todos.idx).is_some_and(|i| i.done);
-            let mut h = vec![("o", "add"), ("x", "done")];
+            let any_done = app.todos.items.iter().any(|i| i.done);
+            let mut h = vec![("n", "new"), ("enter/x", "done")];
             if on_done {
                 h.push(("c", "clear"));
             }
+            h.extend([("r", "edit"), ("d", "delete")]);
+            if any_done {
+                h.push(("C", "clear done"));
+            }
             h.extend([
-                ("i", "edit"),
-                ("dd", "delete"),
-                ("p", "paste"),
                 ("u", "undo"),
-                ("E", "vim"),
+                ("p", "paste"),
+                ("e", "editor"),
                 ("K", "sessions"),
             ]);
             (p.todo, h)

@@ -39,8 +39,11 @@ pub struct Todos {
     register: Option<Item>,
     /// Before the last change, for `u` (one level).
     undo: Option<Snapshot>,
-    /// First key of `dd`, `gg` or `cc`.
+    /// First key of `gg` or `cc`.
     pending: Option<char>,
+    /// The last key was a `d` that deleted: a second `d` (vim's `dd`) is
+    /// swallowed rather than deleting the next item too.
+    after_d: bool,
     /// Done items `c`/`C` cleared, waiting to be archived by the caller.
     cleared: Vec<Item>,
     insert: Option<Insert>,
@@ -103,6 +106,7 @@ impl Todos {
             return self.insert_key(key);
         }
         let pending = self.pending.take();
+        let after_d = std::mem::take(&mut self.after_d);
         // Raw mode delivers Ctrl-C as 'c': modified keys never edit.
         if key
             .modifiers
@@ -111,12 +115,17 @@ impl Todos {
             return Effect::Nothing;
         }
         match (pending, key.code) {
-            (Some('d'), KeyCode::Char('d')) => self.change(|t| {
-                if !t.items.is_empty() {
-                    t.register = Some(t.items.remove(t.idx));
-                    t.clamp();
-                }
-            }),
+            // d deletes at once; vim's `dd` is the same delete.
+            (_, KeyCode::Char('d')) if after_d => Effect::Nothing,
+            (_, KeyCode::Char('d')) => {
+                self.after_d = true;
+                self.change(|t| {
+                    if !t.items.is_empty() {
+                        t.register = Some(t.items.remove(t.idx));
+                        t.clamp();
+                    }
+                })
+            }
             (Some('g'), KeyCode::Char('g')) => {
                 self.idx = 0;
                 Effect::Nothing
@@ -145,7 +154,7 @@ impl Todos {
                 t.idx = before;
                 t.clamp();
             }),
-            (_, KeyCode::Char(c @ ('d' | 'g' | 'c'))) => {
+            (_, KeyCode::Char(c @ ('g' | 'c'))) => {
                 self.pending = Some(c);
                 Effect::Nothing
             }
@@ -161,10 +170,12 @@ impl Todos {
                 self.idx = self.items.len().saturating_sub(1);
                 Effect::Nothing
             }
-            (_, KeyCode::Char('o')) => self.begin_insert(Some(1), false),
+            // The keys the other panes use: n new, r rename (edit), Enter
+            // the main thing (done), e the editor. The vim keys still work.
+            (_, KeyCode::Char('n' | 'o')) => self.begin_insert(Some(1), false),
             (_, KeyCode::Char('O')) => self.begin_insert(Some(0), false),
-            (_, KeyCode::Char('i' | 'a' | 'A')) => self.begin_insert(None, false),
-            (_, KeyCode::Char('x' | ' ')) => self.change(|t| {
+            (_, KeyCode::Char('r' | 'i' | 'a' | 'A')) => self.begin_insert(None, false),
+            (_, KeyCode::Char('x' | ' ') | KeyCode::Enter) => self.change(|t| {
                 if let Some(i) = t.items.get_mut(t.idx) {
                     i.done = !i.done;
                 }
@@ -180,7 +191,7 @@ impl Todos {
                 }
                 None => Effect::Nothing,
             },
-            (_, KeyCode::Char('E')) => Effect::OpenEditor,
+            (_, KeyCode::Char('e' | 'E')) => Effect::OpenEditor,
             _ => Effect::Nothing,
         }
     }

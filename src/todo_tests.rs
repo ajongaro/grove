@@ -165,7 +165,8 @@ fn x_and_space_toggle_done() {
 fn dd_deletes_into_the_register_and_p_pastes_below() {
     let mut t = loaded("- [ ] a\n- [x] b\n- [ ] c\n");
     keys(&mut t, "j");
-    assert_eq!(keys(&mut t, "dd"), [Effect::Nothing, Effect::Changed]);
+    // d deletes at once; vim's dd is the same single delete.
+    assert_eq!(keys(&mut t, "dd"), [Effect::Changed, Effect::Nothing]);
     assert_eq!(texts(&t), ["a", "c"]);
     assert_eq!(t.idx, 1);
     assert_eq!(keys(&mut t, "p"), [Effect::Changed]);
@@ -206,11 +207,13 @@ fn u_undoes_the_last_change() {
 }
 
 #[test]
-fn a_different_key_cancels_a_pending_d_or_g() {
-    let mut t = loaded("- [ ] a\n- [ ] b\n");
-    keys(&mut t, "djd");
-    assert_eq!(texts(&t), ["a", "b"], "d j d is not dd");
-    assert_eq!(t.idx, 1);
+fn a_different_key_cancels_a_pending_g_and_d_deletes_each_time() {
+    let mut t = loaded("- [ ] a\n- [ ] b\n- [ ] c\n");
+    keys(&mut t, "gjg");
+    assert_eq!(t.idx, 1, "g j g is not gg");
+    // d, then another key, then d: two deletes.
+    keys(&mut t, "dkd");
+    assert_eq!(texts(&t), ["c"]);
 }
 
 #[test]
@@ -281,8 +284,8 @@ fn open_count_counts_unchecked_items() {
 fn at_top_only_on_the_first_item_with_nothing_half_typed() {
     let mut t = loaded("- [ ] a\n- [ ] b\n");
     assert!(t.at_top());
-    keys(&mut t, "d");
-    assert!(!t.at_top(), "a pending d must not let k leave the list");
+    keys(&mut t, "g");
+    assert!(!t.at_top(), "a pending g must not let k leave the list");
     keys(&mut t, "jk");
     assert!(t.at_top());
     keys(&mut t, "j");
@@ -407,4 +410,20 @@ fn shift_c_clears_every_done_item_keeping_the_cursor_on_its_item() {
     assert_eq!(cleared, ["a", "c", "e"]);
     // Nothing done: nothing happens.
     assert_eq!(keys(&mut t, "C"), [Effect::Nothing]);
+}
+
+// ---------- the keys the other panes use ----------
+
+#[test]
+fn n_adds_r_edits_enter_checks_off_and_e_opens_the_editor() {
+    let mut t = loaded("- [ ] a\n");
+    keys(&mut t, "nb");
+    press(&mut t, KeyCode::Enter);
+    assert_eq!(texts(&t), ["a", "b"]);
+    keys(&mut t, "r!");
+    press(&mut t, KeyCode::Enter);
+    assert_eq!(texts(&t), ["a", "b!"], "r edits the text, keeping it");
+    assert_eq!(press(&mut t, KeyCode::Enter), Effect::Changed);
+    assert_eq!(texts(&t), ["a", "x b!"]);
+    assert_eq!(keys(&mut t, "e"), [Effect::OpenEditor]);
 }

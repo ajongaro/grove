@@ -4137,7 +4137,7 @@ fn shift_j_in_the_todo_list_waits_for_a_half_typed_command() {
     let (_d, _s, mut app) = pinned_app();
     app.todos.load("- [ ] one\n");
     app.pane = Pane::Todo;
-    handle_key(&mut app, ch('d'));
+    handle_key(&mut app, ch('g'));
     handle_key(&mut app, shift('K'));
     assert_eq!(app.pane, Pane::Todo);
 }
@@ -4196,14 +4196,18 @@ fn the_footer_hints_follow_focus() {
         seen[0]
     );
     assert!(seen[1].contains("enter connect"), "{}", seen[1]);
-    assert!(seen[2].contains("p unpin"), "{}", seen[2]);
+    assert!(
+        seen[2].contains("p unpin") && seen[2].contains("V desk"),
+        "{}",
+        seen[2]
+    );
     assert!(
         seen[3].contains("enter jump") && seen[3].contains("x kill"),
         "{}",
         seen[3]
     );
     assert!(
-        seen[4].contains("o add") && seen[4].contains("x done"),
+        seen[4].contains("n new") && seen[4].contains("enter/x done") && seen[4].contains("r edit"),
         "{}",
         seen[4]
     );
