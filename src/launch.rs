@@ -286,6 +286,65 @@ pub fn resume_with_bin(
     Ok(session)
 }
 
+/// Sessions an earlier tmux server was running: live in the store but last
+/// updated before this server started at `server_start`, so their windows
+/// went with that server (a reboot, or the server killed). Window ids
+/// restart with a new server, so theirs may now name someone else's.
+pub fn orphans(sessions: &[Session], server_start: chrono::DateTime<chrono::Utc>) -> Vec<Session> {
+    sessions
+        .iter()
+        .filter(|s| s.state != State::Ended && s.updated_at < server_start)
+        .cloned()
+        .collect()
+}
+
+/// What `revive` did: sessions back in new windows, and the handles of
+/// those that couldn't come back (they're ended, as before).
+#[derive(Debug, Default, PartialEq)]
+pub struct Revived {
+    pub back: usize,
+    pub failed: Vec<String>,
+}
+
+/// Reopens the sessions the last tmux server took down, each resuming its
+/// conversation, so a reboot keeps your sessions and their pins.
+pub fn revive(tmux: &Tmux, store: &Store, cfg: &Config) -> Revived {
+    let Some(started) = tmux.server_started() else {
+        return Revived::default();
+    };
+    revive_with_bin(tmux, store, cfg, started, &claude_bin())
+}
+
+/// `revive` with the server's start and the program to run given.
+pub fn revive_with_bin(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    server_start: chrono::DateTime<chrono::Utc>,
+    bin: &str,
+) -> Revived {
+    let orphans = orphans(&store.list_sessions(None), server_start);
+    // All ended first (their old windows aren't closed: those ids may be
+    // new windows now), so none's name blocks another's.
+    for s in &orphans {
+        let mut ended = s.clone();
+        ended.state = State::Ended;
+        ended.message = None;
+        let _ = store.save_session(&ended);
+    }
+    let mut out = Revived::default();
+    for s in &orphans {
+        let back = store
+            .get_project(&s.project)
+            .and_then(|p| resume_with_bin(tmux, store, cfg, &p, &s.id, bin));
+        match back {
+            Ok(_) => out.back += 1,
+            Err(_) => out.failed.push(format!("{}:{}", s.project, s.name)),
+        }
+    }
+    out
+}
+
 /// Restarts live session `id`: closes its window and resumes its
 /// conversation in a new one, with the `claude` installed now (after an
 /// update, the new version). It keeps its id, name and history.

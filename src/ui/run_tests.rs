@@ -904,3 +904,25 @@ fn rename_shell_names_a_finca_shell() {
     assert_eq!(wins[0].name.as_deref(), Some("logs"));
     assert_eq!(window_name(tm, &w), "logs");
 }
+
+#[test]
+fn revived_message_says_what_came_back() {
+    use crate::launch::Revived;
+    assert_eq!(revived_message(&Revived::default()), None);
+    let one = Revived {
+        back: 1,
+        failed: vec![],
+    };
+    assert_eq!(
+        revived_message(&one).as_deref(),
+        Some("Brought back 1 session from before the restart")
+    );
+    let some = Revived {
+        back: 2,
+        failed: vec!["a:s1".into()],
+    };
+    assert_eq!(
+        revived_message(&some).as_deref(),
+        Some("Brought back 2 sessions from before the restart; couldn't resume a:s1")
+    );
+}

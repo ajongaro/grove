@@ -36,6 +36,10 @@ pub struct Config {
     /// Tell each new Claude session about the project's TODO list and to
     /// keep it current with Grove's get_todos / edit_todos tools.
     pub claude_todos: bool,
+    /// When Grove starts after a reboot (a new tmux server), reopen the
+    /// sessions that were running, resuming each conversation, so they and
+    /// their pins carry on.
+    pub revive_sessions: bool,
     /// The dashboard's stock ticker (ticker.rs). Off without a Finnhub key.
     pub ticker: TickerConfig,
     /// The dashboard's colors: `grove` (the default) or another theme by
@@ -118,6 +122,7 @@ impl Default for Config {
             statusline: true,
             update_check: true,
             claude_todos: true,
+            revive_sessions: true,
             ticker: TickerConfig::default(),
             theme: String::new(),
             header: Header::Full,

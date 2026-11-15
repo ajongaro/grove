@@ -418,6 +418,13 @@ impl Tmux {
         let _ = self.run(&["display-message", "-d", "4000", "-t", target, &literal(msg)]);
     }
 
+    /// When this server started (to the second); None when it isn't up.
+    pub fn server_started(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        let out = self.run(&["display-message", "-p", "#{start_time}"]).ok()?;
+        let secs: i64 = out.trim().parse().ok()?;
+        chrono::DateTime::from_timestamp(secs, 0)
+    }
+
     /// Whether this server is up (has any session).
     pub fn server_running(&self) -> bool {
         self.run(&["list-sessions"]).is_ok()

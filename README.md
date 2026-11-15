@@ -390,6 +390,15 @@ waiting on you (🌳), after asking. Sessions that are working or waiting on a
 permission answer are left alone, so nothing is cut off mid-turn; `u` them
 once they're done.
 
+### After a reboot
+
+A reboot takes tmux, and every session's window, with it. The next time
+Grove starts, it reopens each session that was running, resuming its
+conversation in a new window, so your sessions and pins carry on where they
+were. One with no saved conversation to resume stays ended, and the footer
+says which. `revive_sessions = false` in `config.toml` turns this off. The
+same goes for a finca once Grove starts there again.
+
 ### Top bar
 
 **`B`** cycles the top bar and saves your choice as `header` in
@@ -606,6 +615,7 @@ header = "full"                        # top bar: full, compact (one plain line)
 pin_order = "added"                    # Pinned box: added, account or recent (o cycles)
 update_check = true                    # once a day, ask GitHub whether a newer Grove is out
 claude_todos = true                    # tell new Claude sessions to keep the project's TODO list
+revive_sessions = true                 # after a reboot, reopen the sessions that were running
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```

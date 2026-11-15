@@ -690,3 +690,68 @@ fn restart_without_a_saved_conversation_leaves_the_session_running() {
     assert!(err.to_string().contains("can't be restarted"), "{err}");
     assert_eq!(store.get_session("grove-id").unwrap(), s);
 }
+
+#[test]
+fn orphans_are_live_sessions_from_before_the_server_started() {
+    let t = chrono::Utc::now();
+    let mk = |id: &str, state, ago: i64| Session {
+        id: id.into(),
+        project: "p".into(),
+        name: id.into(),
+        host: "local".into(),
+        tmux_window: Some("@1".into()),
+        state,
+        message: None,
+        conversation: None,
+        launch: None,
+        created_at: t,
+        updated_at: t - chrono::Duration::seconds(ago),
+    };
+    let sessions = vec![
+        mk("old-live", State::YourTurn, 60),
+        mk("old-ended", State::Ended, 60),
+        mk("new-live", State::Working, -5),
+    ];
+    let ids: Vec<String> = orphans(&sessions, t).into_iter().map(|s| s.id).collect();
+    assert_eq!(ids, vec!["old-live"]);
+}
+
+#[test]
+fn revive_resumes_sessions_the_last_server_took_down() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    store.save_project(&project(&e)).unwrap();
+    let tmux = Tmux::new(format!("grove-test-{}-revive", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    let started = tmux.server_started().expect("server start time");
+    // Live when the old server went down: one with a conversation to
+    // resume, one without.
+    for (id, name, saved) in [("back", "s1", true), ("lost", "s2", false)] {
+        ended(&e, &store, id, name, &format!("conv-{id}"), saved);
+        let mut s = store.get_session(id).unwrap();
+        s.state = State::YourTurn;
+        s.updated_at = started - chrono::Duration::minutes(5);
+        store.save_session(&s).unwrap();
+    }
+    let (stub, args_file) = recording_stub(&e);
+    let r = revive_with_bin(&tmux, &store, &cfg(&e), started, stub.to_str().unwrap());
+    let args = read_args(&args_file);
+    let windows = tmux.list_windows("grove").unwrap_or_default();
+    // Run again: nothing left to bring back.
+    let again = revive_with_bin(&tmux, &store, &cfg(&e), started, stub.to_str().unwrap());
+    tmux.kill_server();
+    assert_eq!(
+        r,
+        Revived {
+            back: 1,
+            failed: vec!["my-proj:s2".into()]
+        }
+    );
+    let back = store.get_session("back").unwrap();
+    assert_eq!(back.state, State::Starting);
+    assert!(windows.contains(back.tmux_window.as_ref().unwrap()));
+    assert!(args.lines().any(|a| a == "conv-back"), "{args}");
+    assert_eq!(store.get_session("lost").unwrap().state, State::Ended);
+    assert_eq!(again, Revived::default());
+}

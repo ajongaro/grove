@@ -752,6 +752,13 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
             known.join(", ")
         ));
     }
+    // Before the first reload, which would prune their pins.
+    if ctx.cfg.revive_sessions {
+        let r = crate::launch::revive(&ctx.tmux, &ctx.store, &ctx.cfg);
+        if let Some(msg) = revived_message(&r) {
+            app.footer = Some(msg);
+        }
+    }
     app.reload(&ctx.store);
     let feeds = Feeds {
         ticker: crate::ticker::Ticker::start(ctx.store.paths.clone()),
@@ -765,6 +772,24 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     let result = event_loop(&ctx, &mut app, &mut terminal, &rx, &frx, &poller, &feeds);
     ratatui::restore();
     result
+}
+
+/// The footer after reviving sessions from before a restart; None when
+/// there were none.
+pub fn revived_message(r: &crate::launch::Revived) -> Option<String> {
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    match (r.back, r.failed.as_slice()) {
+        (0, []) => None,
+        (n, []) => Some(format!(
+            "Brought back {n} session{} from before the restart",
+            plural(n)
+        )),
+        (n, failed) => Some(format!(
+            "Brought back {n} session{} from before the restart; couldn't resume {}",
+            plural(n),
+            failed.join(", ")
+        )),
+    }
 }
 
 /// What background threads send the dashboard.
