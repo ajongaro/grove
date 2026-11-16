@@ -3,6 +3,14 @@
 A tmux dashboard for running and supervising Claude Code sessions across your
 projects.
 
+> [!NOTE]
+> **🤠 Grove grew out of [Yeehaw](https://github.com/Colmbus72/yeehaw)** by
+> [Colmbus72](https://github.com/Colmbus72), a terminal dashboard for managing
+> projects, servers and deployments ("Infrastructure as Farm"). Grove started
+> as a smaller take on it. Its idea of running Claude Code in tmux windows
+> behind one dashboard, its session grid, and its other machines (Grove's
+> fincas) all come from Yeehaw. Go give it a star.
+
 ![The Grove dashboard: projects, pinned sessions, sessions, a TODO list and fincas](docs/screenshot.png)
 
 - **Projects:** each has a folder, a color and a one-line summary.
