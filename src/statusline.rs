@@ -520,6 +520,7 @@ mod tests {
                 conversation: None,
                 launch: None,
                 agent: Default::default(),
+                unseen: false,
                 created_at: now,
                 updated_at: now,
             })

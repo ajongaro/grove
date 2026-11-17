@@ -110,14 +110,38 @@ pub struct Session {
     /// session's id without dashes (`opencode_session`).
     #[serde(default, skip_serializing_if = "Agent::is_claude")]
     pub agent: Agent,
+    /// A turn ended and it hasn't been on screen since: "done" rather than
+    /// "your turn". Set by its hooks, cleared by the dashboard once its
+    /// window is in a focused terminal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unseen: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
+/// How a session that finished a turn you haven't seen yet shows.
+pub const DONE_GLYPH: &str = "🍎";
+pub const DONE_LABEL: &str = "done";
+
 impl Session {
+    /// Its glyph and label on the dashboard: `state`'s, or done's.
+    pub fn shown(&self) -> (&'static str, &'static str) {
+        shown(self.state, self.unseen)
+    }
+
     /// The conversation to resume: the first one has the session's own id.
     pub fn conversation_id(&self) -> &str {
         self.conversation.as_deref().unwrap_or(&self.id)
+    }
+}
+
+/// The glyph and label of `state`, or done's when a finished turn is
+/// `unseen`.
+pub fn shown(state: State, unseen: bool) -> (&'static str, &'static str) {
+    if unseen && state == State::YourTurn {
+        (DONE_GLYPH, DONE_LABEL)
+    } else {
+        (state.glyph(), state.label())
     }
 }
 
@@ -172,6 +196,7 @@ mod tests {
             conversation: Some("def".into()),
             launch: None,
             agent: Default::default(),
+            unseen: false,
             ..s
         };
         assert_eq!(s.conversation_id(), "def");

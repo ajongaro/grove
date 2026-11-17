@@ -449,6 +449,7 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         conversation: None,
         launch: None,
         agent: Default::default(),
+        unseen: false,
         created_at: now,
         updated_at: now,
     };
@@ -825,4 +826,125 @@ fn scope_follows_config_edits_without_a_restart() {
     .unwrap();
     let after = m.do_list_projects().unwrap();
     assert!(!after.contains("alpha"), "{after}");
+}
+
+fn quick(grace_ms: u64) -> WaitTiming {
+    WaitTiming {
+        poll: std::time::Duration::from_millis(10),
+        grace: std::time::Duration::from_millis(grace_ms),
+    }
+}
+
+/// Sets session `id`'s state (and message) as a hook would, after `ms`.
+fn later(
+    t: &T,
+    id: &str,
+    ms: u64,
+    state: State,
+    message: Option<&str>,
+) -> std::thread::JoinHandle<()> {
+    let store = t.store.clone();
+    let (id, message) = (id.to_string(), message.map(str::to_string));
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+        let mut s = store.get_session(&id).unwrap();
+        s.state = state;
+        s.message = message;
+        s.updated_at = chrono::Utc::now();
+        store.save_session(&s).unwrap();
+    })
+}
+
+#[tokio::test]
+async fn wait_for_session_returns_when_its_turn_ends() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let s = add_session(&t, "alpha", "s1", State::Working, None);
+    let hook = later(&t, &s.id, 80, State::YourTurn, None);
+    let out = t
+        .do_wait_for_session("alpha:s1".into(), Some(10), quick(5000))
+        .await
+        .unwrap();
+    hook.join().unwrap();
+    assert!(out.starts_with("alpha:s1 finished its turn"), "{out}");
+}
+
+#[tokio::test]
+async fn wait_for_session_gives_a_just_prompted_session_time_to_start() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let s = add_session(&t, "alpha", "s1", State::YourTurn, None);
+    // The prompt lands (working), then it asks for permission.
+    let a = later(&t, &s.id, 60, State::Working, None);
+    let b = later(
+        &t,
+        &s.id,
+        150,
+        State::NeedsYou,
+        Some("Permission needed: Bash"),
+    );
+    let out = t
+        .do_wait_for_session("s1".into(), Some(10), quick(5000))
+        .await
+        .unwrap();
+    a.join().unwrap();
+    b.join().unwrap();
+    assert_eq!(out, "alpha:s1 needs you: Permission needed: Bash");
+}
+
+#[tokio::test]
+async fn wait_for_session_on_an_idle_session_returns_after_the_grace() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    add_session(&t, "alpha", "s1", State::YourTurn, None);
+    let started = std::time::Instant::now();
+    let out = t
+        .do_wait_for_session("s1".into(), Some(10), quick(100))
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+    assert!(out.contains("finished its turn"), "{out}");
+}
+
+#[tokio::test]
+async fn wait_for_session_says_when_it_gave_up_or_the_session_ended() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let s = add_session(&t, "alpha", "s1", State::Working, None);
+    let out = t
+        .do_wait_for_session("s1".into(), Some(1), quick(10))
+        .await
+        .unwrap();
+    assert!(out.contains("still working after 1s"), "{out}");
+    let end = later(&t, &s.id, 30, State::Ended, None);
+    let out = t
+        .do_wait_for_session("s1".into(), Some(10), quick(5000))
+        .await
+        .unwrap();
+    end.join().unwrap();
+    assert_eq!(out, "alpha:s1 has ended.");
+}
+
+#[tokio::test]
+async fn a_session_cant_wait_for_itself() {
+    let mut t = mcp(None);
+    add(&t, "alpha");
+    let s = add_session(&t, "alpha", "s1", State::Working, None);
+    t.m.own_session = Some(s.id);
+    assert!(
+        t.do_wait_for_session("s1".into(), Some(1), quick(10))
+            .await
+            .is_err()
+    );
+}
+
+#[test]
+fn list_sessions_says_done_for_a_finished_turn_not_yet_seen() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    let mut s = add_session(&t, "alpha", "s1", State::YourTurn, None);
+    s.unseen = true;
+    t.store.save_session(&s).unwrap();
+    let out = t.do_list_sessions(None).unwrap();
+    assert!(out.contains("alpha:s1 — done"), "{out}");
 }

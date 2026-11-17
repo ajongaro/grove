@@ -555,11 +555,12 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                     lines.push(Line::raw(project.clone()).bold());
                 }
                 let color = state_color(s.state);
+                let (glyph, label) = crate::model::shown(s.state, s.unseen);
                 lines.push(mark(
                     Line::from(vec![
-                        Span::styled(format!("  {} ", s.state.glyph()), Style::new().fg(color)),
+                        Span::styled(format!("  {glyph} "), Style::new().fg(color)),
                         Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
-                        Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
+                        Span::styled(format!("{label:<10}"), Style::new().fg(color)),
                         Span::raw(format!(" · {}", format_age(s.updated_at, now))).fg(pal().dim),
                         Span::raw(if s.agent.is_claude() {
                             String::new()
@@ -657,10 +658,11 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
         .iter()
         .map(|s| {
             let color = state_color(s.state);
+            let (glyph, label) = s.shown();
             let mut spans = vec![
-                Span::styled(format!("{} ", s.state.glyph()), Style::new().fg(color)),
+                Span::styled(format!("{glyph} "), Style::new().fg(color)),
                 Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
-                Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
+                Span::styled(format!("{label:<10}"), Style::new().fg(color)),
                 Span::raw(format!(" · {:<4}", format_age(s.updated_at, now))).fg(pal().dim),
             ];
             if let Some(st) = app.stats.get(&s.id) {
@@ -1284,13 +1286,16 @@ fn render_pinned(
             } else if r.shell {
                 (pal().shell, "shell")
             } else {
-                (state_color(r.state), r.state.label())
+                (
+                    state_color(r.state),
+                    crate::model::shown(r.state, r.unseen).1,
+                )
             };
             // "$" and two spaces: as wide as a glyph and its space.
             let icon = if r.shell {
                 "$ ".to_string()
             } else {
-                r.state.glyph().to_string()
+                crate::model::shown(r.state, r.unseen).0.to_string()
             };
             let age = if r.shell {
                 String::new()

@@ -595,6 +595,7 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
             flagged.remove(w);
         }
     }
+    mark_seen(ctx, &ctx.tmux.focused_windows())?;
     for s in ctx.store.list_sessions(None) {
         let Some(w) = s.tmux_window.as_ref().filter(|w| windows.contains(w)) else {
             continue;
@@ -605,6 +606,29 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
         }
         ctx.tmux.rename_window(w, &window_title(&s))?;
         flagged.insert(w.clone(), want);
+    }
+    Ok(())
+}
+
+/// Clears "done" from each session whose window is on screen in a focused
+/// terminal (`on_screen`): you've seen how its turn ended. Its updated_at
+/// stays: nothing happened in the session.
+pub fn mark_seen(ctx: &Ctx, on_screen: &[String]) -> Result<()> {
+    for s in ctx.store.list_sessions(None) {
+        if !s.unseen
+            || !s
+                .tmux_window
+                .as_ref()
+                .is_some_and(|w| on_screen.contains(w))
+        {
+            continue;
+        }
+        // Read again just before writing, so a hook's state from meanwhile
+        // isn't written over.
+        if let Some(mut fresh) = ctx.store.get_session(&s.id).filter(|f| f.unseen) {
+            fresh.unseen = false;
+            ctx.store.save_session(&fresh)?;
+        }
     }
     Ok(())
 }

@@ -418,6 +418,8 @@ pub struct PinRow {
     pub unreachable: bool,
     /// A pinned shell rather than a session: `window` is its window here.
     pub shell: bool,
+    /// Its session finished a turn not yet seen ("done").
+    pub unseen: bool,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -973,6 +975,7 @@ impl App {
                         name,
                         // Shells have no state; sorted by recent, they go last.
                         state: State::YourTurn,
+                        unseen: false,
                         updated_at: DateTime::<Utc>::MIN_UTC,
                         message: None,
                         window: Some(pin.id.clone()),
@@ -995,6 +998,7 @@ impl App {
                         project: s.project.clone(),
                         name: s.name.clone(),
                         state: s.state,
+                        unseen: s.unseen,
                         updated_at: s.updated_at,
                         message: s.message.clone(),
                         window: s.tmux_window.clone(),
@@ -1015,6 +1019,7 @@ impl App {
                                 .map(|s| (p.name.clone(), s))
                         });
                     let unreachable = !matches!(f.reach, Some(crate::finca::Reach::Reachable(_)));
+                    let unseen = found.as_ref().is_some_and(|(_, s)| s.unseen);
                     let (project, name, state, updated_at, message, window) = match found {
                         Some((project, s)) => (
                             project,
@@ -1051,6 +1056,7 @@ impl App {
                         window,
                         unreachable,
                         shell: false,
+                        unseen,
                     })
                 }
             })

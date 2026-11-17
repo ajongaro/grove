@@ -26,6 +26,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         conversation: None,
         launch: None,
         agent: Default::default(),
+        unseen: false,
         created_at: t0(),
         updated_at: t0(),
     }
@@ -628,6 +629,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             id: Some(format!("{host}-n{i}")),
             name: format!("n{i}"),
             agent: Default::default(),
+            unseen: false,
             state: State::NeedsYou,
             message: Some("Permission needed: Bash".into()),
             updated_at: t0(),
@@ -640,6 +642,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             id: Some(format!("{host}-w{i}")),
             name: format!("w{i}"),
             agent: Default::default(),
+            unseen: false,
             state: State::Working,
             message: None,
             updated_at: t0(),
@@ -4087,6 +4090,7 @@ fn search_reaches_finca_sessions_live_and_ended() {
         id: Some("old-id".into()),
         name: "migrate".into(),
         agent: Default::default(),
+        unseen: false,
         state: State::Ended,
         message: None,
         updated_at: t0(),
@@ -4630,5 +4634,33 @@ fn r_on_a_pin_renames_its_session() {
             .as_deref()
             .unwrap_or("")
             .contains("renamed there")
+    );
+}
+
+#[test]
+fn a_finished_turn_not_yet_seen_shows_as_done() {
+    let mut done = session("2", "alpha", "fresh", State::YourTurn, Some("@2"));
+    done.unseen = true;
+    let (_d, _s, app) = loaded(
+        &["alpha"],
+        &[
+            session("1", "alpha", "seen", State::YourTurn, Some("@1")),
+            done,
+        ],
+    );
+    let s = screen(&app, 100, 15);
+    let row = |name: &str| {
+        s.lines()
+            .find(|l| l.contains(name))
+            .unwrap_or_else(|| panic!("no {name}\n{s}"))
+            .to_string()
+    };
+    assert!(
+        row("fresh").contains("🍎 fresh") && row("fresh").contains("done"),
+        "{s}"
+    );
+    assert!(
+        row("seen").contains("🌳 seen") && row("seen").contains("your turn"),
+        "{s}"
     );
 }

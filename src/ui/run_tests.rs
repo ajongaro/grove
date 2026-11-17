@@ -47,6 +47,7 @@ fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session 
         conversation: None,
         launch: None,
         agent: Default::default(),
+        unseen: false,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }
@@ -500,6 +501,7 @@ fn observe_names_local_and_finca_sessions() {
                 id: None,
                 name: "2".into(),
                 agent: Default::default(),
+                unseen: false,
                 state: State::NeedsYou,
                 message: None,
                 updated_at: chrono::Utc::now(),
@@ -969,4 +971,22 @@ fn pinned_shells_come_back_after_a_reboot_under_their_names() {
     assert_eq!(pins[1].id, shells[0].id);
     // Once the pins are saved under this server, nothing more opens.
     assert_eq!(revive_shell_pins(&t.ctx, started), 0);
+}
+
+#[test]
+fn a_done_session_is_your_turn_once_its_window_is_on_screen() {
+    let t = setup("seen");
+    let s = &t.ctx.store;
+    let mut a = sess("a", "p", State::YourTurn, Some("@1"));
+    a.unseen = true;
+    let mut b = sess("b", "p", State::YourTurn, Some("@2"));
+    b.unseen = true;
+    s.save_session(&a).unwrap();
+    s.save_session(&b).unwrap();
+    mark_seen(&t.ctx, &["@2".to_string()]).unwrap();
+    assert!(s.get_session("a").unwrap().unseen);
+    let b2 = s.get_session("b").unwrap();
+    assert!(!b2.unseen);
+    // Being looked at isn't something the session did.
+    assert_eq!(b2.updated_at, b.updated_at);
 }

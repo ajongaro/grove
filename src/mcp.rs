@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::mcp_overview;
-use crate::model::{Project, Session};
+use crate::model::{Project, Session, State};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
@@ -310,7 +310,7 @@ impl GroveMcp {
                     "- {}:{} — {} — {}{msg}",
                     p.slug(),
                     s.name,
-                    s.state.label(),
+                    s.shown().1,
                     mcp_overview::ago(s.updated_at, now)
                 )
             })
@@ -375,6 +375,65 @@ impl GroveMcp {
     }
 
     /// Types `text` into a session that's waiting for its next message.
+    /// Waits until session `session` stops working: its turn ends, it needs
+    /// you, or it ends. A session not working when asked gets `timing.grace`
+    /// to start (a prompt just sent takes a moment to land), so "send, then
+    /// wait" doesn't return the turn before. Gives up after `timeout_seconds`
+    /// (default 300, max 1800) and says it's still going.
+    pub async fn do_wait_for_session(
+        &self,
+        session: String,
+        timeout_seconds: Option<u64>,
+        timing: WaitTiming,
+    ) -> Result<String, String> {
+        let (s, p) = self.session(&session)?;
+        if self.own_session.as_deref() == Some(s.id.as_str()) {
+            return Err("that's this session itself; it can't wait for its own turn".into());
+        }
+        let handle = format!("{}:{}", p.slug(), s.name);
+        let timeout = std::time::Duration::from_secs(timeout_seconds.unwrap_or(300).clamp(1, 1800));
+        let asked = chrono::Utc::now();
+        let started = std::time::Instant::now();
+        loop {
+            let now = self.store.get_session(&s.id);
+            let state = now.as_ref().map_or(State::Ended, |n| n.state);
+            let moved = now.as_ref().is_some_and(|n| n.updated_at >= asked);
+            let stopped = !matches!(state, State::Working | State::Starting);
+            if stopped && (moved || started.elapsed() >= timing.grace || state == State::Ended) {
+                return Ok(self.waited(now, &p, &handle));
+            }
+            if started.elapsed() >= timeout {
+                return Ok(format!(
+                    "{handle} is still {} after {}s; call wait_for_session again to keep waiting.",
+                    state.label(),
+                    timeout.as_secs()
+                ));
+            }
+            tokio::time::sleep(timing.poll).await;
+        }
+    }
+
+    /// What `do_wait_for_session` reports once `s` has stopped.
+    fn waited(&self, s: Option<Session>, p: &Project, handle: &str) -> String {
+        let Some(s) = s.filter(|s| s.state != State::Ended) else {
+            return format!("{handle} has ended.");
+        };
+        let head = match s.state {
+            State::NeedsYou => format!(
+                "{handle} needs you: {}",
+                s.message.as_deref().unwrap_or("it's asking something")
+            ),
+            _ => format!("{handle} finished its turn; it's waiting for its next message."),
+        };
+        match self
+            .window(&s, p, handle)
+            .and_then(|w| self.tmux.capture(&w, 30).map_err(|e| format!("{e:#}")))
+        {
+            Ok(screen) => format!("{head}\n\nThe bottom of its screen:\n{}", screen.trim_end()),
+            Err(_) => head,
+        }
+    }
+
     pub fn do_send_prompt(&self, session: String, text: String) -> Result<String, String> {
         let (s, p) = self.session(&session)?;
         if self.own_session.as_deref() == Some(s.id.as_str()) {
@@ -548,6 +607,31 @@ pub struct SendPromptArgs {
     pub text: String,
 }
 
+/// How often `do_wait_for_session` looks, and how long it gives a session
+/// that isn't working yet to start.
+#[derive(Debug, Clone, Copy)]
+pub struct WaitTiming {
+    pub poll: std::time::Duration,
+    pub grace: std::time::Duration,
+}
+
+impl Default for WaitTiming {
+    fn default() -> Self {
+        Self {
+            poll: std::time::Duration::from_secs(1),
+            grace: std::time::Duration::from_secs(10),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WaitForSessionArgs {
+    /// The session: project:name as list_sessions shows it, a name, or an id.
+    pub session: String,
+    /// How long to wait at most, in seconds (default 300, max 1800).
+    pub timeout_seconds: Option<u64>,
+}
+
 fn result(r: Result<String, String>) -> CallToolResult {
     match r {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
@@ -591,6 +675,19 @@ impl GroveMcp {
     )]
     fn send_prompt(&self, Parameters(a): Parameters<SendPromptArgs>) -> CallToolResult {
         result(self.do_send_prompt(a.session, a.text))
+    }
+
+    #[tool(
+        description = "Wait until a Grove session stops working: its turn ends, it needs you, or it ends. Returns which, with the bottom of its screen. Use after send_prompt or start_session to hand work to another session and pick up its answer."
+    )]
+    async fn wait_for_session(
+        &self,
+        Parameters(a): Parameters<WaitForSessionArgs>,
+    ) -> CallToolResult {
+        result(
+            self.do_wait_for_session(a.session, a.timeout_seconds, WaitTiming::default())
+                .await,
+        )
     }
 
     #[tool(description = "A Grove project's TODO list, numbered.")]

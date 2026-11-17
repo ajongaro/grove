@@ -197,8 +197,9 @@ that pane's color. On a narrow screen the rarer ones drop off; `?` lists
 them all.
 
 Sessions grow through their states: 🌱 **starting** → 🌿 **working** ⇄
-💧 **needs you** (a permission prompt; it wants watering) → 🌳 **your turn**
-(Claude finished) → 🍂 **ended**. A session that needs you also gets 💧 in
+💧 **needs you** (a permission prompt; it wants watering) → 🍎 **done**
+(Claude finished, and you haven't looked yet) → 🌳 **your turn** (once its
+window has been on your screen) → 🍂 **ended**. A session that needs you also gets 💧 in
 front of its tmux window name. The tmux status bar lists only the
 window you're in and the windows that need you (in red); the dashboard has the
 rest. Each project row counts its live
@@ -473,6 +474,7 @@ can see, edit or message the other's.
 | `update_project` | set a project's summary or color |
 | `start_session` | start a session in a project, with a first prompt |
 | `send_prompt` | send a prompt to a session that's waiting for you ("your turn") |
+| `wait_for_session` | wait until a session's turn ends (or it needs you, or ends), then see its screen: hand work to another session and pick up the answer |
 
 Claude asks before using a tool unless you've allowed it. Nothing answers
 permission prompts for you: a session that needs you still needs you.

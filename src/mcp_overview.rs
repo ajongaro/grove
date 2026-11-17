@@ -131,6 +131,7 @@ mod tests {
             conversation: None,
             launch: None,
             agent: Default::default(),
+            unseen: false,
             created_at: t,
             updated_at: t,
         }

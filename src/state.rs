@@ -67,6 +67,12 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
     Some((state, msg))
 }
 
+/// Whether moving `from` → `to` ends a turn you haven't seen yet ("done").
+/// Any other move clears that: the session is back at work, or asking.
+pub fn ends_turn(from: State, to: State) -> bool {
+    to == State::YourTurn && matches!(from, State::Working | State::NeedsYou)
+}
+
 /// An OpenCode event as Grove's plugin passes it on (runfiles.rs
 /// `opencode_plugin`): its `type` and `data`. Unknown fields are ignored.
 #[derive(Debug, Clone, Deserialize)]
@@ -130,6 +136,21 @@ pub fn next_opencode(current: State, ev: &OpenCodeEvent) -> Option<(State, Optio
         return None;
     }
     Some((state, msg))
+}
+
+#[cfg(test)]
+mod done_tests {
+    use super::*;
+
+    #[test]
+    fn a_turn_that_ends_is_done_and_nothing_else_is() {
+        assert!(ends_turn(State::Working, State::YourTurn));
+        assert!(ends_turn(State::NeedsYou, State::YourTurn));
+        assert!(!ends_turn(State::Starting, State::YourTurn));
+        assert!(!ends_turn(State::YourTurn, State::Working));
+        assert!(!ends_turn(State::Working, State::NeedsYou));
+        assert!(!ends_turn(State::Working, State::Ended));
+    }
 }
 
 #[cfg(test)]

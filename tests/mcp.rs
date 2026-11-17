@@ -63,7 +63,8 @@ fn mcp_lists_its_tools_and_answers_a_call() {
             "read_session",
             "send_prompt",
             "start_session",
-            "update_project"
+            "update_project",
+            "wait_for_session"
         ]
     );
 

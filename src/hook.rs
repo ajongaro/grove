@@ -49,6 +49,7 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
 
     match state::next(session.state, &ev) {
         Some((state, message)) => {
+            session.unseen = state::ends_turn(session.state, state);
             session.state = state;
             session.message = message;
         }
@@ -95,6 +96,7 @@ pub fn run_opencode_hook(store: &Store, input: &str) {
         return;
     }
     if let Some((state, message)) = state::next_opencode(session.state, &ev) {
+        session.unseen = state::ends_turn(session.state, state);
         session.state = state;
         session.message = message;
         save(store, &mut session);

@@ -193,6 +193,7 @@ mod tests {
                 conversation: None,
                 launch: None,
                 agent: Default::default(),
+                unseen: false,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
             })

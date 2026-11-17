@@ -354,3 +354,12 @@ fn opencode_events_from_a_subagent_or_an_earlier_run_are_ignored() {
     run_opencode_hook(&home(&dir), "execution_started", "run-1");
     assert_eq!(session(&dir)["state"], "your_turn");
 }
+
+#[test]
+fn a_turn_that_ends_is_done_until_seen_and_work_clears_it() {
+    let dir = setup("working");
+    run_hook(&home(&dir), &fixture("stop"));
+    assert_eq!(session(&dir)["unseen"], true);
+    run_hook(&home(&dir), &fixture("user_prompt_submit"));
+    assert_eq!(session(&dir).get("unseen"), None);
+}

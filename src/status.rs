@@ -55,6 +55,9 @@ pub struct SessionStatus {
     /// The agent it runs. Older Groves don't send it (they run Claude only).
     #[serde(default, skip_serializing_if = "crate::model::Agent::is_claude")]
     pub agent: crate::model::Agent,
+    /// It finished a turn nobody has looked at yet (model.rs `unseen`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unseen: bool,
 }
 
 /// Ended sessions reported per project.
@@ -87,6 +90,7 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
                 window: if live { s.tmux_window.clone() } else { None },
                 title: crate::titles::for_session(&store.paths, &cfg, &p.path, s),
                 agent: s.agent,
+                unseen: live && s.unseen,
             };
             let (live, ended): (Vec<_>, Vec<_>) = sessions
                 .iter()
@@ -182,6 +186,7 @@ mod tests {
             conversation: None,
             launch: None,
             agent: Default::default(),
+            unseen: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

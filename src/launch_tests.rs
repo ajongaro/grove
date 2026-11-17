@@ -178,6 +178,7 @@ fn next_session_name_skips_live_names() {
         conversation: None,
         launch: None,
         agent: Default::default(),
+        unseen: false,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -544,6 +545,7 @@ fn ended(e: &Env, store: &Store, id: &str, name: &str, conversation: &str, saved
             conversation: Some(conversation.into()),
             launch: None,
             agent: Default::default(),
+            unseen: false,
             created_at: now,
             updated_at: now,
         })
@@ -730,6 +732,7 @@ fn orphans_are_live_sessions_from_before_the_server_started() {
         conversation: None,
         launch: None,
         agent: Default::default(),
+        unseen: false,
         created_at: t,
         updated_at: t - chrono::Duration::seconds(ago),
     };
