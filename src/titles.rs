@@ -35,8 +35,23 @@ pub fn for_session(
     project_path: &Path,
     s: &Session,
 ) -> Option<String> {
+    if s.agent == crate::model::Agent::OpenCode {
+        // Its plugin passes titles on (hook.rs); there's no transcript to read.
+        let cached = std::fs::read_to_string(paths.run.join("titles").join(s.conversation_id()));
+        return cached.ok()?.strip_prefix("t:").map(str::to_string);
+    }
     let account = account_dir(&cfg.account_for(project_path)).ok()?;
     title(paths, &account, s.conversation_id())
+}
+
+/// Records conversation `id`'s title, as its agent named it.
+pub fn remember(paths: &Paths, id: &str, title: &str) {
+    let Some(title) = clean(title) else { return };
+    let cache = paths.run.join("titles").join(id);
+    if let Some(dir) = cache.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = crate::store::write_atomic(&cache, format!("t:{title}").as_bytes());
 }
 
 /// Conversation `id`'s title, from the cache when it can be.

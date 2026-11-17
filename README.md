@@ -514,6 +514,33 @@ move its folder and add it again.
 Without any `folder`, there's a single PROJECTS box and everything uses the
 default account.
 
+## OpenCode
+
+Grove can run [OpenCode](https://opencode.ai) (V2) sessions instead of
+Claude's, per project or for everything. In the project's file (`e` on it)
+or in `config.toml`:
+
+```toml
+agent = "opencode"                         # the default is "claude"
+```
+
+New sessions in that project then run OpenCode, and their rows say
+`opencode`. They behave like Claude's on the dashboard: working, needs you
+(with what it asks for) and your turn come from OpenCode's own events, and
+the row shows the title OpenCode gives the conversation. They also get the
+project's summary and TODO list and Grove's MCP tools. `u`, `U` and reboot
+revival reopen the same conversation, and pins, the grid and
+fincas work as for Claude.
+
+Grove starts each one as `opencode --standalone -s ses_<id>`, a private
+server for that window. A small plugin there passes OpenCode's events on to
+Grove. Plugin, MCP server and context go in `OPENCODE_CONFIG_CONTENT`, which
+OpenCode merges over your own config, so nothing of yours is edited. Your
+models, providers and permissions stay as you set them.
+
+Not yet: usage stats in the header (Claude only), more than one OpenCode
+account, and Codex.
+
 ## Fincas (other machines)
 
 A **finca** is another machine running its own Grove, such as a home
@@ -606,12 +633,13 @@ than `~/.claude`, set `claude_config_dir` in that machine's
 ```
 config.toml               settings (below)
 tmux.local.conf           your own tmux setup for Grove's server (optional)
-projects/<id>.toml        name (a free label), path, color, summary
+projects/<id>.toml        name (a free label), path, color, summary, agent
 todos/<id>.md             the project's TODO list (Markdown checklist)
 sessions/<uuid>.json      one per session: state, window, message
 stats/<uuid>.json         one per session: what its status line saw, per day
 fincas/<slug>.toml        name, ssh destination, backup, grove_bin, color
-run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf
+run/                      regenerated on every `grove` start: hooks.json, mcp.json, tmux.conf,
+                          opencode-plugin/
                           (titles/ caches what each conversation is about,
                           ticker.json the ticker's last prices, update.json
                           the last update check)
@@ -624,6 +652,7 @@ claude_config_dir = "~/.claude"        # CLAUDE_CONFIG_DIR for every session
 tmux_session = "grove"
 editor = ""                            # empty → $EDITOR → vi
 claude_args = []                       # e.g. ["--model", "opus"]
+agent = "claude"                       # or "opencode", for every project not naming its own
 alerts = true                          # desktop alerts when a session needs you
 statusline = true                      # Grove's status line in its sessions
 theme = "grove"                        # dashboard colors: see "Themes"

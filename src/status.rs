@@ -52,6 +52,9 @@ pub struct SessionStatus {
     /// What the conversation is about (titles.rs). Older Groves don't send it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The agent it runs. Older Groves don't send it (they run Claude only).
+    #[serde(default, skip_serializing_if = "crate::model::Agent::is_claude")]
+    pub agent: crate::model::Agent,
 }
 
 /// Ended sessions reported per project.
@@ -83,6 +86,7 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
                 updated_at: s.updated_at,
                 window: if live { s.tmux_window.clone() } else { None },
                 title: crate::titles::for_session(&store.paths, &cfg, &p.path, s),
+                agent: s.agent,
             };
             let (live, ended): (Vec<_>, Vec<_>) = sessions
                 .iter()
@@ -163,6 +167,7 @@ mod tests {
                 path: "/x".into(),
                 color: None,
                 summary: None,
+                agent: None,
             })
             .unwrap();
         }
@@ -176,6 +181,7 @@ mod tests {
             message: msg.map(str::to_string),
             conversation: None,
             launch: None,
+            agent: Default::default(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

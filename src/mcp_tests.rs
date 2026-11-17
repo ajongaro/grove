@@ -72,6 +72,7 @@ fn add_in(t: &T, name: &str, work: bool) {
             path,
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
 }
@@ -177,6 +178,7 @@ fn symlinked_path_into_the_work_folder_counts_as_work() {
             path: link,
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     assert!(t.do_list_projects().unwrap().contains("linked"));
@@ -446,6 +448,7 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: now,
         updated_at: now,
     };
@@ -805,6 +808,7 @@ fn scope_follows_config_edits_without_a_restart() {
             path: work.join("alpha"),
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     let env = |k: &str| (k == "GROVE_ACCOUNT").then(|| "default".to_string());

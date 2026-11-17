@@ -15,6 +15,7 @@ fn proj(name: &str) -> Project {
         path: "/tmp/x".into(),
         color: None,
         summary: None,
+        agent: None,
     }
 }
 
@@ -29,6 +30,7 @@ fn sess(id: &str, project: &str) -> Session {
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

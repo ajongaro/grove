@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 
 use crate::config::{Account, Config, Paths, account_dir};
-use crate::model::{Project, Session, State};
+use crate::model::{Agent, Project, Session, State, opencode_session};
 use crate::store::Store;
 use crate::tmux::Tmux;
 
@@ -24,16 +24,43 @@ pub struct LaunchSpec {
 pub const MAX_PROMPT: usize = 4000;
 
 pub fn claude_bin() -> String {
+    agent_bin(Agent::Claude)
+}
+
+/// `agent`'s program resolved to an absolute path via PATH, else its bare
+/// name.
+pub fn agent_bin(agent: Agent) -> String {
+    let name = agent.program();
     std::env::var_os("PATH")
         .and_then(|p| {
             std::env::split_paths(&p)
-                .map(|d| d.join("claude"))
+                .map(|d| d.join(name))
                 .find(|c| c.is_file())
         })
         .map(|c| c.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "claude".into())
+        .unwrap_or_else(|| name.into())
 }
 
+/// Where an OpenCode session's project context (summary and TODOs) is
+/// written at launch, for OpenCode's `instructions`.
+pub fn opencode_context(paths: &Paths, slug: &str) -> PathBuf {
+    paths.run.join("opencode").join(format!("{slug}.md"))
+}
+
+/// OpenCode's config for a Grove launch, passed in OPENCODE_CONFIG_CONTENT
+/// so no file of the user's is touched: Grove's plugin (its events drive
+/// the session's state), Grove's MCP server and the project's context.
+/// OpenCode merges it over the user's own config.
+pub fn opencode_config(paths: &Paths, slug: &str, grove_bin: &str) -> serde_json::Value {
+    let lossy = |p: PathBuf| p.to_string_lossy().into_owned();
+    serde_json::json!({
+        "plugins": [lossy(paths.run.join("opencode-plugin"))],
+        "mcp": { "servers": { "grove": { "type": "local", "command": [grove_bin, "mcp"] } } },
+        "instructions": [lossy(opencode_context(paths, slug))],
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_with_bin(
     cfg: &Config,
     paths: &Paths,
@@ -41,9 +68,12 @@ fn build_with_bin(
     session_id: &str,
     name: &str,
     prompt: Option<&str>,
+    agent: Agent,
     bin: &str,
 ) -> Result<LaunchSpec> {
-    build_spec(cfg, paths, project, session_id, None, name, prompt, bin)
+    build_spec(
+        cfg, paths, project, session_id, None, name, prompt, agent, bin,
+    )
 }
 
 /// `resume` names the conversation to reopen; without it, a new one starts
@@ -57,10 +87,10 @@ fn build_spec(
     resume: Option<&str>,
     name: &str,
     prompt: Option<&str>,
+    agent: Agent,
     bin: &str,
 ) -> Result<LaunchSpec> {
     let account = cfg.account_for(&project.path);
-    let account_path = account_dir(&account)?;
     if !project.path.is_dir() {
         bail!(
             "project directory {} does not exist",
@@ -70,6 +100,45 @@ fn build_spec(
     let slug = project.slug();
     let window_name = format!("{slug}:{name}");
     let lossy = |p: PathBuf| p.to_string_lossy().into_owned();
+    let prompt = prompt.map(str::trim).filter(|p| !p.is_empty());
+    if let Some(p) = prompt {
+        check_prompt(p, agent)?;
+    }
+    let mut env = vec![
+        ("GROVE_HOME".into(), lossy(paths.home.clone())),
+        ("GROVE_PROJECT".into(), slug.clone()),
+        ("GROVE_ACCOUNT".into(), account.name.clone()),
+        ("GROVE_SESSION".into(), session_id.into()),
+    ];
+    if agent == Agent::OpenCode {
+        // `--standalone`: its own server, a child of this window, so Grove's
+        // plugin sees the window's GROVE_SESSION and GROVE_LAUNCH (the shared
+        // background service wouldn't). `-s` creates the session if new.
+        let mut argv = vec![
+            bin.to_string(),
+            "--standalone".into(),
+            "-s".into(),
+            resume.map_or_else(|| opencode_session(session_id), str::to_string),
+        ];
+        if let Some(p) = prompt {
+            argv.extend(["--prompt".into(), p.to_string()]);
+        }
+        argv.push(lossy(project.path.clone()));
+        let grove = crate::runfiles::grove_exe().map_or_else(|_| "grove".into(), lossy);
+        env.push((
+            "OPENCODE_CONFIG_CONTENT".into(),
+            opencode_config(paths, &slug, &grove).to_string(),
+        ));
+        return Ok(LaunchSpec {
+            window_name,
+            account,
+            cwd: project.path.clone(),
+            env,
+            argv,
+        });
+    }
+    let account_path = account_dir(&account)?;
+    env.insert(0, ("CLAUDE_CONFIG_DIR".into(), lossy(account_path)));
     let mut argv = vec![
         bin.to_string(),
         if resume.is_some() {
@@ -87,43 +156,44 @@ fn build_spec(
         window_name.clone(),
     ];
     argv.extend(cfg.claude_args.iter().cloned());
-    // Claude's first message, as its last argument. `claude [options]
-    // [command] [prompt]` would read `--flag` as an option and a single word
-    // like `update` as a subcommand, so neither is allowed (the prompt can
-    // come from another Claude, through the MCP tools).
-    if let Some(p) = prompt.map(str::trim).filter(|p| !p.is_empty()) {
-        if p.starts_with('-') {
-            bail!("a first prompt can't start with \"-\"");
-        }
-        // Shell and slash commands would skip that session's permission prompts.
-        if p.starts_with('!') || p.starts_with('/') {
-            bail!("a first prompt can't start with \"!\" or \"/\"");
-        }
-        if p.len() > MAX_PROMPT {
-            bail!(
-                "a first prompt can be at most {MAX_PROMPT} bytes (this one is {}); start the session, then send the rest",
-                p.len()
-            );
-        }
-        if !p.contains(char::is_whitespace) {
-            bail!("a first prompt needs more than one word");
-        }
+    // Claude's first message, as its last argument.
+    if let Some(p) = prompt {
         argv.push(p.to_string());
     }
-    let account_name = account.name.clone();
     Ok(LaunchSpec {
         window_name,
         account,
         cwd: project.path.clone(),
-        env: vec![
-            ("CLAUDE_CONFIG_DIR".into(), lossy(account_path)),
-            ("GROVE_HOME".into(), lossy(paths.home.clone())),
-            ("GROVE_PROJECT".into(), slug),
-            ("GROVE_ACCOUNT".into(), account_name),
-            ("GROVE_SESSION".into(), session_id.into()),
-        ],
+        env,
         argv,
     })
+}
+
+/// Checks a first prompt `p` (trimmed, not empty) for `agent`.
+fn check_prompt(p: &str, agent: Agent) -> Result<()> {
+    // Shell and slash commands would skip that session's permission prompts
+    // (the prompt can come from another agent, through the MCP tools).
+    if p.starts_with('!') || p.starts_with('/') {
+        bail!("a first prompt can't start with \"!\" or \"/\"");
+    }
+    if p.len() > MAX_PROMPT {
+        bail!(
+            "a first prompt can be at most {MAX_PROMPT} bytes (this one is {}); start the session, then send the rest",
+            p.len()
+        );
+    }
+    // `claude [options] [command] [prompt]` would read `--flag` as an option
+    // and a single word like `update` as a subcommand. OpenCode's goes in
+    // `--prompt`'s value.
+    if agent == Agent::Claude {
+        if p.starts_with('-') {
+            bail!("a first prompt can't start with \"-\"");
+        }
+        if !p.contains(char::is_whitespace) {
+            bail!("a first prompt needs more than one word");
+        }
+    }
+    Ok(())
 }
 
 /// `s1`, `s2`, … — the lowest number not used by a live session.
@@ -166,7 +236,8 @@ pub fn start(
     name: Option<String>,
     prompt: Option<String>,
 ) -> Result<Session> {
-    start_with_bin(tmux, store, cfg, project, name, prompt, &claude_bin())
+    let bin = agent_bin(cfg.agent_for(project));
+    start_with_bin(tmux, store, cfg, project, name, prompt, &bin)
 }
 
 /// `start` with the program to run swapped out (tests use a stand-in).
@@ -192,6 +263,7 @@ pub fn start_with_bin(
         bail!("{slug} already has a session called {name}");
     }
     let id = uuid::Uuid::new_v4().to_string();
+    let agent = cfg.agent_for(project);
     // Validate everything before touching disk or tmux.
     let spec = build_with_bin(
         cfg,
@@ -200,10 +272,13 @@ pub fn start_with_bin(
         &id,
         &name,
         prompt.as_deref(),
+        agent,
         bin,
     )?;
 
     let now = chrono::Utc::now();
+    // Grove picks OpenCode's id up front, so it's known from the start.
+    let conversation = (agent == Agent::OpenCode).then(|| opencode_session(&id));
     let mut session = Session {
         id,
         project: slug,
@@ -212,8 +287,9 @@ pub fn start_with_bin(
         tmux_window: None,
         state: State::Starting,
         message: None,
-        conversation: None,
+        conversation,
         launch: None,
+        agent,
         created_at: now,
         updated_at: now,
     };
@@ -236,7 +312,25 @@ pub fn resume(
     project: &Project,
     id: &str,
 ) -> Result<Session> {
-    resume_with_bin(tmux, store, cfg, project, id, &claude_bin())
+    resume_with_bin(tmux, store, cfg, project, id, &session_bin(store, id))
+}
+
+/// The program session `id`'s agent runs.
+fn session_bin(store: &Store, id: &str) -> String {
+    agent_bin(store.get_session(id).map(|s| s.agent).unwrap_or_default())
+}
+
+/// Whether `s` has a conversation to go back to: Claude's is its saved
+/// transcript; OpenCode's id is Grove's own, and `-s` reopens it (or starts
+/// it afresh if nothing was said).
+fn can_resume(cfg: &Config, project: &Project, s: &Session) -> Result<bool> {
+    Ok(match s.agent {
+        Agent::Claude => {
+            let account = account_dir(&cfg.account_for(&project.path))?;
+            crate::titles::transcript(&account, s.conversation_id()).is_some()
+        }
+        Agent::OpenCode => true,
+    })
 }
 
 /// `resume` with the program to run swapped out (tests use a stand-in).
@@ -252,8 +346,7 @@ pub fn resume_with_bin(
         bail!("only an ended session can be resumed");
     };
     let conversation = old.conversation_id().to_string();
-    let account = account_dir(&cfg.account_for(&project.path))?;
-    if crate::titles::transcript(&account, &conversation).is_none() {
+    if !can_resume(cfg, project, &old)? {
         bail!("nothing to resume: {} never saved a conversation", old.name);
     }
     let mut session = old.clone();
@@ -272,6 +365,7 @@ pub fn resume_with_bin(
         Some(&conversation),
         &session.name,
         None,
+        old.agent,
         bin,
     )?;
     session.state = State::Starting;
@@ -312,16 +406,27 @@ pub fn revive(tmux: &Tmux, store: &Store, cfg: &Config) -> Revived {
     let Some(started) = tmux.server_started() else {
         return Revived::default();
     };
-    revive_with_bin(tmux, store, cfg, started, &claude_bin())
+    revive_with(tmux, store, cfg, started, &|s| agent_bin(s.agent))
 }
 
 /// `revive` with the server's start and the program to run given.
+#[cfg(test)]
 pub fn revive_with_bin(
     tmux: &Tmux,
     store: &Store,
     cfg: &Config,
     server_start: chrono::DateTime<chrono::Utc>,
     bin: &str,
+) -> Revived {
+    revive_with(tmux, store, cfg, server_start, &|_| bin.to_string())
+}
+
+fn revive_with(
+    tmux: &Tmux,
+    store: &Store,
+    cfg: &Config,
+    server_start: chrono::DateTime<chrono::Utc>,
+    bin: &dyn Fn(&Session) -> String,
 ) -> Revived {
     let orphans = orphans(&store.list_sessions(None), server_start);
     // All ended first (their old windows aren't closed: those ids may be
@@ -336,7 +441,7 @@ pub fn revive_with_bin(
     for s in &orphans {
         let back = store
             .get_project(&s.project)
-            .and_then(|p| resume_with_bin(tmux, store, cfg, &p, &s.id, bin));
+            .and_then(|p| resume_with_bin(tmux, store, cfg, &p, &s.id, &bin(s)));
         match back {
             Ok(_) => out.back += 1,
             Err(_) => out.failed.push(format!("{}:{}", s.project, s.name)),
@@ -355,7 +460,7 @@ pub fn restart(
     project: &Project,
     id: &str,
 ) -> Result<Session> {
-    restart_with_bin(tmux, store, cfg, project, id, &claude_bin())
+    restart_with_bin(tmux, store, cfg, project, id, &session_bin(store, id))
 }
 
 /// `restart` with the program to run swapped out (tests use a stand-in).
@@ -371,8 +476,7 @@ pub fn restart_with_bin(
         bail!("only a running session can be restarted");
     };
     // Check there's a conversation to come back to before closing anything.
-    let account = account_dir(&cfg.account_for(&project.path))?;
-    if crate::titles::transcript(&account, old.conversation_id()).is_none() {
+    if !can_resume(cfg, project, &old)? {
         bail!(
             "{} has no saved conversation yet, so it can't be restarted",
             old.name
@@ -394,6 +498,15 @@ fn open_window(
     // A token for this run, saved before Claude can send its first hook.
     let run = uuid::Uuid::new_v4().to_string();
     session.launch = Some(run.clone());
+    if session.agent == Agent::OpenCode {
+        // Read by OpenCode as `instructions` (opencode_config).
+        let file = opencode_context(&store.paths, &session.project);
+        let text = crate::hook::session_context(store, &session.project);
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&file, text)?;
+    }
     store.save_session(session)?;
     let mut env = spec.env.clone();
     env.push(("GROVE_LAUNCH".into(), run));

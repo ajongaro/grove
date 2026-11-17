@@ -96,7 +96,7 @@ pub fn run(paths: &Paths, probes: &Probes) -> Vec<Check> {
     accounts(&cfg, &mut out);
     mcp(&cfg, &mut out);
     let store = Store::new(paths.clone());
-    projects(&store, &cfg, &mut out);
+    projects(&store, &cfg, probes, &mut out);
     fincas(&store, probes, &mut out);
 
     let notifier = if cfg!(target_os = "macos") {
@@ -181,7 +181,7 @@ fn mcp(cfg: &Config, out: &mut Vec<Check>) {
     }
 }
 
-fn projects(store: &Store, cfg: &Config, out: &mut Vec<Check>) {
+fn projects(store: &Store, cfg: &Config, probes: &Probes, out: &mut Vec<Check>) {
     for r in store.list_projects() {
         match r {
             Err((path, e)) => out.push(check(
@@ -201,6 +201,20 @@ fn projects(store: &Store, cfg: &Config, out: &mut Vec<Check>) {
                             p.slug()
                         ),
                     ));
+                } else if cfg.agent_for(&p) == crate::model::Agent::OpenCode {
+                    if (probes.has)("opencode") {
+                        out.push(check(
+                            Level::Ok,
+                            what,
+                            format!("{} (opencode)", show(&p.path)),
+                        ));
+                    } else {
+                        out.push(check(
+                            Level::Fail,
+                            what,
+                            "runs OpenCode, which isn't on PATH; install it (opencode.ai)",
+                        ));
+                    }
                 } else {
                     let account = cfg.account_for(&p.path).name;
                     out.push(check(
@@ -285,6 +299,27 @@ mod tests {
     }
 
     #[test]
+    fn an_opencode_project_needs_opencode_on_path() {
+        let d = tempfile::tempdir().unwrap();
+        let paths = Paths::new(d.path().join("home"));
+        paths.ensure().unwrap();
+        std::fs::write(
+            paths.projects.join("oc.toml"),
+            format!(
+                "name = \"OC\"\npath = {:?}\nagent = \"opencode\"\n",
+                d.path().to_str().unwrap()
+            ),
+        )
+        .unwrap();
+        let mut probes = ok_probes();
+        assert_eq!(level_of(&run(&paths, &probes), "project OC"), Level::Ok);
+        let missing = |p: &str| p != "opencode";
+        probes.has = &missing;
+        let checks = run(&paths, &probes);
+        assert_eq!(level_of(&checks, "project OC"), Level::Fail);
+    }
+
+    #[test]
     fn warns_when_two_tmux_versions_could_start_groves_server() {
         let d = tempfile::tempdir().unwrap();
         let paths = Paths::new(d.path().join("home"));
@@ -349,6 +384,7 @@ mod tests {
             path: path.into(),
             color: None,
             summary: None,
+            agent: None,
         };
         store.add_project(&proj("here", d.path())).unwrap();
         store

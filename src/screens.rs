@@ -335,6 +335,7 @@ mod tests {
             message: None,
             conversation: None,
             launch: None,
+            agent: Default::default(),
             created_at: t,
             updated_at: t,
         }

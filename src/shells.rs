@@ -160,6 +160,7 @@ mod tests {
             path: root.clone(),
             color: None,
             summary: None,
+            agent: None,
         };
         let first = open(&tmux, "grove", &project, &sleeper).unwrap();
         let second = open(&tmux, "grove", &project, &sleeper).unwrap();

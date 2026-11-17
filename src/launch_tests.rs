@@ -1,6 +1,28 @@
 use super::*;
 use crate::model::State;
 
+/// A Claude launch (the glob import's 8-argument one takes the agent).
+fn build_with_bin(
+    cfg: &Config,
+    paths: &Paths,
+    project: &Project,
+    session_id: &str,
+    name: &str,
+    prompt: Option<&str>,
+    bin: &str,
+) -> Result<LaunchSpec> {
+    super::build_with_bin(
+        cfg,
+        paths,
+        project,
+        session_id,
+        name,
+        prompt,
+        Agent::Claude,
+        bin,
+    )
+}
+
 struct Env {
     _dir: tempfile::TempDir,
     claude_dir: PathBuf,
@@ -39,6 +61,7 @@ fn project(e: &Env) -> Project {
         path: e.proj_dir.clone(),
         color: Some("#2e8b57".into()),
         summary: None,
+        agent: None,
     }
 }
 
@@ -154,6 +177,7 @@ fn next_session_name_skips_live_names() {
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -519,6 +543,7 @@ fn ended(e: &Env, store: &Store, id: &str, name: &str, conversation: &str, saved
             message: None,
             conversation: Some(conversation.into()),
             launch: None,
+            agent: Default::default(),
             created_at: now,
             updated_at: now,
         })
@@ -704,6 +729,7 @@ fn orphans_are_live_sessions_from_before_the_server_started() {
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: t,
         updated_at: t - chrono::Duration::seconds(ago),
     };
@@ -754,4 +780,112 @@ fn revive_resumes_sessions_the_last_server_took_down() {
     assert!(args.lines().any(|a| a == "conv-back"), "{args}");
     assert_eq!(store.get_session("lost").unwrap().state, State::Ended);
     assert_eq!(again, Revived::default());
+}
+
+#[test]
+fn an_opencode_launch_runs_standalone_with_groves_plugin_mcp_and_context() {
+    let e = env();
+    let spec = super::build_with_bin(
+        &cfg(&e),
+        &e.paths,
+        &project(&e),
+        "1111-2222",
+        "s1",
+        // One word is fine: it's `--prompt`'s value, not a subcommand.
+        Some("hello"),
+        Agent::OpenCode,
+        "/b/opencode",
+    )
+    .unwrap();
+    assert_eq!(
+        spec.argv,
+        [
+            "/b/opencode",
+            "--standalone",
+            "-s",
+            "ses_11112222",
+            "--prompt",
+            "hello",
+            e.proj_dir.to_str().unwrap(),
+        ]
+    );
+    assert_eq!(env_val(&spec, "CLAUDE_CONFIG_DIR"), None);
+    assert_eq!(env_val(&spec, "GROVE_SESSION"), Some("1111-2222"));
+    let config: serde_json::Value =
+        serde_json::from_str(env_val(&spec, "OPENCODE_CONFIG_CONTENT").unwrap()).unwrap();
+    assert_eq!(
+        config["plugins"][0],
+        e.paths.run.join("opencode-plugin").to_str().unwrap()
+    );
+    assert_eq!(config["mcp"]["servers"]["grove"]["type"], "local");
+    assert_eq!(config["mcp"]["servers"]["grove"]["command"][1], "mcp");
+    assert_eq!(
+        config["instructions"][0],
+        opencode_context(&e.paths, "my-proj").to_str().unwrap()
+    );
+}
+
+#[test]
+fn an_opencode_first_prompt_still_cant_be_a_command() {
+    let e = env();
+    for p in ["/init", "!rm -rf x"] {
+        let err = super::build_with_bin(
+            &cfg(&e),
+            &e.paths,
+            &project(&e),
+            "u",
+            "s1",
+            Some(p),
+            Agent::OpenCode,
+            "opencode",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("can't start with"), "{p}: {err}");
+    }
+}
+
+#[test]
+fn an_opencode_project_starts_opencode_and_resumes_its_session_without_a_transcript() {
+    let e = env();
+    let store = Store::new(e.paths.clone());
+    let tmux = Tmux::new(format!("grove-test-{}-opencode", std::process::id()));
+    tmux.new_session_detached("grove", "dash", &e.proj_dir, &["sleep".into(), "30".into()])
+        .unwrap();
+    let mut p = project(&e);
+    p.agent = Some(Agent::OpenCode);
+    let (stub, args_file) = recording_stub(&e);
+    let bin = stub.to_str().unwrap();
+    let s = start_with_bin(&tmux, &store, &cfg(&e), &p, None, None, bin).unwrap();
+    let first = read_args(&args_file);
+    let context = std::fs::read_to_string(opencode_context(&e.paths, "my-proj"));
+    std::fs::remove_file(&args_file).unwrap();
+    let again = restart_with_bin(&tmux, &store, &cfg(&e), &p, &s.id, bin);
+    let second = read_args(&args_file);
+    tmux.kill_server();
+    let id = crate::model::opencode_session(&s.id);
+    assert_eq!(s.agent, Agent::OpenCode);
+    assert_eq!(s.conversation.as_deref(), Some(id.as_str()));
+    assert!(first.lines().any(|a| a == id), "{first}");
+    assert!(context.unwrap().starts_with("Grove project: my-proj"));
+    let again = again.unwrap();
+    assert_eq!(
+        (again.id.as_str(), again.agent),
+        (s.id.as_str(), Agent::OpenCode)
+    );
+    assert!(second.lines().any(|a| a == id), "{second}");
+}
+
+#[test]
+fn the_config_names_the_agent_unless_the_project_does() {
+    let mut c = Config::default();
+    let e = env();
+    let mut p = project(&e);
+    assert_eq!(c.agent_for(&p), Agent::Claude);
+    c.agent = Agent::OpenCode;
+    assert_eq!(c.agent_for(&p), Agent::OpenCode);
+    p.agent = Some(Agent::Claude);
+    assert_eq!(c.agent_for(&p), Agent::Claude);
+    let parsed: Project =
+        toml::from_str("name = \"x\"\npath = \"/x\"\nagent = \"opencode\"\n").unwrap();
+    assert_eq!(parsed.agent, Some(Agent::OpenCode));
 }

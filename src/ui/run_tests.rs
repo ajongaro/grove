@@ -46,6 +46,7 @@ fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session 
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }
@@ -238,6 +239,7 @@ fn new_session_for_missing_project_dir_is_an_error() {
             path: "/no/such".into(),
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     assert!(
@@ -264,6 +266,7 @@ fn project_shell_for_missing_project_dir_is_an_error() {
             path: "/no/such".into(),
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     let err = perform(
@@ -496,6 +499,7 @@ fn observe_names_local_and_finca_sessions() {
             sessions: vec![crate::status::SessionStatus {
                 id: None,
                 name: "2".into(),
+                agent: Default::default(),
                 state: State::NeedsYou,
                 message: None,
                 updated_at: chrono::Utc::now(),
@@ -792,6 +796,7 @@ fn new_shell_for_missing_project_dir_is_an_error() {
             path: "/no/such".into(),
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     let err = perform(

@@ -161,9 +161,13 @@ enum Cmd {
     /// print its new window (from another machine).
     #[command(hide = true)]
     RestartSession { session: String },
-    /// Internal: called by Claude Code hooks with the event JSON on stdin.
+    /// Internal: called by Claude Code hooks (or Grove's OpenCode plugin,
+    /// with `--agent opencode`) with the event JSON on stdin.
     #[command(hide = true)]
-    Hook,
+    Hook {
+        #[arg(long)]
+        agent: Option<String>,
+    },
     /// Internal: Claude Code's status line for Grove's sessions.
     #[command(hide = true)]
     Statusline,
@@ -219,7 +223,7 @@ fn main() {
     let cli = Cli::parse();
     let paths = Paths::from_env();
     match cli.cmd {
-        Some(Cmd::Hook) => run_hook(paths),
+        Some(Cmd::Hook { agent }) => run_hook(paths, agent.as_deref() == Some("opencode")),
         Some(Cmd::Statusline) => run_statusline(paths),
         Some(Cmd::Mcp {
             cmd: Some(McpCmd::Setup),
@@ -377,13 +381,17 @@ fn exit_on_err(r: Result<()>) {
     }
 }
 
-fn run_hook(paths: Paths) {
+fn run_hook(paths: Paths, opencode: bool) {
     // A Grove bug must never block Claude: swallow panics, exit 0.
     std::panic::set_hook(Box::new(|_| {}));
     let store = Store::new(paths);
     let result = std::panic::catch_unwind(|| {
         let mut input = String::new();
         let _ = std::io::stdin().read_to_string(&mut input);
+        if opencode {
+            hook::run_opencode_hook(&store, &input);
+            return None;
+        }
         hook::run_hook(&store, &input)
     });
     match result {

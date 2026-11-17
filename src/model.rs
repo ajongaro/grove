@@ -14,6 +14,9 @@ pub struct Project {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// The coding agent its sessions run; unset, config.toml's `agent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<Agent>,
     /// The project's file name (`projects/<id>.toml`), set when loaded. It's
     /// the project's identity: sessions, TODOs and tmux windows use it, so
     /// renaming (`name`) moves nothing. Unset, it's the slug of `name`.
@@ -24,6 +27,29 @@ pub struct Project {
 impl Project {
     pub fn slug(&self) -> String {
         self.id.clone().unwrap_or_else(|| slugify(&self.name))
+    }
+}
+
+/// The coding agent a session runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Agent {
+    #[default]
+    Claude,
+    OpenCode,
+}
+
+impl Agent {
+    pub fn is_claude(&self) -> bool {
+        *self == Agent::Claude
+    }
+
+    /// Its program, as found on PATH.
+    pub fn program(self) -> &'static str {
+        match self {
+            Agent::Claude => "claude",
+            Agent::OpenCode => "opencode",
+        }
     }
 }
 
@@ -80,6 +106,10 @@ pub struct Session {
     /// ignored rather than marking the new run ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch: Option<String>,
+    /// The agent it runs. OpenCode's conversation is `ses_` plus the
+    /// session's id without dashes (`opencode_session`).
+    #[serde(default, skip_serializing_if = "Agent::is_claude")]
+    pub agent: Agent,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -89,6 +119,12 @@ impl Session {
     pub fn conversation_id(&self) -> &str {
         self.conversation.as_deref().unwrap_or(&self.id)
     }
+}
+
+/// The OpenCode session id for Grove session `id`: OpenCode wants ids that
+/// start with `ses`, and `-s` creates one that doesn't exist yet.
+pub fn opencode_session(id: &str) -> String {
+    format!("ses_{}", id.replace('-', ""))
 }
 
 /// Lowercase; every run of non-alphanumerics becomes one `-`; trimmed.
@@ -135,6 +171,7 @@ mod tests {
         let s = Session {
             conversation: Some("def".into()),
             launch: None,
+            agent: Default::default(),
             ..s
         };
         assert_eq!(s.conversation_id(), "def");

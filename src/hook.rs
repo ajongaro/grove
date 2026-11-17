@@ -59,6 +59,48 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
     None
 }
 
+/// Applies one OpenCode event from Grove's plugin. Only the window's own
+/// session counts: subagents run in sessions of their own, in the same
+/// OpenCode, and their turns aren't this session's.
+pub fn run_opencode_hook(store: &Store, input: &str) {
+    let ev: state::OpenCodeEvent = match serde_json::from_str(input) {
+        Ok(ev) => ev,
+        Err(e) => {
+            log::error(
+                &store.paths,
+                "hook",
+                &format!("unparseable OpenCode event ({e}): {:.200}", input),
+            );
+            return;
+        }
+    };
+    let Some(mut session) = std::env::var("GROVE_SESSION")
+        .ok()
+        .and_then(|id| store.get_session(&id))
+    else {
+        return;
+    };
+    if let Some(current) = &session.launch
+        && std::env::var("GROVE_LAUNCH").ok().as_ref() != Some(current)
+    {
+        return;
+    }
+    if ev.data.session_id.as_deref() != Some(session.conversation_id()) {
+        return;
+    }
+    if ev.kind == "session.renamed" {
+        if let Some(title) = &ev.data.title {
+            crate::titles::remember(&store.paths, session.conversation_id(), title);
+        }
+        return;
+    }
+    if let Some((state, message)) = state::next_opencode(session.state, &ev) {
+        session.state = state;
+        session.message = message;
+        save(store, &mut session);
+    }
+}
+
 fn save(store: &Store, session: &mut crate::model::Session) {
     session.updated_at = chrono::Utc::now();
     if let Err(e) = store.save_session(session) {
@@ -72,7 +114,7 @@ fn save(store: &Store, session: &mut crate::model::Session) {
 
 /// A few lines Claude Code adds to the new session's context: the project
 /// and its summary.
-fn session_context(store: &Store, slug: &str) -> String {
+pub fn session_context(store: &Store, slug: &str) -> String {
     let (name, path, summary) = match store.get_project(slug) {
         Ok(p) => (p.name, p.path.display().to_string(), p.summary),
         Err(_) => (slug.to_string(), "unknown path".to_string(), None),

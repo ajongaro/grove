@@ -561,6 +561,12 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                         Span::raw(format!("{:<w$}", s.name, w = name_w)).bold(),
                         Span::styled(format!("{:<10}", s.state.label()), Style::new().fg(color)),
                         Span::raw(format!(" · {}", format_age(s.updated_at, now))).fg(pal().dim),
+                        Span::raw(if s.agent.is_claude() {
+                            String::new()
+                        } else {
+                            format!(" · {}", s.agent.program())
+                        })
+                        .fg(pal().dim),
                     ]),
                     i,
                 ));
@@ -659,6 +665,9 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>)
             ];
             if let Some(st) = app.stats.get(&s.id) {
                 spans.push(Span::raw(format!(" · {}", stats_label(st))).fg(pal().dim));
+            }
+            if !s.agent.is_claude() {
+                spans.push(Span::raw(format!(" · {}", s.agent.program())).fg(pal().dim));
             }
             let mut lines = vec![Line::from(spans)];
             // On its own line so long permission prompts aren't cut off.

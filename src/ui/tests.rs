@@ -25,6 +25,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         message: None,
         conversation: None,
         launch: None,
+        agent: Default::default(),
         created_at: t0(),
         updated_at: t0(),
     }
@@ -41,6 +42,7 @@ fn store_with(projects: &[&str], sessions: &[Session]) -> (tempfile::TempDir, St
                 path: format!("/code/{p}").into(),
                 color: None,
                 summary: None,
+                agent: None,
             })
             .unwrap();
     }
@@ -124,6 +126,7 @@ fn reload_keeps_selection_on_same_project() {
         path: "/a".into(),
         color: None,
         summary: None,
+        agent: None,
     })
     .unwrap();
     app.reload(&s);
@@ -624,6 +627,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
         sessions.push(SessionStatus {
             id: Some(format!("{host}-n{i}")),
             name: format!("n{i}"),
+            agent: Default::default(),
             state: State::NeedsYou,
             message: Some("Permission needed: Bash".into()),
             updated_at: t0(),
@@ -635,6 +639,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
         sessions.push(SessionStatus {
             id: Some(format!("{host}-w{i}")),
             name: format!("w{i}"),
+            agent: Default::default(),
             state: State::Working,
             message: None,
             updated_at: t0(),
@@ -1044,6 +1049,7 @@ fn reload_keeps_finca_selection_and_poll_state() {
         path: "/b".into(),
         color: None,
         summary: None,
+        agent: None,
     })
     .unwrap();
     app.reload(&s);
@@ -1179,6 +1185,7 @@ fn work_and_play(projects: &[(&str, &str)]) -> (tempfile::TempDir, Store, App) {
             path: path.into(),
             color: None,
             summary: None,
+            agent: None,
         })
         .unwrap();
     }
@@ -4079,6 +4086,7 @@ fn search_reaches_finca_sessions_live_and_ended() {
     st.projects[0].ended.push(SessionStatus {
         id: Some("old-id".into()),
         name: "migrate".into(),
+        agent: Default::default(),
         state: State::Ended,
         message: None,
         updated_at: t0(),
@@ -4478,6 +4486,7 @@ fn shift_j_skips_a_hidden_box() {
         path: "/w/acme".into(),
         color: None,
         summary: None,
+        agent: None,
     })
     .unwrap();
     crate::hidden::save(&s.paths, &["work".to_string()].into_iter().collect()).unwrap();

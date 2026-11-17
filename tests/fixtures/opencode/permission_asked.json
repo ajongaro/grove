@@ -1,0 +1,1 @@
+{"type":"permission.asked","data":{"id":"per_1eb4af7ab001kxYfyRm1Quxfwo","sessionID":"ses_11111111222233334444555555555555","action":"shell","resources":["echo hi > made.txt"],"save":["echo *"],"source":{"type":"tool","messageID":"msg_1eb4a6c87001Cay3iyhZUDjlmM","id":"call_vptek4kb"}}}

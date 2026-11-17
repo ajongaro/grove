@@ -53,6 +53,62 @@ pub fn hooks_json(grove_bin: &Path, statusline: bool) -> serde_json::Value {
     v
 }
 
+/// The OpenCode events Grove's plugin passes on to `grove hook --agent
+/// opencode` (state.rs `from_opencode` reads them).
+pub const OPENCODE_EVENTS: [&str; 7] = [
+    "session.execution.started",
+    "session.execution.succeeded",
+    "session.execution.failed",
+    "session.execution.interrupted",
+    "permission.asked",
+    "permission.replied",
+    "session.renamed",
+];
+
+/// Grove's OpenCode plugin (V2 API), loaded only by sessions Grove starts
+/// (launch.rs `opencode_config`). It hands each event above to `grove hook`
+/// in turn, waiting for each so they land in order, and never throws into
+/// OpenCode.
+pub fn opencode_plugin(grove_bin: &Path) -> String {
+    let bin = serde_json::to_string(&grove_bin.to_string_lossy()).expect("a string");
+    let events = serde_json::to_string(&OPENCODE_EVENTS).expect("strings");
+    format!(
+        r#"// Written by Grove: tells Grove what this OpenCode session is doing.
+import {{ spawn }} from "node:child_process"
+
+const GROVE = {bin}
+const EVENTS = new Set({events})
+
+function send(event) {{
+  return new Promise((done) => {{
+    try {{
+      const p = spawn(GROVE, ["hook", "--agent", "opencode"], {{ stdio: ["pipe", "ignore", "ignore"] }})
+      p.on("error", () => done())
+      p.on("close", () => done())
+      p.stdin.on("error", () => {{}})
+      p.stdin.end(JSON.stringify({{ type: event.type, data: event.data }}))
+    }} catch {{
+      done()
+    }}
+  }})
+}}
+
+export default {{
+  id: "grove",
+  async setup(ctx) {{
+    if (!process.env.GROVE_SESSION) return
+    ;(async () => {{
+      let queue = Promise.resolve()
+      for await (const event of ctx.event.subscribe({{}})) {{
+        if (EVENTS.has(event?.type)) queue = queue.then(() => send(event))
+      }}
+    }})().catch(() => {{}})
+  }},
+}}
+"#
+    )
+}
+
 pub fn mcp_json(grove_bin: &Path) -> serde_json::Value {
     json!({ "mcpServers": { "grove": { "command": grove_bin.to_string_lossy(), "args": ["mcp"] } } })
 }
@@ -276,6 +332,12 @@ pub fn write_all(
         &pretty(hooks_json(grove_bin, statusline))?,
     )?;
     write_atomic(&paths.run.join("mcp.json"), &pretty(mcp_json(grove_bin))?)?;
+    let plugin = paths.run.join("opencode-plugin");
+    std::fs::create_dir_all(&plugin)?;
+    write_atomic(
+        &plugin.join("server.js"),
+        opencode_plugin(grove_bin).as_bytes(),
+    )?;
     write_atomic(
         &paths.run.join("tmux.conf"),
         tmux_conf(
@@ -355,6 +417,21 @@ mod tests {
         let v = hooks_json(Path::new("/b/grove"), false);
         assert!(v.get("statusLine").is_none());
         assert!(v["hooks"].is_object());
+    }
+
+    #[test]
+    fn the_opencode_plugin_calls_this_grove_with_each_event() {
+        let js = opencode_plugin(Path::new("/it's \"odd\"/grove"));
+        assert!(
+            js.contains(r#"const GROVE = "/it's \"odd\"/grove""#),
+            "{js}"
+        );
+        assert!(js.contains(r#"["hook", "--agent", "opencode"]"#));
+        for ev in OPENCODE_EVENTS {
+            assert!(js.contains(&format!("\"{ev}\"")), "{ev}");
+        }
+        // Only in windows Grove started.
+        assert!(js.contains("if (!process.env.GROVE_SESSION) return"));
     }
 
     #[test]

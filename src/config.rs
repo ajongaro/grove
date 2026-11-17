@@ -24,6 +24,9 @@ pub struct Config {
     pub editor: String,
     /// Extra arguments appended to every `claude` launch.
     pub claude_args: Vec<String>,
+    /// The coding agent new sessions run, `claude` or `opencode`, unless
+    /// their project's file names another with `agent`.
+    pub agent: crate::model::Agent,
     /// Desktop alerts from the dashboard when a session needs you (here or
     /// on a finca). Turn off on a finca nobody sits at.
     pub alerts: bool,
@@ -118,6 +121,7 @@ impl Default for Config {
             tmux_session: "grove".into(),
             editor: String::new(),
             claude_args: Vec::new(),
+            agent: crate::model::Agent::Claude,
             alerts: true,
             statusline: true,
             update_check: true,
@@ -207,6 +211,11 @@ impl Config {
 
     /// The account a project at `path` runs on: the one whose `folder`
     /// contains it, else the default.
+    /// The agent `project`'s new sessions run.
+    pub fn agent_for(&self, project: &crate::model::Project) -> crate::model::Agent {
+        project.agent.unwrap_or(self.agent)
+    }
+
     pub fn account_for(&self, path: &Path) -> Account {
         let path = resolve(path);
         self.accounts

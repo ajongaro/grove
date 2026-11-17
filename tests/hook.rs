@@ -284,3 +284,73 @@ fn claude_todos_off_leaves_the_todo_list_out() {
     assert!(out.contains("Grove project: Demo"), "{out}");
     assert!(!out.contains("TODO"), "{out}");
 }
+
+/// `grove hook --agent opencode` from window run `launch` of session SID,
+/// whose OpenCode session is `ses_…` (model.rs `opencode_session`).
+fn run_opencode_hook(home: &Path, name: &str, launch: &str) {
+    let input = std::fs::read_to_string(format!(
+        "{}/tests/fixtures/opencode/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_grove"))
+        .args(["hook", "--agent", "opencode"])
+        .env("GROVE_HOME", home)
+        .env("GROVE_SESSION", SID)
+        .env("GROVE_LAUNCH", launch)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+}
+
+/// SID as an OpenCode session of run `run`, talking in `conversation`.
+fn opencode_session(dir: &tempfile::TempDir, conversation: &str, run: &str) {
+    let path = home(dir).join(format!("sessions/{SID}.json"));
+    let mut s = session(dir);
+    s["agent"] = "opencode".into();
+    s["conversation"] = conversation.into();
+    s["launch"] = run.into();
+    std::fs::write(path, s.to_string()).unwrap();
+}
+
+#[test]
+fn opencode_events_move_the_session_through_its_turn() {
+    let dir = setup("starting");
+    opencode_session(&dir, "ses_11111111222233334444555555555555", "run-1");
+    run_opencode_hook(&home(&dir), "execution_started", "run-1");
+    assert_eq!(session(&dir)["state"], "working");
+    run_opencode_hook(&home(&dir), "permission_asked", "run-1");
+    assert_eq!(session(&dir)["state"], "needs_you");
+    assert_eq!(session(&dir)["message"], "Permission needed: shell");
+    run_opencode_hook(&home(&dir), "permission_replied", "run-1");
+    assert_eq!(session(&dir)["state"], "working");
+    run_opencode_hook(&home(&dir), "execution_succeeded", "run-1");
+    assert_eq!(session(&dir)["state"], "your_turn");
+    run_opencode_hook(&home(&dir), "session_renamed", "run-1");
+    assert_eq!(
+        std::fs::read_to_string(home(&dir).join("run/titles/ses_11111111222233334444555555555555"))
+            .unwrap(),
+        "t:Shell command execution"
+    );
+}
+
+#[test]
+fn opencode_events_from_a_subagent_or_an_earlier_run_are_ignored() {
+    let dir = setup("your_turn");
+    // A subagent's session: another id in the same OpenCode.
+    opencode_session(&dir, "ses_parent", "run-1");
+    run_opencode_hook(&home(&dir), "execution_started", "run-1");
+    assert_eq!(session(&dir)["state"], "your_turn");
+    opencode_session(&dir, "ses_11111111222233334444555555555555", "run-2");
+    run_opencode_hook(&home(&dir), "execution_started", "run-1");
+    assert_eq!(session(&dir)["state"], "your_turn");
+}

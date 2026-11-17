@@ -1,4 +1,5 @@
-//! Pure mapping from a Claude Code hook event to a session state change.
+//! Pure mapping from an agent's event (a Claude Code hook, an OpenCode
+//! plugin event) to a session state change.
 
 use serde::Deserialize;
 
@@ -64,6 +65,151 @@ pub fn next(current: State, ev: &HookEvent) -> Option<(State, Option<String>)> {
         return None;
     }
     Some((state, msg))
+}
+
+/// An OpenCode event as Grove's plugin passes it on (runfiles.rs
+/// `opencode_plugin`): its `type` and `data`. Unknown fields are ignored.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenCodeEvent {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub data: OpenCodeData,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct OpenCodeData {
+    #[serde(rename = "sessionID", default)]
+    pub session_id: Option<String>,
+    /// permission.asked: what it asks to do (`shell`, `edit`, …).
+    #[serde(default)]
+    pub action: Option<String>,
+    /// session.renamed.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// session.execution.failed.
+    #[serde(default)]
+    pub error: Option<OpenCodeError>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct OpenCodeError {
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// `next` for an OpenCode event. A turn ("execution") runs from started to
+/// succeeded, failed or interrupted; a permission ask pauses it.
+pub fn next_opencode(current: State, ev: &OpenCodeEvent) -> Option<(State, Option<String>)> {
+    if current == State::Ended {
+        return None;
+    }
+    let (state, msg) = match ev.kind.as_str() {
+        "session.execution.started" | "permission.replied" => (State::Working, None),
+        "permission.asked" => (
+            State::NeedsYou,
+            Some(format!(
+                "Permission needed: {}",
+                ev.data.action.as_deref().unwrap_or("a tool")
+            )),
+        ),
+        "session.execution.succeeded" | "session.execution.interrupted" => (State::YourTurn, None),
+        "session.execution.failed" => (
+            State::YourTurn,
+            Some(
+                ev.data
+                    .error
+                    .as_ref()
+                    .and_then(|e| e.message.clone())
+                    .unwrap_or_else(|| "Turn ended with an error".into()),
+            ),
+        ),
+        _ => return None,
+    };
+    if state == current {
+        return None;
+    }
+    Some((state, msg))
+}
+
+#[cfg(test)]
+mod opencode_tests {
+    use super::*;
+
+    fn fixture(name: &str) -> OpenCodeEvent {
+        let path = format!(
+            "{}/tests/fixtures/opencode/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+    }
+
+    fn after(current: State, name: &str) -> Option<(State, Option<String>)> {
+        next_opencode(current, &fixture(name))
+    }
+
+    #[test]
+    fn a_turn_runs_from_started_to_its_end() {
+        assert_eq!(
+            after(State::Starting, "execution_started"),
+            Some((State::Working, None))
+        );
+        for end in ["execution_succeeded", "execution_interrupted"] {
+            assert_eq!(
+                after(State::Working, end),
+                Some((State::YourTurn, None)),
+                "{end}"
+            );
+        }
+        assert_eq!(
+            after(State::Working, "execution_failed"),
+            Some((
+                State::YourTurn,
+                Some("Response still truncated after two output token limit continuations".into())
+            ))
+        );
+    }
+
+    #[test]
+    fn a_permission_ask_needs_you_until_answered() {
+        assert_eq!(
+            after(State::Working, "permission_asked"),
+            Some((State::NeedsYou, Some("Permission needed: shell".into())))
+        );
+        assert_eq!(
+            after(State::NeedsYou, "permission_replied"),
+            Some((State::Working, None))
+        );
+    }
+
+    #[test]
+    fn other_events_and_ended_sessions_change_nothing() {
+        assert_eq!(after(State::Working, "session_renamed"), None);
+        assert_eq!(after(State::Working, "execution_started"), None);
+        assert_eq!(after(State::Ended, "execution_started"), None);
+    }
+
+    #[test]
+    fn every_fixture_names_its_session() {
+        for name in [
+            "execution_started",
+            "execution_succeeded",
+            "execution_interrupted",
+            "execution_failed",
+            "permission_asked",
+            "permission_replied",
+            "session_renamed",
+        ] {
+            assert!(
+                crate::runfiles::OPENCODE_EVENTS.contains(&fixture(name).kind.as_str()),
+                "{name} isn't passed on by the plugin"
+            );
+            assert_eq!(
+                fixture(name).data.session_id.as_deref(),
+                Some("ses_11111111222233334444555555555555")
+            );
+        }
+    }
 }
 
 #[cfg(test)]
