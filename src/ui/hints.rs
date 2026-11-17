@@ -65,11 +65,16 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             (p.accent, h)
         }
         Pane::Pinned => {
+            let on_shell = app.pinned_rows().get(app.pin_idx).is_some_and(|r| r.shell);
+            let (enter, x) = match on_shell {
+                true => (("enter", "open"), ("x", "close")),
+                false => (("enter", "jump"), ("x", "kill")),
+            };
             let mut h = vec![
-                ("enter", "jump"),
+                enter,
                 ("1–9", "jump to pin"),
                 ("V", "desk"),
-                ("x", "kill"),
+                x,
                 ("p", "unpin"),
                 ("r", "rename"),
                 ("o", "order"),
@@ -83,6 +88,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             let mut h = match app.selected_finca_item() {
                 Some(FincaItem::Shell(_)) => vec![
                     ("enter", "open"),
+                    ("p", "pin"),
                     ("r", "rename"),
                     ("s", "shell"),
                     ("n", "new session"),
@@ -107,6 +113,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
         Pane::Sessions if app.selected_shell().is_some() => {
             let mut h = vec![
                 ("enter", "open"),
+                ("p", "pin"),
                 ("r", "rename"),
                 ("x", "close"),
                 ("S", "new shell"),

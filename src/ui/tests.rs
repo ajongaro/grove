@@ -2872,6 +2872,7 @@ fn pin(finca: Option<&str>, id: &str) -> crate::pins::Pin {
     crate::pins::Pin {
         finca: finca.map(str::to_string),
         id: id.into(),
+        shell: None,
     }
 }
 
@@ -3329,7 +3330,7 @@ fn help_lists_the_pin_keys() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('?'));
     let out = screen(&app, 110, 32);
-    assert!(out.contains("pin or unpin / order the pins"), "{out}");
+    assert!(out.contains("pin or unpin (shells too) / order"), "{out}");
     assert!(out.contains("jump to a pin"), "{out}");
 }
 
@@ -3387,6 +3388,7 @@ fn shell_app() -> (tempfile::TempDir, Store, App) {
         &[session("1", "alpha", "s1", State::Working, Some("@1"))],
     );
     app.shells = vec![shell("alpha", "sh1", "@5"), shell("beta", "sh1", "@6")];
+    app.shells_known = true;
     app.reload(&s);
     app.pane = Pane::Sessions;
     (d, s, app)
@@ -3469,13 +3471,126 @@ fn x_on_a_shell_asks_then_closes_it() {
 }
 
 #[test]
-fn p_leaves_a_shell_alone() {
-    let (_d, _s, mut app) = shell_app();
+fn p_pins_a_shell_and_its_pin_opens_renames_closes_and_shells() {
+    let (_d, s, mut app) = shell_app();
     handle_key(&mut app, ch('j'));
-    // A shell can't be pinned (pins are Claude sessions).
-    assert_eq!(handle_key(&mut app, ch('p')), Action::None);
-    assert_eq!(app.mode, Mode::Normal);
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    let shell_pin = crate::pins::Pin {
+        finca: None,
+        id: "@5".into(),
+        shell: Some(crate::pins::ShellPin {
+            project: Some("alpha".into()),
+            name: Some("sh1".into()),
+        }),
+    };
+    assert_eq!(app.pins, vec![shell_pin.clone()]);
+    let rows = app.pinned_rows();
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].shell);
+    assert_eq!(
+        (rows[0].project.as_str(), rows[0].name.as_str()),
+        ("alpha", "sh1")
+    );
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::Jump {
+            window: "@5".into()
+        }
+    );
+    assert_eq!(
+        handle_key(&mut app, ch('1')),
+        Action::Jump {
+            window: "@5".into()
+        }
+    );
+    handle_key(&mut app, ch('r'));
+    assert_eq!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::RenameShell {
+                window: "@5".into(),
+                finca: None,
+            },
+            input: "sh1".into(),
+        }
+    );
+    app.mode = Mode::Normal;
+    handle_key(&mut app, ch('x'));
+    assert!(matches!(&app.mode, Mode::ConfirmShell { window, .. } if window == "@5"));
+    app.mode = Mode::Normal;
+    assert_eq!(
+        handle_key(&mut app, ch('s')),
+        Action::ProjectShell {
+            slug: "alpha".into()
+        }
+    );
+    // Renamed in tmux: the pin keeps the new name, for after a reboot.
+    app.shells[0].name = "logs".into();
+    app.reload(&s);
+    assert_eq!(
+        crate::pins::load(&s.paths)[0]
+            .shell
+            .as_ref()
+            .unwrap()
+            .name
+            .as_deref(),
+        Some("logs")
+    );
+    // Closed: the pin goes, like an ended session's.
+    app.shells.retain(|sh| sh.id != "@5");
+    app.reload(&s);
     assert!(app.pins.is_empty());
+    assert!(crate::pins::load(&s.paths).is_empty());
+}
+
+#[test]
+fn shell_pins_wait_until_the_shells_are_known() {
+    let (_d, s, mut app) = shell_app();
+    let shell_pin = crate::pins::Pin {
+        finca: None,
+        id: "@5".into(),
+        shell: Some(crate::pins::ShellPin {
+            project: Some("alpha".into()),
+            name: None,
+        }),
+    };
+    crate::pins::save(&s.paths, std::slice::from_ref(&shell_pin)).unwrap();
+    // A fresh dashboard hasn't listed its shells yet.
+    app.shells.clear();
+    app.shells_known = false;
+    app.reload(&s);
+    assert_eq!(app.pins, vec![shell_pin]);
+}
+
+#[test]
+fn a_finca_shell_pins_and_its_pin_goes_back_to_its_window() {
+    let (_d, s, mut app) = finca_with_items();
+    for _ in 0..5 {
+        handle_key(&mut app, ch('j'));
+    }
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    assert_eq!(app.pins.len(), 1);
+    assert_eq!(app.pins[0].finca.as_deref(), Some("homebox"));
+    assert_eq!(app.pins[0].id, "@5");
+    assert!(app.pins[0].is_shell());
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaShellWindow {
+            slug: "homebox".into(),
+            window: "@5".into(),
+        }
+    );
+    handle_key(&mut app, ch('r'));
+    assert!(matches!(
+        &app.mode,
+        Mode::Prompt { kind: PromptKind::RenameShell { finca: Some(f), .. }, .. } if f == "homebox"
+    ));
 }
 
 #[test]

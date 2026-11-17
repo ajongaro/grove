@@ -39,6 +39,10 @@ pub fn columns(store: &Store, pins: &[(Pin, Option<String>)], exe: &str) -> Resu
     pins.iter()
         .map(|(pin, via)| {
             let argv = match &pin.finca {
+                // A shell's window is here, a finca's too (it runs ssh).
+                _ if pin.is_shell() => {
+                    vec![exe.to_string(), "desk-attach".into(), pin.id.clone()]
+                }
                 None => vec![exe.to_string(), "desk-attach".into(), pin.id.clone()],
                 Some(slug) => {
                     let f = store.get_finca(slug)?;
@@ -63,7 +67,7 @@ pub fn columns(store: &Store, pins: &[(Pin, Option<String>)], exe: &str) -> Resu
 /// column has closed.
 pub fn open(tmux: &Tmux, columns: &[Column], cwd: &Path) -> Result<()> {
     if columns.is_empty() {
-        bail!("Nothing is pinned yet: p on a session pins it");
+        bail!("Nothing is pinned yet: p on a session or shell pins it");
     }
     let key = keys(columns);
     let fresh = tmux.has_session(SESSION)
@@ -115,6 +119,10 @@ fn layout(n: usize, width: Option<u16>) -> &'static str {
 /// `grove desk-attach`, in a column: makes session `id`'s window a column
 /// session's only window and returns that session's name.
 pub fn prepare(tmux: &Tmux, store: &Store, id: &str) -> Result<String> {
+    // A pinned shell's column names its window (`@N`) instead.
+    if let Some(n) = id.strip_prefix('@') {
+        return link_column(tmux, &format!("{COLUMN}w{n}"), id, "That shell");
+    }
     let Some(s) = store.get_session(id) else {
         bail!("That session is no longer here");
     };
@@ -122,14 +130,24 @@ pub fn prepare(tmux: &Tmux, store: &Store, id: &str) -> Result<String> {
         Some(w) if s.state != State::Ended => w.clone(),
         _ => bail!("{}:{} has ended", s.project, s.name),
     };
-    let name = format!("{COLUMN}{id}");
+    link_column(
+        tmux,
+        &format!("{COLUMN}{id}"),
+        &window,
+        &format!("{}:{}", s.project, s.name),
+    )
+}
+
+/// Makes `window` the only window of column session `name`.
+fn link_column(tmux: &Tmux, name: &str, window: &str, what: &str) -> Result<String> {
+    let name = name.to_string();
     let _ = tmux.kill_session(&name);
     let placeholder = tmux.new_session_window(&name, &["sleep", "60"])?;
-    let linked = tmux.link_window(&window, &name);
+    let linked = tmux.link_window(window, &name);
     let _ = tmux.kill_window(&placeholder);
     if let Err(e) = linked {
         let _ = tmux.kill_session(&name);
-        bail!("{}:{} has no window: {e:#}", s.project, s.name);
+        bail!("{what} has no window: {e:#}");
     }
     // The desk has a status bar; one per column would be noise.
     tmux.set_option(&name, "status", "off")?;
@@ -264,7 +282,10 @@ mod tests {
         let t = server("empty");
         let d = tempfile::tempdir().unwrap();
         let e = open(&t.0, &[], d.path()).unwrap_err();
-        assert!(format!("{e}").contains("p on a session pins it"), "{e}");
+        assert!(
+            format!("{e}").contains("p on a session or shell pins it"),
+            "{e}"
+        );
     }
 
     #[test]
@@ -282,6 +303,7 @@ mod tests {
                 Pin {
                     finca: None,
                     id: "s1".into(),
+                    shell: None,
                 },
                 None,
             ),
@@ -289,6 +311,7 @@ mod tests {
                 Pin {
                     finca: Some("pi".into()),
                     id: "r2".into(),
+                    shell: None,
                 },
                 Some("me@pi-wifi".into()),
             ),

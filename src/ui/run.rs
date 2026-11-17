@@ -689,6 +689,7 @@ pub fn observe(app: &App) -> Vec<crate::alert::Observed> {
 /// Open shells: the projects' (`S`) and each finca's, for their panes.
 pub fn refresh_shells(ctx: &Ctx, app: &mut App) {
     app.shells = crate::shells::list(&ctx.tmux, &ctx.cfg.tmux_session);
+    app.shells_known = true;
     app.finca_shells = app
         .fincas
         .iter()
@@ -755,7 +756,11 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
     // Before the first reload, which would prune their pins.
     if ctx.cfg.revive_sessions {
         let r = crate::launch::revive(&ctx.tmux, &ctx.store, &ctx.cfg);
-        if let Some(msg) = revived_message(&r) {
+        let shells = ctx
+            .tmux
+            .server_started()
+            .map_or(0, |t| revive_shell_pins(&ctx, t));
+        if let Some(msg) = revived_message(&r, shells) {
             app.footer = Some(msg);
         }
     }
@@ -776,20 +781,99 @@ pub fn run_dashboard(ctx: Ctx) -> Result<()> {
 
 /// The footer after reviving sessions from before a restart; None when
 /// there were none.
-pub fn revived_message(r: &crate::launch::Revived) -> Option<String> {
+pub fn revived_message(r: &crate::launch::Revived, shells: usize) -> Option<String> {
     let plural = |n: usize| if n == 1 { "" } else { "s" };
-    match (r.back, r.failed.as_slice()) {
-        (0, []) => None,
-        (n, []) => Some(format!(
-            "Brought back {n} session{} from before the restart",
-            plural(n)
-        )),
-        (n, failed) => Some(format!(
-            "Brought back {n} session{} from before the restart; couldn't resume {}",
-            plural(n),
+    let back = match (r.back, shells) {
+        (0, 0) if r.failed.is_empty() => return None,
+        (n, 0) => format!("{n} session{}", plural(n)),
+        (0, k) => format!("{k} pinned shell{}", plural(k)),
+        (n, k) => format!("{n} session{} and {k} pinned shell{}", plural(n), plural(k)),
+    };
+    Some(match r.failed.as_slice() {
+        [] => format!("Brought back {back} from before the restart"),
+        failed => format!(
+            "Brought back {back} from before the restart; couldn't resume {}",
             failed.join(", ")
-        )),
+        ),
+    })
+}
+
+/// After a reboot (this tmux server started after the pins were last
+/// saved, so their windows went with the old one): reopens each pinned
+/// shell, in its project's folder or over a new ssh to its finca, under
+/// its old name, and points its pin at the new window. How many came back.
+pub fn revive_shell_pins(ctx: &Ctx, server_start: chrono::DateTime<chrono::Utc>) -> usize {
+    let file = ctx.store.paths.home.join("pins.json");
+    let Some(saved) = std::fs::metadata(&file)
+        .and_then(|m| m.modified())
+        .ok()
+        .map(chrono::DateTime::<chrono::Utc>::from)
+    else {
+        return 0;
+    };
+    if saved >= server_start {
+        return 0;
     }
+    let mut pins = crate::pins::load(&ctx.store.paths);
+    let mut back = 0;
+    for pin in pins.iter_mut() {
+        let Some(sh) = pin.shell.clone() else {
+            continue;
+        };
+        let reopened = match &pin.finca {
+            None => reopen_project_shell(ctx, &sh),
+            Some(slug) => reopen_finca_shell(ctx, slug, &sh),
+        };
+        // One that can't come back keeps its old id, so the first reload
+        // drops it.
+        if let Ok(window) = reopened {
+            pin.id = window;
+            back += 1;
+        }
+    }
+    if back > 0 {
+        let _ = crate::pins::save(&ctx.store.paths, &pins);
+    }
+    back
+}
+
+fn reopen_project_shell(ctx: &Ctx, sh: &crate::pins::ShellPin) -> Result<String> {
+    let project = ctx
+        .store
+        .get_project(sh.project.as_deref().unwrap_or_default())?;
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/bin/sh".into());
+    let session = &ctx.cfg.tmux_session;
+    let opened = crate::shells::open(&ctx.tmux, session, &project, &[shell])?;
+    if let Some(name) = &sh.name {
+        let _ = crate::shells::rename(&ctx.tmux, session, &opened.id, name);
+    }
+    Ok(opened.id)
+}
+
+fn reopen_finca_shell(ctx: &Ctx, slug: &str, sh: &crate::pins::ShellPin) -> Result<String> {
+    let f = ctx.store.get_finca(slug)?;
+    let session = crate::finca::shell_session_name(slug);
+    let window = if crate::finca::ensure_shell_session(&ctx.tmux, &f, &f.ssh)? {
+        // A new session opens with its first shell.
+        ctx.tmux
+            .list_windows(&session)?
+            .into_iter()
+            .next()
+            .context("the finca's shell session has no window")?
+    } else {
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| "/".into());
+        let argv = crate::finca::shell_argv(&f, &f.ssh);
+        ctx.tmux.new_window(&session, &f.name, &home, &[], &argv)?
+    };
+    if let Some(name) = &sh.name {
+        let _ = crate::finca::rename_shell(&ctx.tmux, &window, name);
+    }
+    Ok(window)
 }
 
 /// What background threads send the dashboard.

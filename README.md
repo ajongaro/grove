@@ -297,7 +297,15 @@ order shown. A pin goes away when its session ends; a finca
 that isn't answering keeps its pins, dimmed, until it does. Pins live in
 `~/.grove/pins.json`.
 
-`V` opens the **pinned desk**: every pinned session side by side, each
+Shells pin too: `p` on a project's shell (`S`) or a finca's shell (a
+Raspberry Pi that only runs shells, say) puts it in the box as `$` and its
+name. There `Enter` opens it (reconnecting a finca's dropped ssh), `r`
+renames it, `x` closes it and `s` opens another on the same machine; the
+desk gives it a column too. Its pin goes when the shell does. After a
+reboot, Grove reopens each pinned shell under its name: a fresh shell in the
+project's folder, or a fresh ssh to the finca (what was on screen is gone).
+
+`V` opens the **pinned desk**: every pinned session (and shell) side by side, each
 column the live session itself (a finca's over ssh), so you can type in
 any of them and stay there. `C-h` `C-j` `C-k` `C-l` move between columns,
 and at the desk's edge go into the column (C-j/C-k between a session and
@@ -317,8 +325,8 @@ prefix `[`) scrolls back through it. `C-g` comes back to the dashboard, and
 the shell is listed in the project's Sessions pane below its sessions
 (`$ sh1`, with what's running in it), where `Enter` goes back to it, `r`
 renames it and `x` closes it. A shell lasts until you `exit` it or Grove's tmux server
-stops (a reboot); restarting the dashboard doesn't touch it. Shells aren't
-in the grid or the pins.
+stops (a reboot); restarting the dashboard doesn't touch it. `p` pins it
+(see [Pinned sessions](#pinned-sessions)); shells aren't in the grid.
 
 ### Session grid
 

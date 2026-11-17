@@ -372,6 +372,9 @@ pub struct App {
     /// Shells that stay open, every project's (refreshed from tmux by the
     /// loop); each project's list under its sessions.
     pub shells: Vec<crate::shells::Shell>,
+    /// Whether `shells` has been read from tmux yet: until then a pinned
+    /// shell can't be told closed.
+    pub shells_known: bool,
     /// Open shell windows per finca slug (refreshed from tmux by the loop).
     pub finca_shells: HashMap<String, Vec<crate::finca::ShellWindow>>,
     /// ~/.ssh here, for completing finca destinations.
@@ -413,6 +416,8 @@ pub struct PinRow {
     pub window: Option<String>,
     /// Its finca's last poll failed (or none has come yet).
     pub unreachable: bool,
+    /// A pinned shell rather than a session: `window` is its window here.
+    pub shell: bool,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -458,6 +463,7 @@ impl App {
             todo_slug: None,
             open_todos: HashMap::new(),
             shells: Vec::new(),
+            shells_known: false,
             finca_shells: HashMap::new(),
             ssh_dir: std::env::var_os("HOME")
                 .map(std::path::PathBuf::from)
@@ -602,7 +608,8 @@ impl App {
         let keep_pin = self.pins.get(self.pin_idx).cloned();
         let loaded = crate::pins::load(&store.paths);
         self.pins = loaded.clone();
-        if self.prune_pins() || self.pins != loaded {
+        let renamed = self.sync_shell_pin_names();
+        if self.prune_pins() || renamed || self.pins != loaded {
             // Best effort: a failed write just prunes again next time.
             let _ = crate::pins::save(&store.paths, &self.pins);
         }
@@ -678,11 +685,19 @@ impl App {
                     self.proj_idx = at;
                     self.sess_idx = 0;
                 }
-                if let Some(i) = self
-                    .visible_sessions()
-                    .iter()
-                    .position(|s| s.id == row.pin.id)
-                {
+                // Shells list below the sessions.
+                let found = match row.shell {
+                    false => self
+                        .visible_sessions()
+                        .iter()
+                        .position(|s| s.id == row.pin.id),
+                    true => self
+                        .visible_shells()
+                        .iter()
+                        .position(|s| s.id == row.pin.id)
+                        .map(|i| self.visible_sessions().len() + i),
+                };
+                if let Some(i) = found {
                     self.sess_idx = i;
                 }
             }
@@ -825,6 +840,18 @@ impl App {
     /// when its finca is gone, or answered without the session: while it
     /// isn't answering, there's no telling.
     fn pin_alive(&self, pin: &crate::pins::Pin) -> bool {
+        if let Some(sh) = &pin.shell {
+            let unknown = match &pin.finca {
+                None => !self.shells_known,
+                // A removed finca's go, like its sessions'.
+                Some(slug) if !self.fincas.iter().any(|f| &f.slug == slug) => return false,
+                Some(slug) => !self.finca_shells.contains_key(slug),
+            };
+            return unknown
+                || self
+                    .shell_of_pin(pin.finca.as_deref(), sh, &pin.id)
+                    .is_some();
+        }
         match &pin.finca {
             None => self
                 .sessions
@@ -844,6 +871,62 @@ impl App {
         }
     }
 
+    /// A pinned shell's open window: (project slug, or "" for a finca's;
+    /// its name now). None once it's closed.
+    fn shell_of_pin(
+        &self,
+        finca: Option<&str>,
+        sh: &crate::pins::ShellPin,
+        window: &str,
+    ) -> Option<(String, String)> {
+        match finca {
+            None => self
+                .shells
+                .iter()
+                .find(|s| s.id == window && Some(&s.project) == sh.project.as_ref())
+                .map(|s| (s.project.clone(), s.name.clone())),
+            Some(slug) => self
+                .finca_shells
+                .get(slug)
+                .and_then(|ws| ws.iter().find(|w| w.id == window))
+                .map(|w| (String::new(), w.label())),
+        }
+    }
+
+    /// Pinned shells' names as they are now, so a reopened one gets its
+    /// own back; true when any changed.
+    fn sync_shell_pin_names(&mut self) -> bool {
+        let names: Vec<Option<Option<String>>> = self
+            .pins
+            .iter()
+            .map(|pin| {
+                let sh = pin.shell.as_ref()?;
+                Some(match pin.finca.as_deref() {
+                    // Closed: keep the last name (the pin goes anyway).
+                    None => Some(self.shell_of_pin(None, sh, &pin.id)?.1),
+                    // A finca shell's own name (r), not its "shell N" label.
+                    Some(slug) => self
+                        .finca_shells
+                        .get(slug)?
+                        .iter()
+                        .find(|w| w.id == pin.id)?
+                        .name
+                        .clone(),
+                })
+            })
+            .collect();
+        let mut changed = false;
+        for (pin, name) in self.pins.iter_mut().zip(names) {
+            if let (Some(sh), Some(name)) = (pin.shell.as_mut(), name)
+                && sh.name != name
+            {
+                sh.name = name;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Drops pins whose sessions ended; true when any went.
     pub fn prune_pins(&mut self) -> bool {
         let before = self.pins.len();
@@ -859,6 +942,44 @@ impl App {
             .iter()
             .filter(|p| self.pin_alive(p))
             .filter_map(|pin| match &pin.finca {
+                _ if pin.is_shell() => {
+                    let sh = pin.shell.as_ref()?;
+                    let (project, name) = self.shell_of_pin(pin.finca.as_deref(), sh, &pin.id)?;
+                    let finca = pin.finca.as_ref().and_then(|slug| {
+                        self.fincas
+                            .iter()
+                            .find(|f| &f.slug == slug)
+                            .map(|f| (f.slug.clone(), f.name.clone(), f.via.clone()))
+                    });
+                    let account = self
+                        .projects
+                        .iter()
+                        .find(|p| p.slug == project)
+                        .map(|p| self.account_of(p));
+                    let handle = match &finca {
+                        Some((_, fname, _)) => format!("{fname} {name}"),
+                        None => format!("{project}:{name}"),
+                    };
+                    Some(PinRow {
+                        pin: pin.clone(),
+                        finca,
+                        account,
+                        handle,
+                        project: if pin.finca.is_some() {
+                            "shell".into()
+                        } else {
+                            project
+                        },
+                        name,
+                        // Shells have no state; sorted by recent, they go last.
+                        state: State::YourTurn,
+                        updated_at: DateTime::<Utc>::MIN_UTC,
+                        message: None,
+                        window: Some(pin.id.clone()),
+                        unreachable: false,
+                        shell: true,
+                    })
+                }
                 None => {
                     let s = self.sessions.iter().find(|s| s.id == pin.id)?;
                     let account = self
@@ -878,6 +999,7 @@ impl App {
                         message: s.message.clone(),
                         window: s.tmux_window.clone(),
                         unreachable: false,
+                        shell: false,
                     })
                 }
                 Some(slug) => {
@@ -928,6 +1050,7 @@ impl App {
                         message,
                         window,
                         unreachable,
+                        shell: false,
                     })
                 }
             })

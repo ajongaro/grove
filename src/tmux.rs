@@ -259,7 +259,25 @@ impl Tmux {
     /// Makes `target` its session's current window, sized to the terminals
     /// now showing it.
     pub fn select_window(&self, target: &str) -> Result<()> {
-        self.run(&["select-window", "-t", target])?;
+        // A bare window id selects it in just one of the sessions it's
+        // linked into (a desk's, say), leaving Grove's own on whatever it
+        // had: select it in each.
+        let holders = if target.starts_with('@') {
+            sessions_holding(
+                &self
+                    .run(&["list-windows", "-a", "-F", "#{session_name} #{window_id}"])
+                    .unwrap_or_default(),
+                target,
+            )
+        } else {
+            Vec::new()
+        };
+        if holders.is_empty() {
+            self.run(&["select-window", "-t", target])?;
+        }
+        for session in &holders {
+            self.run(&["select-window", "-t", &format!("={session}:{target}")])?;
+        }
         // A window that's also in a desk column keeps the column's size
         // (window-size latest) until a key is pressed in the bigger client.
         // Switching that client to it counts as its activity, so the window
@@ -583,6 +601,16 @@ fn check(out: &Output, args: &[&str]) -> Result<String> {
 
 /// `s` as text tmux shows unchanged: `#` starts formats (`#{}`, `#()`)
 /// in messages, so it's doubled.
+/// The sessions in `list-windows -a` output (`session window_id` lines)
+/// that hold window `id`.
+fn sessions_holding(all: &str, id: &str) -> Vec<String> {
+    all.lines()
+        .filter_map(|l| l.rsplit_once(' '))
+        .filter(|(_, w)| *w == id)
+        .map(|(s, _)| s.to_string())
+        .collect()
+}
+
 pub fn literal(s: &str) -> String {
     s.replace('#', "##")
 }
@@ -795,6 +823,32 @@ mod tests {
         t.select_window(&id).unwrap();
         t.kill_window(&id).unwrap();
         assert!(!t.list_windows("g").unwrap().contains(&id));
+    }
+
+    #[test]
+    fn a_window_in_a_desk_too_is_selected_in_grove_as_well() {
+        let s = server("linked");
+        let t = &s.0;
+        let cwd = std::env::temp_dir();
+        let sleep = ["sleep".to_string(), "30".to_string()];
+        t.new_session_detached("grove", "dashboard", &cwd, &sleep)
+            .unwrap();
+        let id = t.new_window("grove", "w", &cwd, &[], &sleep).unwrap();
+        t.new_session_detached("desk-x", "col", &cwd, &sleep)
+            .unwrap();
+        t.link_window(&id, "desk-x").unwrap();
+        t.select_window(&id).unwrap();
+        let active = t
+            .list_windows_as("grove", "#{window_id} #{window_active}")
+            .unwrap();
+        assert!(active.contains(&format!("{id} 1")), "{active:?}");
+    }
+
+    #[test]
+    fn sessions_holding_a_window_are_found_by_its_id() {
+        let all = "grove @0\ngrove @26\ndesk-a @26\ndesk-b @27\n";
+        assert_eq!(sessions_holding(all, "@26"), ["grove", "desk-a"]);
+        assert!(sessions_holding(all, "@9").is_empty());
     }
 
     #[test]

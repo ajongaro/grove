@@ -748,6 +748,7 @@ fn save_pins_writes_the_pins_file() {
     let pins = vec![crate::pins::Pin {
         finca: None,
         id: "a".into(),
+        shell: None,
     }];
     perform(&t.ctx, Action::SavePins { pins: pins.clone() }).unwrap();
     assert_eq!(crate::pins::load(&t.ctx.store.paths), pins);
@@ -908,13 +909,13 @@ fn rename_shell_names_a_finca_shell() {
 #[test]
 fn revived_message_says_what_came_back() {
     use crate::launch::Revived;
-    assert_eq!(revived_message(&Revived::default()), None);
+    assert_eq!(revived_message(&Revived::default(), 0), None);
     let one = Revived {
         back: 1,
         failed: vec![],
     };
     assert_eq!(
-        revived_message(&one).as_deref(),
+        revived_message(&one, 0).as_deref(),
         Some("Brought back 1 session from before the restart")
     );
     let some = Revived {
@@ -922,7 +923,45 @@ fn revived_message_says_what_came_back() {
         failed: vec!["a:s1".into()],
     };
     assert_eq!(
-        revived_message(&some).as_deref(),
+        revived_message(&some, 0).as_deref(),
         Some("Brought back 2 sessions from before the restart; couldn't resume a:s1")
     );
+}
+
+#[test]
+fn pinned_shells_come_back_after_a_reboot_under_their_names() {
+    let t = setup("shellrevive");
+    let dir = t.root.join("alpha");
+    std::fs::create_dir_all(&dir).unwrap();
+    add_project_at(&t.ctx.store, &dir.display().to_string()).unwrap();
+    let pins = vec![
+        crate::pins::Pin::session(None, "gone-session"),
+        crate::pins::Pin {
+            finca: None,
+            id: "@77".into(),
+            shell: Some(crate::pins::ShellPin {
+                project: Some("alpha".into()),
+                name: Some("logs".into()),
+            }),
+        },
+    ];
+    crate::pins::save(&t.ctx.store.paths, &pins).unwrap();
+    // Saved by the old server; this one starts a moment later.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    t.ctx
+        .tmux
+        .new_session_detached("grove", "dashboard", &t.root, &sleeper())
+        .unwrap();
+    let started = t.ctx.tmux.server_started().unwrap();
+    assert_eq!(revive_shell_pins(&t.ctx, started), 1);
+    let pins = crate::pins::load(&t.ctx.store.paths);
+    let shells = crate::shells::list(&t.ctx.tmux, "grove");
+    assert_eq!(shells.len(), 1);
+    assert_eq!(
+        (shells[0].project.as_str(), shells[0].name.as_str()),
+        ("alpha", "logs")
+    );
+    assert_eq!(pins[1].id, shells[0].id);
+    // Once the pins are saved under this server, nothing more opens.
+    assert_eq!(revive_shell_pins(&t.ctx, started), 0);
 }

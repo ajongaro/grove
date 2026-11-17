@@ -1216,6 +1216,15 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 // Renames a session here, as r does in Sessions.
                 KeyCode::Char('r') => {
                     match row {
+                        Some(r) if r.shell => {
+                            app.mode = Mode::Prompt {
+                                kind: PromptKind::RenameShell {
+                                    window: r.pin.id.clone(),
+                                    finca: r.pin.finca.clone(),
+                                },
+                                input: r.name.clone(),
+                            };
+                        }
                         Some(PinRow {
                             finca: Some((_, name, _)),
                             ..
@@ -1257,6 +1266,13 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 }),
                 KeyCode::Char('x') => {
                     match row {
+                        // Its window is here, a finca's too: closed here.
+                        Some(r) if r.shell => {
+                            app.mode = Mode::ConfirmShell {
+                                window: r.pin.id.clone(),
+                                label: r.handle.clone(),
+                            };
+                        }
                         Some(r) if r.unreachable => {
                             let name = r.finca.as_ref().map_or("it", |f| f.1.as_str());
                             app.footer = Some(format!("{name} isn't answering"));
@@ -1285,6 +1301,13 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     }) => Action::FincaShell {
                         slug: slug.clone(),
                         via: via.clone(),
+                    },
+                    // A project's shell: another in the same project.
+                    Some(r) if r.shell && c == 's' => Action::ProjectShell {
+                        slug: r.project.clone(),
+                    },
+                    Some(r) if r.shell => Action::NewShell {
+                        slug: r.project.clone(),
                     },
                     Some(r) => match app.sessions.iter().find(|s| s.id == r.pin.id) {
                         Some(s) if c == 's' => Action::ProjectShell {
@@ -1320,15 +1343,24 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     let f = app.selected_finca()?;
                     let (slug, name) = (f.slug.clone(), f.name.clone());
                     match app.selected_finca_item() {
+                        Some(FincaItem::Shell(w)) => {
+                            let handle = format!("{name} {}", w.label());
+                            let pin = crate::pins::Pin {
+                                finca: Some(slug),
+                                id: w.id.clone(),
+                                shell: Some(crate::pins::ShellPin {
+                                    project: None,
+                                    name: w.name.clone(),
+                                }),
+                            };
+                            Some(toggle_pin(app, pin, &handle))
+                        }
                         Some(FincaItem::Session { project, session }) => {
                             let handle = format!("{project}:{}", session.name);
                             Some(match session.id {
                                 Some(id) => toggle_pin(
                                     app,
-                                    crate::pins::Pin {
-                                        finca: Some(slug),
-                                        id,
-                                    },
+                                    crate::pins::Pin::session(Some(slug), id),
                                     &handle,
                                 ),
                                 None => {
@@ -1340,6 +1372,16 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                         }
                         _ => Some(Action::None),
                     }
+                } else if let Some(sh) = app.selected_shell().cloned() {
+                    let pin = crate::pins::Pin {
+                        finca: None,
+                        id: sh.id.clone(),
+                        shell: Some(crate::pins::ShellPin {
+                            project: Some(sh.project.clone()),
+                            name: Some(sh.name.clone()),
+                        }),
+                    };
+                    Some(toggle_pin(app, pin, &format!("{}:{}", sh.project, sh.name)))
                 } else {
                     let s = app
                         .selected_session()
@@ -1348,10 +1390,7 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     Some(match s {
                         Some(s) => toggle_pin(
                             app,
-                            crate::pins::Pin {
-                                finca: None,
-                                id: s.id.clone(),
-                            },
+                            crate::pins::Pin::session(None, s.id.clone()),
                             &format!("{}:{}", s.project, s.name),
                         ),
                         None => Action::None,
@@ -1383,6 +1422,16 @@ fn toggle_pin(app: &mut App, pin: crate::pins::Pin, handle: &str) -> Action {
 
 /// Goes to a pin's window: here, or connecting to its finca.
 fn jump_to_pin(app: &mut App, r: &super::app::PinRow) -> Action {
+    if r.shell {
+        let window = r.pin.id.clone();
+        return match &r.pin.finca {
+            None => Action::Jump { window },
+            Some(slug) => Action::FincaShellWindow {
+                slug: slug.clone(),
+                window,
+            },
+        };
+    }
     match (&r.finca, &r.window) {
         (Some((_, name, _)), _) if r.unreachable => {
             app.footer = Some(format!("{name} isn't answering"));

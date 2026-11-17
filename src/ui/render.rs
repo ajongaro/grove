@@ -1272,10 +1272,22 @@ fn render_pinned(
             };
             let (color, label) = if r.unreachable {
                 (pal().dim, "unreachable")
+            } else if r.shell {
+                (pal().shell, "shell")
             } else {
                 (state_color(r.state), r.state.label())
             };
-            let icon = r.state.glyph();
+            // "$" and two spaces: as wide as a glyph and its space.
+            let icon = if r.shell {
+                "$ ".to_string()
+            } else {
+                r.state.glyph().to_string()
+            };
+            let age = if r.shell {
+                String::new()
+            } else {
+                format_age(r.updated_at, now)
+            };
             let origin_color = match (&r.finca, &r.account) {
                 _ if r.unreachable => pal().dim,
                 (Some(_), _) => pal().fincas,
@@ -1290,7 +1302,7 @@ fn render_pinned(
                 Span::raw(pad(&r.project, project_w)).fg(pal().muted),
                 Span::raw(pad(&r.name, name_w)).fg(pal().bright).bold(),
                 Span::styled(format!("{label:<12}"), Style::new().fg(color)),
-                Span::raw(format!("{:<5}", format_age(r.updated_at, now))).fg(pal().dim),
+                Span::raw(format!("{age:<5}")).fg(pal().dim),
             ];
             if let Some(m) = r.message.as_deref().filter(|_| !r.unreachable) {
                 spans.push(Span::styled(m.to_string(), Style::new().fg(color)));
