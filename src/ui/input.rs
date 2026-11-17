@@ -1213,6 +1213,29 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                     Action::None
                 }
                 KeyCode::Enter => row.map_or(Action::None, |r| jump_to_pin(app, r)),
+                // Renames a session here, as r does in Sessions.
+                KeyCode::Char('r') => {
+                    match row {
+                        Some(PinRow {
+                            finca: Some((_, name, _)),
+                            ..
+                        }) => {
+                            app.footer = Some(format!(
+                                "Sessions on {name} are renamed there: connect with Enter"
+                            ));
+                        }
+                        Some(r) => {
+                            app.mode = Mode::Prompt {
+                                kind: PromptKind::RenameSession {
+                                    session_id: r.pin.id.clone(),
+                                },
+                                input: r.name.clone(),
+                            };
+                        }
+                        None => {}
+                    }
+                    Action::None
+                }
                 // The box's order; the cursor stays on the same pin.
                 KeyCode::Char('o') => {
                     let here = row.map(|r| r.pin.clone());

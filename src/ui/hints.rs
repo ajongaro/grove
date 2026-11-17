@@ -71,6 +71,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 ("V", "desk"),
                 ("x", "kill"),
                 ("p", "unpin"),
+                ("r", "rename"),
                 ("o", "order"),
                 ("s", "shell"),
             ];

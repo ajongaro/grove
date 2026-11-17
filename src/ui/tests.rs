@@ -4465,3 +4465,46 @@ fn moving_through_pins_shows_each_pins_project_and_todo_list() {
     assert_eq!(app.selected_finca().map(|f| f.slug.as_str()), Some("pi"));
     assert_eq!(app.todo_slug, None, "a finca has no TODO list here");
 }
+
+#[test]
+fn r_on_a_pin_renames_its_session() {
+    let (_d, s, mut app) = pinned_app();
+    crate::pins::save(&s.paths, &[pin(None, "a2"), pin(Some("pi"), "pi-n0")]).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    handle_key(&mut app, ch('r'));
+    assert_eq!(
+        app.mode,
+        Mode::Prompt {
+            kind: PromptKind::RenameSession {
+                session_id: "a2".into()
+            },
+            input: "s2".into(),
+        }
+    );
+    for _ in 0..2 {
+        handle_key(&mut app, key(KeyCode::Backspace));
+    }
+    for c in "review".chars() {
+        handle_key(&mut app, ch(c));
+    }
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::RenameSession {
+            session_id: "a2".into(),
+            name: "review".into(),
+        }
+    );
+    // A finca's pin: renamed on the finca.
+    app.pane = Pane::Pinned;
+    app.pin_idx = 1;
+    handle_key(&mut app, ch('r'));
+    assert!(!matches!(app.mode, Mode::Prompt { .. }));
+    assert!(
+        app.footer
+            .as_deref()
+            .unwrap_or("")
+            .contains("renamed there")
+    );
+}
