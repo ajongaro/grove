@@ -182,16 +182,15 @@ fn check_prompt(p: &str, agent: Agent) -> Result<()> {
             p.len()
         );
     }
-    // `claude [options] [command] [prompt]` would read `--flag` as an option
-    // and a single word like `update` as a subcommand. OpenCode's goes in
-    // `--prompt`'s value.
-    if agent == Agent::Claude {
-        if p.starts_with('-') {
-            bail!("a first prompt can't start with \"-\"");
-        }
-        if !p.contains(char::is_whitespace) {
-            bail!("a first prompt needs more than one word");
-        }
+    // Either agent's parser could read `--flag` as an option rather than the
+    // prompt: OpenCode's `--prompt --auto` would approve every permission.
+    if p.starts_with('-') {
+        bail!("a first prompt can't start with \"-\"");
+    }
+    // `claude [options] [command] [prompt]` would read a single word like
+    // `update` as a subcommand. OpenCode's goes in `--prompt`'s value.
+    if agent == Agent::Claude && !p.contains(char::is_whitespace) {
+        bail!("a first prompt needs more than one word");
     }
     Ok(())
 }

@@ -828,7 +828,7 @@ fn an_opencode_launch_runs_standalone_with_groves_plugin_mcp_and_context() {
 #[test]
 fn an_opencode_first_prompt_still_cant_be_a_command() {
     let e = env();
-    for p in ["/init", "!rm -rf x"] {
+    for p in ["/init", "!rm -rf x", "--auto", "-c"] {
         let err = super::build_with_bin(
             &cfg(&e),
             &e.paths,
