@@ -582,7 +582,8 @@ the footer counts remote sessions that need you.
   shells you've opened there from here. `l` (or Tab) moves into the list;
   **Enter** on a session or a project shell connects straight into its
   window, Enter on one of your shells goes back to it, and `r` on one of
-  your shells names it. To kill or edit sessions, connect.
+  your shells names it. `p` pins any of them. To kill or edit sessions,
+  or rename or close a project shell there, connect.
 - **`C-v`** in a finca window (its Grove or a shell there) sends a file
   you copied in Finder (⌘C) or an image on the clipboard (a screenshot
   taken with ⌘⇧⌃4) to the finca's `~/.grove/inbox`, and pastes its path.
