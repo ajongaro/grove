@@ -1265,6 +1265,13 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 // Renames a session here, as r does in Sessions.
                 KeyCode::Char('r') => {
                     match row {
+                        Some(r) if r.pin.is_remote_shell() => {
+                            let name = r.finca.as_ref().map_or("the finca", |f| f.1.as_str());
+                            app.footer = Some(format!(
+                                "{} is renamed on {name}: connect with Enter",
+                                r.handle
+                            ));
+                        }
                         Some(r) if r.shell => {
                             app.mode = Mode::Prompt {
                                 kind: PromptKind::RenameShell {
@@ -1315,6 +1322,13 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 }),
                 KeyCode::Char('x') => {
                     match row {
+                        Some(r) if r.pin.is_remote_shell() => {
+                            let name = r.finca.as_ref().map_or("the finca", |f| f.1.as_str());
+                            app.footer = Some(format!(
+                                "{} is closed on {name}: Enter goes there, then exit",
+                                r.handle
+                            ));
+                        }
                         // Its window is here, a finca's too: closed here.
                         Some(r) if r.shell => {
                             app.mode = Mode::ConfirmShell {
@@ -1419,12 +1433,21 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                                 }
                             })
                         }
-                        Some(FincaItem::ProjectShell { shell, .. }) => {
-                            app.footer = Some(format!(
-                                "{} can't be pinned from here: s opens a shell on {name} you can pin",
-                                shell.name
-                            ));
-                            Some(Action::None)
+                        Some(FincaItem::ProjectShell {
+                            project,
+                            slug: project_slug,
+                            shell,
+                        }) => {
+                            let handle = format!("{name} {project}:{}", shell.name);
+                            let pin = crate::pins::Pin {
+                                finca: Some(slug),
+                                id: shell.window,
+                                shell: Some(crate::pins::ShellPin {
+                                    project: Some(project_slug),
+                                    name: Some(shell.name),
+                                }),
+                            };
+                            Some(toggle_pin(app, pin, &handle))
                         }
                         _ => Some(Action::None),
                     }
@@ -1478,7 +1501,7 @@ fn toggle_pin(app: &mut App, pin: crate::pins::Pin, handle: &str) -> Action {
 
 /// Goes to a pin's window: here, or connecting to its finca.
 fn jump_to_pin(app: &mut App, r: &super::app::PinRow) -> Action {
-    if r.shell {
+    if r.shell && !r.pin.is_remote_shell() {
         let window = r.pin.id.clone();
         return match &r.pin.finca {
             None => Action::Jump { window },

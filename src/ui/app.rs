@@ -439,6 +439,8 @@ pub enum FincaItem {
     /// A shell open in one of the finca's projects (`S` there).
     ProjectShell {
         project: String,
+        /// The project's slug there, for pinning.
+        slug: String,
         shell: crate::status::ShellStatus,
     },
 }
@@ -838,6 +840,7 @@ impl App {
                 });
                 let shells = p.shells.iter().map(|sh| FincaItem::ProjectShell {
                     project: p.name.clone(),
+                    slug: p.slug.clone(),
                     shell: sh.clone(),
                 });
                 sessions.chain(shells)
@@ -860,6 +863,20 @@ impl App {
     /// when its finca is gone, or answered without the session: while it
     /// isn't answering, there's no telling.
     fn pin_alive(&self, pin: &crate::pins::Pin) -> bool {
+        if pin.is_remote_shell() {
+            let slug = pin.finca.as_deref().unwrap_or_default();
+            return match self.fincas.iter().find(|f| f.slug == slug) {
+                None => false,
+                Some(f) => match &f.reach {
+                    Some(crate::finca::Reach::Reachable(st)) => st
+                        .projects
+                        .iter()
+                        .flat_map(|p| &p.shells)
+                        .any(|s| s.window == pin.id),
+                    _ => true,
+                },
+            };
+        }
         if let Some(sh) = &pin.shell {
             let unknown = match &pin.finca {
                 None => !self.shells_known,
@@ -905,6 +922,19 @@ impl App {
                 .iter()
                 .find(|s| s.id == window && Some(&s.project) == sh.project.as_ref())
                 .map(|s| (s.project.clone(), s.name.clone())),
+            // A shell in one of the finca's projects, from its last status.
+            Some(slug) if sh.project.is_some() => self
+                .fincas
+                .iter()
+                .find(|f| f.slug == slug)?
+                .last_status
+                .as_ref()?
+                .projects
+                .iter()
+                .filter(|p| Some(&p.slug) == sh.project.as_ref())
+                .flat_map(|p| &p.shells)
+                .find(|s| s.window == window)
+                .map(|s| (sh.project.clone().unwrap_or_default(), s.name.clone())),
             Some(slug) => self
                 .finca_shells
                 .get(slug)
@@ -924,6 +954,9 @@ impl App {
                 Some(match pin.finca.as_deref() {
                     // Closed: keep the last name (the pin goes anyway).
                     None => Some(self.shell_of_pin(None, sh, &pin.id)?.1),
+                    Some(_) if pin.is_remote_shell() => {
+                        Some(self.shell_of_pin(pin.finca.as_deref(), sh, &pin.id)?.1)
+                    }
                     // A finca shell's own name (r), not its "shell N" label.
                     Some(slug) => self
                         .finca_shells
@@ -976,16 +1009,25 @@ impl App {
                         .iter()
                         .find(|p| p.slug == project)
                         .map(|p| self.account_of(p));
+                    let remote = pin.is_remote_shell();
                     let handle = match &finca {
+                        Some((_, fname, _)) if remote => format!("{fname} {project}:{name}"),
                         Some((_, fname, _)) => format!("{fname} {name}"),
                         None => format!("{project}:{name}"),
                     };
+                    let unreachable = remote
+                        && pin.finca.as_ref().is_some_and(|slug| {
+                            !self.fincas.iter().any(|f| {
+                                &f.slug == slug
+                                    && matches!(f.reach, Some(crate::finca::Reach::Reachable(_)))
+                            })
+                        });
                     Some(PinRow {
                         pin: pin.clone(),
                         finca,
                         account,
                         handle,
-                        project: if pin.finca.is_some() {
+                        project: if pin.finca.is_some() && !remote {
                             "shell".into()
                         } else {
                             project
@@ -997,7 +1039,7 @@ impl App {
                         updated_at: DateTime::<Utc>::MIN_UTC,
                         message: None,
                         window: Some(pin.id.clone()),
-                        unreachable: false,
+                        unreachable,
                         shell: true,
                     })
                 }

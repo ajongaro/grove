@@ -10,7 +10,9 @@ const PINS_VERSION: u32 = 1;
 
 /// A pinned session: on this machine (`finca` None) or on a finca, by slug.
 /// Or a pinned shell (`shell` set): `id` is then its tmux window here, a
-/// project's shell or a finca's (those run here too, over ssh).
+/// project's shell or a finca's (those run here too, over ssh); or, with
+/// both `finca` and `shell.project`, a shell open in one of the finca's
+/// projects, whose window is on the finca.
 #[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct Pin {
     pub finca: Option<String>,
@@ -50,6 +52,11 @@ impl Pin {
 
     pub fn is_shell(&self) -> bool {
         self.shell.is_some()
+    }
+
+    /// A shell in one of a finca's projects: its window is there, not here.
+    pub fn is_remote_shell(&self) -> bool {
+        self.finca.is_some() && self.shell.as_ref().is_some_and(|s| s.project.is_some())
     }
 }
 

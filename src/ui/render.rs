@@ -579,7 +579,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                     lines.push(Line::styled(format!("      {m}"), Style::new().fg(color)));
                 }
             }
-            FincaItem::ProjectShell { project, shell } => {
+            FincaItem::ProjectShell { project, shell, .. } => {
                 if heading != Some(project.as_str()) {
                     heading = Some(project);
                     lines.push(Line::raw(project.clone()).bold());

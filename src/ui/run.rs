@@ -841,7 +841,8 @@ pub fn revive_shell_pins(ctx: &Ctx, server_start: chrono::DateTime<chrono::Utc>)
     let mut pins = crate::pins::load(&ctx.store.paths);
     let mut back = 0;
     for pin in pins.iter_mut() {
-        let Some(sh) = pin.shell.clone() else {
+        // A finca project's shell lives on the finca: nothing to reopen.
+        let Some(sh) = pin.shell.clone().filter(|_| !pin.is_remote_shell()) else {
             continue;
         };
         let reopened = match &pin.finca {

@@ -40,7 +40,7 @@ pub fn columns(store: &Store, pins: &[(Pin, Option<String>)], exe: &str) -> Resu
         .map(|(pin, via)| {
             let argv = match &pin.finca {
                 // A shell's window is here, a finca's too (it runs ssh).
-                _ if pin.is_shell() => {
+                _ if pin.is_shell() && !pin.is_remote_shell() => {
                     vec![exe.to_string(), "desk-attach".into(), pin.id.clone()]
                 }
                 None => vec![exe.to_string(), "desk-attach".into(), pin.id.clone()],
@@ -317,8 +317,25 @@ mod tests {
                 },
                 Some("me@pi-wifi".into()),
             ),
+            (
+                // A shell open in one of pi's projects: its window is there.
+                Pin {
+                    finca: Some("pi".into()),
+                    id: "@7".into(),
+                    shell: Some(crate::pins::ShellPin {
+                        project: Some("alpha".into()),
+                        name: Some("sh1".into()),
+                    }),
+                },
+                None,
+            ),
         ];
         let cols = columns(&store, &pins, "/bin/grove").unwrap();
+        let remote = cols[2].argv.join(" ");
+        assert!(
+            remote.contains("me@pi") && remote.contains("desk-attach") && remote.contains("@7"),
+            "{remote}"
+        );
         assert_eq!(cols[0].key, "/s1");
         assert_eq!(cols[0].argv, ["/bin/grove", "desk-attach", "s1"]);
         assert_eq!(cols[1].key, "pi/r2");

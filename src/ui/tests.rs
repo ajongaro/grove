@@ -2268,6 +2268,104 @@ fn a_shell_open_in_a_finca_project_is_listed_and_enter_jumps_in() {
     );
 }
 
+/// homebox answering with btt's session w0 and its shell sh1 (@7).
+fn finca_with_project_shell() -> (tempfile::TempDir, Store, App) {
+    let (d, s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Reachable(status_with_shell(true)),
+        t0(),
+    );
+    app.pane = Pane::Sessions;
+    (d, s, app)
+}
+
+fn status_with_shell(open: bool) -> Status {
+    let mut st = remote_status("homebox", 0, 1);
+    if open {
+        st.projects[0].shells.push(crate::status::ShellStatus {
+            window: "@7".into(),
+            name: "sh1".into(),
+            command: "bash".into(),
+        });
+    }
+    st
+}
+
+#[test]
+fn a_finca_project_shell_pins_and_its_pin_jumps_there() {
+    let (_d, s, mut app) = finca_with_project_shell();
+    handle_key(&mut app, ch('j'));
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    assert_eq!(
+        app.pins,
+        [crate::pins::Pin {
+            finca: Some("homebox".into()),
+            id: "@7".into(),
+            shell: Some(crate::pins::ShellPin {
+                project: Some("btt".into()),
+                name: Some("sh1".into()),
+            }),
+        }]
+    );
+    let rows = app.pinned_rows();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].shell && rows[0].handle == "homebox btt:sh1",
+        "{:?}",
+        rows[0]
+    );
+    app.pane = Pane::Pinned;
+    app.pin_idx = 0;
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            window: "@7".into(),
+        }
+    );
+    // Its window is on the finca: x and r here would hit a local window.
+    assert_eq!(handle_key(&mut app, ch('x')), Action::None);
+    assert!(matches!(app.mode, Mode::Normal), "{:?}", app.mode);
+    handle_key(&mut app, ch('r'));
+    assert!(matches!(app.mode, Mode::Normal), "{:?}", app.mode);
+    assert!(
+        app.footer.as_deref().unwrap_or("").contains("homebox"),
+        "{:?}",
+        app.footer
+    );
+}
+
+#[test]
+fn a_finca_project_shell_pin_goes_when_the_shell_does() {
+    let (_d, s, mut app) = finca_with_project_shell();
+    handle_key(&mut app, ch('j'));
+    let a = handle_key(&mut app, ch('p'));
+    save_pins(&s, &mut app, a);
+    // Not answering: kept.
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Unreachable {
+            error: "down".into(),
+        },
+        t0(),
+    );
+    assert!(!app.prune_pins());
+    // Answering without it: gone.
+    poll(
+        &mut app,
+        "homebox",
+        Reach::Reachable(status_with_shell(false)),
+        t0(),
+    );
+    assert!(app.prune_pins());
+    assert!(app.pins.is_empty());
+}
+
 #[test]
 fn enter_on_a_finca_shell_goes_back_to_that_window() {
     let (_d, _s, mut app) = finca_with_items();
