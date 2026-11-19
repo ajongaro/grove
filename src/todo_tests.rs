@@ -33,12 +33,118 @@ fn parses_and_writes_a_markdown_checklist() {
 
 #[test]
 fn other_lines_become_open_items_and_blank_lines_are_dropped() {
+    // A heading isn't an item: it names a band (`# Notes` is normal).
     let t = loaded("# Notes\n\n* [X] star item\nplain line\n");
-    assert_eq!(texts(&t), ["# Notes", "x star item", "plain line"]);
+    assert_eq!(texts(&t), ["x star item", "plain line"]);
+    assert_eq!(t.serialize(), "- [x] star item\n- [ ] plain line\n");
+}
+
+// ---------- bands and due dates ----------
+
+fn day(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+/// `h:`/`l:` for high and low items, as the list holds them.
+fn banded(t: &Todos) -> Vec<String> {
+    t.items
+        .iter()
+        .map(|i| {
+            let band = match i.priority {
+                Priority::High => "h:",
+                Priority::Normal => "",
+                Priority::Low => "l:",
+            };
+            format!("{band}{}", i.text)
+        })
+        .collect()
+}
+
+const BANDED: &str = "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n- [x] b\n\n## Low priority\n- [ ] l\n";
+
+#[test]
+fn bands_are_read_from_headings_and_written_back() {
+    let t = loaded(BANDED);
+    assert_eq!(banded(&t), ["h:h", "a", "b", "l:l"]);
+    assert_eq!(t.serialize(), BANDED);
+    // An empty band has no heading.
+    let t = loaded("## High priority\n- [ ] h\n## Normal\n- [ ] a\n");
+    assert_eq!(t.serialize(), "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n");
+}
+
+#[test]
+fn a_list_with_no_bands_is_written_as_before() {
+    let text = "- [ ] a\n- [x] b\n";
+    assert_eq!(loaded(text).serialize(), text);
+    assert_eq!(loaded("## Normal\n- [ ] a\n").serialize(), "- [ ] a\n");
+}
+
+#[test]
+fn headings_in_any_order_or_case_group_the_items() {
+    let t = loaded("- [ ] n0\n## low stuff\n- [ ] l\n# HIGH\n- [ ] h\n## Notes\n- [ ] n1\n");
+    assert_eq!(banded(&t), ["h:h", "n0", "n1", "l:l"]);
+}
+
+#[test]
+fn a_due_suffix_becomes_the_due_date() {
+    let t = loaded("- [ ] pay (due 2026-12-01)\n- [ ] ask (due soon)\n");
+    assert_eq!(texts(&t), ["pay", "ask (due soon)"]);
+    assert_eq!(t.items[0].due, Some(day(2026, 12, 1)));
+    assert_eq!(t.items[1].due, None);
     assert_eq!(
         t.serialize(),
-        "- [ ] # Notes\n- [x] star item\n- [ ] plain line\n"
+        "- [ ] pay (due 2026-12-01)\n- [ ] ask (due soon)\n"
     );
+}
+
+#[test]
+fn plus_and_minus_move_an_item_between_bands() {
+    let mut t = loaded("## High\n- [ ] h\n## Normal\n- [ ] a\n- [ ] b\n## Low\n- [ ] l\n");
+    keys(&mut t, "jj");
+    assert_eq!(keys(&mut t, "+"), [Effect::Changed]);
+    // To the end of the band above, the cursor with it.
+    assert_eq!(banded(&t), ["h:h", "h:b", "a", "l:l"]);
+    assert_eq!(t.items[t.idx].text, "b");
+    assert_eq!(keys(&mut t, "+"), [Effect::Nothing], "already high");
+    keys(&mut t, "--");
+    // To the start of the band below.
+    assert_eq!(banded(&t), ["h:h", "a", "l:b", "l:l"]);
+    assert_eq!(t.items[t.idx].text, "b");
+    assert_eq!(keys(&mut t, "-"), [Effect::Nothing], "already low");
+    keys(&mut t, "u");
+    assert_eq!(banded(&t), ["h:h", "b", "a", "l:l"]);
+    assert_eq!(keys(&mut loaded(""), "+-"), [Effect::Nothing, Effect::Nothing]);
+}
+
+#[test]
+fn new_items_and_pastes_take_the_cursors_band() {
+    let mut t = loaded("## High\n- [ ] h\n## Low\n- [ ] l\n");
+    keys(&mut t, "j");
+    keys(&mut t, "nx");
+    press(&mut t, KeyCode::Enter);
+    assert_eq!(banded(&t), ["h:h", "l:l", "l:x"]);
+    // d on the high item, p among the low ones: it's low now.
+    keys(&mut t, "gg");
+    keys(&mut t, "d");
+    keys(&mut t, "p");
+    assert_eq!(banded(&t), ["l:l", "l:h", "l:x"]);
+    let mut empty = loaded("");
+    keys(&mut empty, "nz");
+    press(&mut empty, KeyCode::Enter);
+    assert_eq!(banded(&empty), ["z"]);
+}
+
+#[test]
+fn at_asks_for_a_due_date_and_set_due_saves_it() {
+    let mut t = loaded("- [ ] a\n- [ ] b\n");
+    keys(&mut t, "j");
+    assert_eq!(keys(&mut t, "@"), [Effect::AskDue]);
+    assert_eq!(t.set_due(Some(day(2026, 12, 1))), Effect::Changed);
+    assert_eq!(t.items[1].due, Some(day(2026, 12, 1)));
+    assert_eq!(t.set_due(Some(day(2026, 12, 1))), Effect::Nothing);
+    keys(&mut t, "u");
+    assert_eq!(t.items[1].due, None);
+    assert_eq!(keys(&mut loaded(""), "@"), [Effect::Nothing]);
 }
 
 #[test]
@@ -296,8 +402,8 @@ fn at_top_only_on_the_first_item_with_nothing_half_typed() {
 fn items(spec: &[(&str, bool)]) -> Vec<Item> {
     spec.iter()
         .map(|(t, d)| Item {
-            text: t.to_string(),
             done: *d,
+            ..Item::new(*t)
         })
         .collect()
 }

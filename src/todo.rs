@@ -1,14 +1,91 @@
 //! A project's TODO list and its vim-style editing. Pure: the dashboard
 //! saves when a key returns `Effect::Changed`.
 //!
-//! Stored as a Markdown checklist (`- [ ] text` / `- [x] text`).
+//! Stored as a Markdown checklist (`- [ ] text` / `- [x] text`), with
+//! `## High priority` / `## Normal` / `## Low priority` headings once any
+//! item isn't normal, and ` (due YYYY-MM-DD)` ending an item with a date.
+//! Items are always kept grouped high, normal, low, so a position in the
+//! list is also the cursor and the MCP number.
 
+use chrono::NaiveDate;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// An item's band. Declared high first, so sorting groups the list.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    High,
+    #[default]
+    Normal,
+    Low,
+}
+
+impl Priority {
+    pub fn name(self) -> &'static str {
+        match self {
+            Priority::High => "high",
+            Priority::Normal => "normal",
+            Priority::Low => "low",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Priority> {
+        match s.trim().to_lowercase().as_str() {
+            "high" => Some(Priority::High),
+            "normal" => Some(Priority::Normal),
+            "low" => Some(Priority::Low),
+            _ => None,
+        }
+    }
+
+    /// The heading the file gives its band.
+    fn heading(self) -> &'static str {
+        match self {
+            Priority::High => "## High priority",
+            Priority::Normal => "## Normal",
+            Priority::Low => "## Low priority",
+        }
+    }
+
+    fn up(self) -> Option<Priority> {
+        match self {
+            Priority::High => None,
+            Priority::Normal => Some(Priority::High),
+            Priority::Low => Some(Priority::Normal),
+        }
+    }
+
+    fn down(self) -> Option<Priority> {
+        match self {
+            Priority::High => Some(Priority::Normal),
+            Priority::Normal => Some(Priority::Low),
+            Priority::Low => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Item {
     pub text: String,
     pub done: bool,
+    pub priority: Priority,
+    pub due: Option<NaiveDate>,
+}
+
+impl Item {
+    /// An open, normal item with no due date.
+    pub fn new(text: impl Into<String>) -> Item {
+        Item {
+            text: text.into(),
+            done: false,
+            priority: Priority::Normal,
+            due: None,
+        }
+    }
+}
+
+/// Groups `items` high, normal, low, keeping their order within a band.
+pub fn sort_bands(items: &mut [Item]) {
+    items.sort_by_key(|i| i.priority);
 }
 
 /// What the caller should do after a key.
@@ -19,6 +96,8 @@ pub enum Effect {
     Changed,
     /// Open the list's file in the editor.
     OpenEditor,
+    /// Ask for the cursor item's due date, then call `set_due`.
+    AskDue,
 }
 
 /// The items and cursor as they were before a change.
@@ -95,6 +174,47 @@ impl Todos {
     /// The items `c`/`C` cleared since the last call, to archive.
     pub fn take_cleared(&mut self) -> Vec<Item> {
         std::mem::take(&mut self.cleared)
+    }
+
+    /// Sets (or with None clears) the cursor item's due date.
+    pub fn set_due(&mut self, due: Option<NaiveDate>) -> Effect {
+        self.change(|t| {
+            if let Some(i) = t.items.get_mut(t.idx) {
+                i.due = due;
+            }
+        })
+    }
+
+    /// Moves the cursor item one band up (`up`) or down: to the end of the
+    /// band above, or the start of the band below. The cursor follows it.
+    fn shift(&mut self, up: bool) -> Effect {
+        self.change(|t| {
+            let Some(item) = t.items.get(t.idx) else {
+                return;
+            };
+            let Some(to) = (if up { item.priority.up() } else { item.priority.down() }) else {
+                return;
+            };
+            let mut item = t.items.remove(t.idx);
+            item.priority = to;
+            let at = if up {
+                t.items.iter().rposition(|i| i.priority <= to).map_or(0, |p| p + 1)
+            } else {
+                t.items
+                    .iter()
+                    .position(|i| i.priority >= to)
+                    .unwrap_or(t.items.len())
+            };
+            t.items.insert(at, item);
+            t.idx = at;
+        })
+    }
+
+    /// The band a new or pasted item at the cursor goes in.
+    fn cursor_band(&self) -> Priority {
+        self.items
+            .get(self.idx)
+            .map_or(Priority::Normal, |i| i.priority)
     }
 
     pub fn inserting(&self) -> bool {
@@ -192,6 +312,9 @@ impl Todos {
                 None => Effect::Nothing,
             },
             (_, KeyCode::Char('e' | 'E')) => Effect::OpenEditor,
+            (_, KeyCode::Char('+')) => self.shift(true),
+            (_, KeyCode::Char('-')) => self.shift(false),
+            (_, KeyCode::Char('@')) if !self.items.is_empty() => Effect::AskDue,
             _ => Effect::Nothing,
         }
     }
@@ -229,7 +352,11 @@ impl Todos {
             } else {
                 self.idx + offset
             };
-            self.items.insert(at, blank());
+            let item = Item {
+                priority: self.cursor_band(),
+                ..blank()
+            };
+            self.items.insert(at, item);
             self.idx = at;
         } else if let Some(i) = self.items.get_mut(self.idx) {
             if clear {
@@ -265,9 +392,11 @@ impl Todos {
 
     /// `offset` 1 pastes below the cursor, 0 above.
     fn paste(&mut self, offset: usize) -> Effect {
-        let Some(item) = self.register.clone() else {
+        let Some(mut item) = self.register.clone() else {
             return Effect::Nothing;
         };
+        // Into the cursor's band, so the list stays grouped.
+        item.priority = self.cursor_band();
         self.change(|t| {
             let at = if t.items.is_empty() {
                 0
@@ -333,10 +462,7 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
     };
     for op in ops {
         match op {
-            Op::Add(t) => added.push(Item {
-                text: text_ok(t)?,
-                done: false,
-            }),
+            Op::Add(t) => added.push(Item::new(text_ok(t)?)),
             Op::Remove(n) => {
                 let i = at(*n)?;
                 slots[i]
@@ -360,12 +486,34 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
     Ok(slots.into_iter().flatten().chain(added).collect())
 }
 
-/// The stored Markdown checklist for `items`.
+/// The stored Markdown checklist for `items` (grouped, as the list keeps
+/// them). Headings only once some item isn't normal, so a plain list is
+/// written as it always was.
 pub fn serialize_items(items: &[Item]) -> String {
-    items
-        .iter()
-        .map(|i| format!("- [{}] {}\n", if i.done { 'x' } else { ' ' }, i.text))
-        .collect()
+    let line = |i: &Item| {
+        let due = i
+            .due
+            .map(|d| format!(" (due {})", d.format("%Y-%m-%d")))
+            .unwrap_or_default();
+        format!("- [{}] {}{due}\n", if i.done { 'x' } else { ' ' }, i.text)
+    };
+    if items.iter().all(|i| i.priority == Priority::Normal) {
+        return items.iter().map(line).collect();
+    }
+    let mut out = String::new();
+    for band in [Priority::High, Priority::Normal, Priority::Low] {
+        let lines: String = items.iter().filter(|i| i.priority == band).map(line).collect();
+        if lines.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(band.heading());
+        out.push('\n');
+        out.push_str(&lines);
+    }
+    out
 }
 
 /// Unchecked items in a TODO file's text.
@@ -374,38 +522,58 @@ pub fn open_count(text: &str) -> usize {
 }
 
 fn blank() -> Item {
-    Item {
-        text: String::new(),
-        done: false,
-    }
+    Item::new("")
 }
 
 /// Checklist lines (`-` or `*`, `[ ]`/`[x]`/`[X]`) become items; any other
-/// non-blank line becomes an open item with that text.
+/// non-blank line becomes an open item with that text, except a `#`
+/// heading, which starts a band: "High…" or "Low…" (any case), else normal.
 pub fn parse(text: &str) -> Vec<Item> {
-    text.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(|l| {
-            let rest = l.strip_prefix("- ").or_else(|| l.strip_prefix("* "));
-            let checked = rest.and_then(|r| {
-                r.strip_prefix("[ ] ")
-                    .map(|t| (t, false))
-                    .or_else(|| r.strip_prefix("[x] ").map(|t| (t, true)))
-                    .or_else(|| r.strip_prefix("[X] ").map(|t| (t, true)))
-            });
-            match checked {
-                Some((t, done)) => Item {
-                    text: t.trim().to_string(),
-                    done,
-                },
-                None => Item {
-                    text: l.to_string(),
-                    done: false,
-                },
-            }
-        })
-        .collect()
+    let mut band = Priority::Normal;
+    let mut items = Vec::new();
+    for l in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if l.starts_with('#') {
+            let name = l.trim_start_matches('#').trim().to_lowercase();
+            band = if name.starts_with("high") {
+                Priority::High
+            } else if name.starts_with("low") {
+                Priority::Low
+            } else {
+                Priority::Normal
+            };
+            continue;
+        }
+        let rest = l.strip_prefix("- ").or_else(|| l.strip_prefix("* "));
+        let checked = rest.and_then(|r| {
+            r.strip_prefix("[ ] ")
+                .map(|t| (t, false))
+                .or_else(|| r.strip_prefix("[x] ").map(|t| (t, true)))
+                .or_else(|| r.strip_prefix("[X] ").map(|t| (t, true)))
+        });
+        let (text, done) = checked.unwrap_or((l, false));
+        let (text, due) = split_due(text.trim());
+        items.push(Item {
+            text: text.to_string(),
+            done,
+            priority: band,
+            due,
+        });
+    }
+    sort_bands(&mut items);
+    items
+}
+
+/// `pay (due 2026-12-01)` → ("pay", that day); text without a real date
+/// at the end stays as it is.
+fn split_due(text: &str) -> (&str, Option<NaiveDate>) {
+    let parsed = text
+        .strip_suffix(')')
+        .and_then(|t| t.rsplit_once(" (due "))
+        .and_then(|(t, d)| Some((t.trim_end(), NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?)));
+    match parsed {
+        Some((t, d)) if !t.is_empty() => (t, Some(d)),
+        _ => (text, None),
+    }
 }
 
 #[cfg(test)]

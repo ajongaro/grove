@@ -755,6 +755,8 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
                 .collect(),
         },
         Effect::OpenEditor => Action::EditTodos { slug },
+        // The prompt comes with the dashboard's part (task 4).
+        Effect::AskDue => Action::None,
     }
 }
 
