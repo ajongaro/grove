@@ -384,7 +384,57 @@ fn op(op: &str, n: Option<usize>, text: Option<&str>) -> TodoOpArg {
         op: op.into(),
         n,
         text: text.map(str::to_string),
+        priority: None,
+        due: None,
     }
+}
+
+fn planned(op_: &str, n: Option<usize>, text: Option<&str>, p: Option<&str>, due: Option<&str>) -> TodoOpArg {
+    TodoOpArg {
+        priority: p.map(str::to_string),
+        due: due.map(str::to_string),
+        ..op(op_, n, text)
+    }
+}
+
+#[test]
+fn edit_todos_takes_priority_and_due() {
+    let t = mcp(None);
+    add(&t, "alpha");
+    t.store.write_todos("alpha", "- [ ] a\n").unwrap();
+    let out = t
+        .do_edit_todos(
+            Some("alpha".into()),
+            vec![planned("add", None, Some("pay"), Some("high"), Some("2026-12-01"))],
+        )
+        .unwrap();
+    assert!(out.contains("1. [ ] [high] pay (due 2026-12-01)"), "{out}");
+    assert!(out.contains("2. [ ] a"), "{out}");
+    let out = t
+        .do_edit_todos(
+            Some("alpha".into()),
+            vec![planned("set", Some(1), None, Some("low"), Some(""))],
+        )
+        .unwrap();
+    assert!(out.contains("2. [ ] [low] pay\n") || out.ends_with("2. [ ] [low] pay"), "{out}");
+    // reword can move it too.
+    let out = t
+        .do_edit_todos(
+            Some("alpha".into()),
+            vec![planned("reword", Some(2), Some("pay it"), Some("normal"), None)],
+        )
+        .unwrap();
+    assert!(out.contains("2. [ ] pay it") && !out.contains("[low]"), "{out}");
+    let before = t.store.read_todos("alpha");
+    for (bad, says) in [
+        (planned("add", None, Some("x"), Some("urgent"), None), "high, normal or low"),
+        (planned("add", None, Some("x"), None, Some("next week")), "YYYY-MM-DD"),
+        (planned("set", Some(1), None, None, None), "priority or due"),
+    ] {
+        let e = t.do_edit_todos(Some("alpha".into()), vec![bad]).unwrap_err();
+        assert!(e.contains(says), "{e}");
+    }
+    assert_eq!(t.store.read_todos("alpha"), before);
 }
 
 #[test]

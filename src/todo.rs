@@ -428,11 +428,33 @@ impl Todos {
 /// Numbers are 1-based positions in the list before any edit.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
-    Add(String),
+    /// A new item at the end of its band (normal when `priority` is None).
+    Add {
+        text: String,
+        priority: Option<Priority>,
+        due: Option<Option<NaiveDate>>,
+    },
     Check(usize),
     Uncheck(usize),
     Reword(usize, String),
+    /// Changes an item's band and/or due date; `due: Some(None)` clears it.
+    Set {
+        n: usize,
+        priority: Option<Priority>,
+        due: Option<Option<NaiveDate>>,
+    },
     Remove(usize),
+}
+
+impl Op {
+    /// A plain new item: normal, no due date.
+    pub fn add(text: impl Into<String>) -> Op {
+        Op::Add {
+            text: text.into(),
+            priority: None,
+            due: None,
+        }
+    }
 }
 
 /// Applies `ops` in order; any bad op fails the whole batch.
@@ -462,14 +484,22 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
     };
     for op in ops {
         match op {
-            Op::Add(t) => added.push(Item::new(text_ok(t)?)),
+            Op::Add {
+                text,
+                priority,
+                due,
+            } => added.push(Item {
+                priority: priority.unwrap_or_default(),
+                due: due.flatten(),
+                ..Item::new(text_ok(text)?)
+            }),
             Op::Remove(n) => {
                 let i = at(*n)?;
                 slots[i]
                     .take()
                     .ok_or_else(|| format!("item {n} was already removed"))?;
             }
-            Op::Check(n) | Op::Uncheck(n) | Op::Reword(n, _) => {
+            Op::Check(n) | Op::Uncheck(n) | Op::Reword(n, _) | Op::Set { n, .. } => {
                 let i = at(*n)?;
                 let item = slots[i]
                     .as_mut()
@@ -478,12 +508,22 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
                     Op::Check(_) => item.done = true,
                     Op::Uncheck(_) => item.done = false,
                     Op::Reword(_, t) => item.text = text_ok(t)?,
+                    Op::Set { priority, due, .. } => {
+                        if let Some(p) = priority {
+                            item.priority = *p;
+                        }
+                        if let Some(d) = due {
+                            item.due = *d;
+                        }
+                    }
                     _ => unreachable!(),
                 }
             }
         }
     }
-    Ok(slots.into_iter().flatten().chain(added).collect())
+    let mut out: Vec<Item> = slots.into_iter().flatten().chain(added).collect();
+    sort_bands(&mut out);
+    Ok(out)
 }
 
 /// The stored Markdown checklist for `items` (grouped, as the list keeps
@@ -514,6 +554,20 @@ pub fn serialize_items(items: &[Item]) -> String {
         out.push_str(&lines);
     }
     out
+}
+
+/// An item as Claude reads it: `[high] text (due 2026-12-01)`, with no
+/// tag for normal items.
+pub fn describe(i: &Item) -> String {
+    let tag = match i.priority {
+        Priority::Normal => String::new(),
+        p => format!("[{}] ", p.name()),
+    };
+    let due = i
+        .due
+        .map(|d| format!(" (due {})", d.format("%Y-%m-%d")))
+        .unwrap_or_default();
+    format!("{tag}{}{due}", i.text)
 }
 
 /// Unchecked items in a TODO file's text.

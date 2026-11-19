@@ -459,7 +459,8 @@ impl GroveMcp {
         let ops = ops
             .iter()
             .map(TodoOpArg::to_op)
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .concat();
         let items = crate::todo::parse(&self.store.read_todos(&p.slug()));
         let new = crate::todo::apply_ops(&items, &ops)?;
         self.store
@@ -497,7 +498,8 @@ impl GroveMcp {
     }
 }
 
-/// `1. [ ] text` lines, or `(no TODOs)`.
+/// `1. [ ] [high] text (due 2026-12-01)` lines, or `(no TODOs)`. Normal
+/// items have no tag.
 fn numbered(items: &[crate::todo::Item]) -> String {
     if items.is_empty() {
         return "(no TODOs)".into();
@@ -510,7 +512,7 @@ fn numbered(items: &[crate::todo::Item]) -> String {
                 "{}. [{}] {}",
                 i + 1,
                 if it.done { 'x' } else { ' ' },
-                it.text
+                crate::todo::describe(it)
             )
         })
         .collect::<Vec<_>>()
@@ -535,12 +537,17 @@ pub struct UpdateProjectArgs {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TodoOpArg {
-    /// add, check, uncheck, reword or remove.
+    /// add, check, uncheck, reword, set or remove.
     pub op: String,
     /// The item's number as get_todos shows it (before this call's edits). Not for add.
     pub n: Option<usize>,
     /// The text, for add and reword.
     pub text: Option<String>,
+    /// For add, reword and set: high, normal or low. Only when the user gave one.
+    pub priority: Option<String>,
+    /// For add, reword and set: the due date as YYYY-MM-DD, or "" to clear it.
+    /// Only when the user gave one.
+    pub due: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -552,7 +559,8 @@ pub struct EditTodosArgs {
 }
 
 impl TodoOpArg {
-    fn to_op(&self) -> Result<crate::todo::Op, String> {
+    /// One op, or two for a reword that also sets the band or due date.
+    fn to_op(&self) -> Result<Vec<crate::todo::Op>, String> {
         use crate::todo::Op;
         let n = || self.n.ok_or_else(|| format!("{} needs `n`", self.op));
         let text = || {
@@ -560,18 +568,55 @@ impl TodoOpArg {
                 .clone()
                 .ok_or_else(|| format!("{} needs `text`", self.op))
         };
+        let priority = self
+            .priority
+            .as_deref()
+            .map(|p| {
+                crate::todo::Priority::from_name(p)
+                    .ok_or_else(|| format!("priority \"{p}\" isn't high, normal or low"))
+            })
+            .transpose()?;
+        let due = self
+            .due
+            .as_deref()
+            .map(|d| match d.trim() {
+                "" => Ok(None),
+                d => chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .map(Some)
+                    .map_err(|_| format!("due \"{d}\" isn't a date as YYYY-MM-DD")),
+            })
+            .transpose()?;
+        let set = |n: usize| Op::Set { n, priority, due };
         Ok(match self.op.as_str() {
-            "add" => Op::Add(text()?),
+            "add" => {
+                return Ok(vec![Op::Add {
+                    text: text()?,
+                    priority,
+                    due,
+                }]);
+            }
             "check" => Op::Check(n()?),
             "uncheck" => Op::Uncheck(n()?),
-            "reword" => Op::Reword(n()?, text()?),
+            "reword" => {
+                let n = n()?;
+                let mut ops = vec![Op::Reword(n, text()?)];
+                if priority.is_some() || due.is_some() {
+                    ops.push(set(n));
+                }
+                return Ok(ops);
+            }
+            "set" if priority.is_none() && due.is_none() => {
+                return Err("set needs a priority or due".into());
+            }
+            "set" => set(n()?),
             "remove" => Op::Remove(n()?),
             other => {
                 return Err(format!(
-                    "unknown op \"{other}\"; use add, check, uncheck, reword or remove"
+                    "unknown op \"{other}\"; use add, check, uncheck, reword, set or remove"
                 ));
             }
         })
+        .map(|op| vec![op])
     }
 }
 
@@ -696,7 +741,7 @@ impl GroveMcp {
     }
 
     #[tool(
-        description = "Edit a Grove project's TODO list: add, check, uncheck, reword or remove items by number. Returns the new list."
+        description = "Edit a Grove project's TODO list: add, check, uncheck, reword, set or remove items by number. add, reword and set take an optional priority (high, normal, low) and due date (YYYY-MM-DD); give those only when the user did. Returns the new list."
     )]
     fn edit_todos(&self, Parameters(a): Parameters<EditTodosArgs>) -> CallToolResult {
         result(self.do_edit_todos(a.project, a.ops))

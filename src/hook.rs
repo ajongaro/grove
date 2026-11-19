@@ -143,14 +143,16 @@ fn todo_context(text: &str) -> String {
     let open: Vec<String> = crate::todo::parse(text)
         .into_iter()
         .filter(|i| !i.done)
-        .map(|i| i.text)
+        .map(|i| crate::todo::describe(&i))
         .collect();
     let mut out = String::from(
         "\nThis project's TODO list is kept in Grove, where the user sees it on their dashboard. \
          Use it as the project's TODO list instead of a TODO file or code comments: read it with \
          the grove get_todos tool, and with edit_todos add follow-ups and things you notice but \
          won't do now, and check items off when you finish them. Your own task list is still \
-         for the steps of the current job.\n",
+         for the steps of the current job. Items are listed high priority first; edit_todos \
+         takes a priority (high, normal, low) and a due date (YYYY-MM-DD). Only set a priority \
+         or due date when the user gave one; never invent them.\n",
     );
     if open.is_empty() {
         out.push_str("Open TODOs: none.\n");

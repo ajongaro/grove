@@ -417,7 +417,7 @@ fn ops_number_the_original_list() {
             Op::Remove(1),
             Op::Check(3),
             Op::Reword(2, "B".into()),
-            Op::Add("d".into()),
+            Op::add("d"),
         ],
     )
     .unwrap();
@@ -444,7 +444,7 @@ fn an_op_on_a_removed_item_is_an_error() {
 
 #[test]
 fn empty_text_is_refused() {
-    assert!(apply_ops(&[], &[Op::Add("  ".into())]).is_err());
+    assert!(apply_ops(&[], &[Op::add("  ")]).is_err());
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn serialize_items_matches_the_dashboard_format() {
 #[test]
 fn text_with_a_line_break_is_refused() {
     let start = items(&[("a", false)]);
-    assert!(apply_ops(&start, &[Op::Add("x\n- [x] y".into())]).is_err());
+    assert!(apply_ops(&start, &[Op::add("x\n- [x] y")]).is_err());
     assert!(apply_ops(&start, &[Op::Reword(1, "x\ry".into())]).is_err());
 }
 
@@ -532,4 +532,48 @@ fn n_adds_r_edits_enter_checks_off_and_e_opens_the_editor() {
     assert_eq!(press(&mut t, KeyCode::Enter), Effect::Changed);
     assert_eq!(texts(&t), ["a", "x b!"]);
     assert_eq!(keys(&mut t, "e"), [Effect::OpenEditor]);
+}
+
+#[test]
+fn ops_set_priority_and_due_and_keep_bands() {
+    let start = parse("## High\n- [ ] h\n## Normal\n- [ ] a\n- [ ] b\n");
+    let out = apply_ops(
+        &start,
+        &[
+            Op::Add {
+                text: "h2".into(),
+                priority: Some(Priority::High),
+                due: Some(Some(day(2026, 12, 1))),
+            },
+            Op::Set {
+                n: 3,
+                priority: Some(Priority::Low),
+                due: None,
+            },
+        ],
+    )
+    .unwrap();
+    let got: Vec<(&str, Priority)> = out.iter().map(|i| (i.text.as_str(), i.priority)).collect();
+    // An add lands at the end of its band; a set moves the item.
+    assert_eq!(
+        got,
+        [
+            ("h", Priority::High),
+            ("h2", Priority::High),
+            ("a", Priority::Normal),
+            ("b", Priority::Low),
+        ]
+    );
+    assert_eq!(out[1].due, Some(day(2026, 12, 1)));
+    let cleared = apply_ops(
+        &out,
+        &[Op::Set {
+            n: 2,
+            priority: None,
+            due: Some(None),
+        }],
+    )
+    .unwrap();
+    assert_eq!(cleared[1].due, None);
+    assert_eq!(cleared[1].priority, Priority::High, "untouched");
 }

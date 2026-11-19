@@ -240,6 +240,27 @@ fn an_earlier_runs_hooks_are_ignored() {
 }
 
 #[test]
+fn session_start_lists_high_todos_first_with_due_dates() {
+    let dir = setup("starting");
+    let todos = home(&dir).join("todos");
+    std::fs::create_dir_all(&todos).unwrap();
+    std::fs::write(
+        todos.join("demo.md"),
+        "- [ ] tidy\n## Low priority\n- [ ] someday\n## High priority\n- [ ] pay (due 2026-12-01)\n",
+    )
+    .unwrap();
+    let (_, out) = run_hook(&home(&dir), &fixture("session_start"));
+    assert!(
+        out.contains("- [high] pay (due 2026-12-01)\n- tidy\n- [low] someday\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Only set a priority or due date when the user gave one"),
+        "{out}"
+    );
+}
+
+#[test]
 fn session_start_shares_the_todo_list_and_how_to_keep_it() {
     let dir = setup("starting");
     let todos = home(&dir).join("todos");
