@@ -97,7 +97,7 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             let [sessions, todo] =
                 Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(right);
             render_sessions(frame, app, sessions, now);
-            render_todos(frame, app, todo);
+            render_todos(frame, app, todo, now);
         }
         None => render_sessions(frame, app, right, now),
     }
@@ -118,6 +118,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
                 }
                 PromptKind::RenameSession { .. } => " Rename session (Enter saves, Esc cancels) ",
                 PromptKind::RenameShell { .. } => " Rename shell (Enter saves, Esc cancels) ",
+                PromptKind::TodoDue { .. } => {
+                    " Due date: 2026-12-01, 12/1, dec 1, fri, +3 (empty clears, Esc cancels) "
+                }
                 PromptKind::NameFincaSession { .. } => {
                     " Name the new session (Enter starts, Esc cancels) "
                 }
@@ -722,7 +725,13 @@ fn name_width<'a>(names: impl Iterator<Item = &'a str>) -> usize {
     names.map(|n| n.chars().count()).max().unwrap_or(0).max(12) + 2
 }
 
-fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
+/// The TODO list in its bands: HIGH and LOW headers when they have items,
+/// none over the normal ones; due dates on the right.
+fn render_todos(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
+    use crate::due::Urgency;
+    use crate::todo::Priority;
+    let today = now.with_timezone(&chrono::Local).date_naive();
+    let inner = area.width.saturating_sub(2) as usize;
     let focused = app.pane == Pane::Todo;
     let block = pane_block(vec![Span::raw("TODO").fg(pal().todo)], focused);
     let t = &app.todos;
@@ -734,27 +743,54 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(p, area);
         return;
     }
-    let items: Vec<ListItem> = t
-        .items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let mut text = item.text.clone();
-            if focused && t.inserting() && i == t.idx {
-                text.push('█');
-            }
-            let line = if item.done {
-                Line::from(vec![
-                    Span::raw("[x] ").fg(pal().dim),
-                    Span::raw(text).fg(pal().dim).crossed_out(),
-                ])
+    let mut rows: Vec<ListItem> = Vec::new();
+    let mut selected = None;
+    let mut band = Priority::Normal;
+    for (i, item) in t.items.iter().enumerate() {
+        if (i == 0 || item.priority != band) && item.priority != Priority::Normal {
+            let name = if item.priority == Priority::High {
+                "HIGH"
             } else {
-                Line::from(vec![Span::raw("[ ] ").fg(pal().accent), Span::raw(text)])
+                "LOW"
             };
-            ListItem::new(line)
-        })
-        .collect();
-    let mut state = ListState::default().with_selected(focused.then_some(t.idx));
+            rows.push(ListItem::new(Line::raw(name).fg(pal().todo).bold()));
+        }
+        band = item.priority;
+        if i == t.idx {
+            selected = Some(rows.len());
+        }
+        let mut text = item.text.clone();
+        if focused && t.inserting() && i == t.idx {
+            text.push('█');
+        }
+        let mut spans = if item.done {
+            vec![
+                Span::raw("[x] ").fg(pal().dim),
+                Span::raw(text).fg(pal().dim).crossed_out(),
+            ]
+        } else {
+            vec![Span::raw("[ ] ").fg(pal().accent), Span::raw(text)]
+        };
+        if let Some(d) = item.due {
+            let urgency = crate::due::urgency(d, today);
+            let mut due = crate::due::show(d, today);
+            if !item.done && urgency == Urgency::Overdue {
+                due.push_str(" !");
+            }
+            let color = match urgency {
+                _ if item.done => pal().dim,
+                Urgency::Later => pal().dim,
+                Urgency::Soon | Urgency::Overdue => pal().warn,
+            };
+            let used: usize = spans.iter().map(Span::width).sum();
+            let pad = inner.saturating_sub(used + due.chars().count()).max(2);
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::raw(due).fg(color));
+        }
+        rows.push(ListItem::new(Line::from(spans)));
+    }
+    let items = rows;
+    let mut state = ListState::default().with_selected(focused.then_some(selected).flatten());
     let list = List::new(items)
         .block(block)
         .highlight_style(highlight(focused));

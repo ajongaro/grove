@@ -49,6 +49,10 @@ pub enum PromptKind {
         window: String,
         finca: Option<String>,
     },
+    /// The due date of the TODO under the cursor (`@`) in `slug`'s list.
+    TodoDue {
+        slug: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

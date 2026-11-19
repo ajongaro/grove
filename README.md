@@ -443,19 +443,32 @@ for the main thing, `d` delete, `c`/`C` clear. The vim keys work too.
 | `Enter` `x` `space` | toggle done |
 | `c` / `C` | clear the done item under the cursor / every done item. They move to `~/.grove/todos/<project>.done.md` with the day, and `u` brings the last clear back |
 | `d` / `p` `P` | delete / paste it below or above (works across projects; `dd` deletes too) |
+| `+` / `-` | raise / lower its priority: it moves between the HIGH, normal and LOW bands |
+| `@` | its due date: `2026-12-01`, `12/1`, `dec 1`, `fri`, `today`, `tomorrow` or `+3` (days); empty clears it |
 | `u` | undo the last change |
 | `e` | open the list in your editor (also `E`) |
 | `h` | back to the projects |
 
+**Priorities and due dates.** A list has three bands: high at the top,
+everything unmarked in the middle, low at the bottom. HIGH and LOW headers
+show when they have items. New items and pastes go in the band the cursor
+is in. A due date sits on the right (`Dec 1`); within 3 days it turns the
+warning colour, and an overdue one gets `!`.
+
 It's saved as `~/.grove/todos/<project>.md`, a plain Markdown checklist,
-on every change. Projects with open items show the count next to their
-name (`☐3`).
+on every change. Once any item is high or low, the bands are
+`## High priority`, `## Normal` and `## Low priority` headings, and a due
+date is ` (due 2026-12-01)` at the end of its line, so the file reads fine
+in your editor and edits there come back. Projects with open items show
+the count next to their name (`☐3`).
 
 **Claude keeps it too.** Each new Claude session in the project is told it
 has a TODO list in Grove (its open items, up to ten) and to use it as the
 project's TODO list. It adds follow-ups and things it notices but won't do
 now, and checks items off as it finishes them, through Grove's `get_todos`
-and `edit_todos` tools, so its work shows up on your dashboard. Claude
+and `edit_todos` tools, so its work shows up on your dashboard. It sees
+each item's priority and due date, and sets them only when you've given
+one. Claude
 still uses its own task list for the steps of the job in hand.
 `claude_todos = false` in `config.toml` turns this off.
 

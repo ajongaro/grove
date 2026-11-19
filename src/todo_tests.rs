@@ -60,7 +60,8 @@ fn banded(t: &Todos) -> Vec<String> {
         .collect()
 }
 
-const BANDED: &str = "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n- [x] b\n\n## Low priority\n- [ ] l\n";
+const BANDED: &str =
+    "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n- [x] b\n\n## Low priority\n- [ ] l\n";
 
 #[test]
 fn bands_are_read_from_headings_and_written_back() {
@@ -69,7 +70,10 @@ fn bands_are_read_from_headings_and_written_back() {
     assert_eq!(t.serialize(), BANDED);
     // An empty band has no heading.
     let t = loaded("## High priority\n- [ ] h\n## Normal\n- [ ] a\n");
-    assert_eq!(t.serialize(), "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n");
+    assert_eq!(
+        t.serialize(),
+        "## High priority\n- [ ] h\n\n## Normal\n- [ ] a\n"
+    );
 }
 
 #[test]
@@ -113,7 +117,10 @@ fn plus_and_minus_move_an_item_between_bands() {
     assert_eq!(keys(&mut t, "-"), [Effect::Nothing], "already low");
     keys(&mut t, "u");
     assert_eq!(banded(&t), ["h:h", "b", "a", "l:l"]);
-    assert_eq!(keys(&mut loaded(""), "+-"), [Effect::Nothing, Effect::Nothing]);
+    assert_eq!(
+        keys(&mut loaded(""), "+-"),
+        [Effect::Nothing, Effect::Nothing]
+    );
 }
 
 #[test]

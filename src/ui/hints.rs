@@ -164,7 +164,12 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
             if on_done {
                 h.push(("c", "clear"));
             }
-            h.extend([("r", "edit"), ("d", "delete")]);
+            h.extend([
+                ("r", "edit"),
+                ("d", "delete"),
+                ("+/-", "priority"),
+                ("@", "due"),
+            ]);
             if any_done {
                 h.push(("C", "clear done"));
             }

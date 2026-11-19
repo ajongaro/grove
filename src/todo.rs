@@ -192,13 +192,20 @@ impl Todos {
             let Some(item) = t.items.get(t.idx) else {
                 return;
             };
-            let Some(to) = (if up { item.priority.up() } else { item.priority.down() }) else {
+            let Some(to) = (if up {
+                item.priority.up()
+            } else {
+                item.priority.down()
+            }) else {
                 return;
             };
             let mut item = t.items.remove(t.idx);
             item.priority = to;
             let at = if up {
-                t.items.iter().rposition(|i| i.priority <= to).map_or(0, |p| p + 1)
+                t.items
+                    .iter()
+                    .rposition(|i| i.priority <= to)
+                    .map_or(0, |p| p + 1)
             } else {
                 t.items
                     .iter()
@@ -446,6 +453,7 @@ pub enum Op {
     Remove(usize),
 }
 
+#[cfg(test)]
 impl Op {
     /// A plain new item: normal, no due date.
     pub fn add(text: impl Into<String>) -> Op {
@@ -542,7 +550,11 @@ pub fn serialize_items(items: &[Item]) -> String {
     }
     let mut out = String::new();
     for band in [Priority::High, Priority::Normal, Priority::Low] {
-        let lines: String = items.iter().filter(|i| i.priority == band).map(line).collect();
+        let lines: String = items
+            .iter()
+            .filter(|i| i.priority == band)
+            .map(line)
+            .collect();
         if lines.is_empty() {
             continue;
         }

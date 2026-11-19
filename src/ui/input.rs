@@ -245,6 +245,25 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                         }
                     }
                 }
+                PromptKind::TodoDue { slug } => {
+                    let today = chrono::Local::now().date_naive();
+                    match crate::due::parse(&text, today) {
+                        Err(e) => {
+                            app.footer = Some(e);
+                            Action::None
+                        }
+                        // The list moved on to another project meanwhile.
+                        Ok(_) if app.todo_slug.as_deref() != Some(slug.as_str()) => Action::None,
+                        Ok(due) => match app.todos.set_due(due) {
+                            Effect::Changed => Action::SaveTodos {
+                                slug,
+                                text: app.todos.serialize(),
+                                archived: vec![],
+                            },
+                            _ => Action::None,
+                        },
+                    }
+                }
                 PromptKind::RenameSession { session_id } => {
                     let current = app
                         .sessions
@@ -755,8 +774,20 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
                 .collect(),
         },
         Effect::OpenEditor => Action::EditTodos { slug },
-        // The prompt comes with the dashboard's part (task 4).
-        Effect::AskDue => Action::None,
+        Effect::AskDue => {
+            let input = app
+                .todos
+                .items
+                .get(app.todos.idx)
+                .and_then(|i| i.due)
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+            app.mode = Mode::Prompt {
+                kind: PromptKind::TodoDue { slug },
+                input,
+            };
+            Action::None
+        }
     }
 }
 

@@ -1442,6 +1442,139 @@ fn todo_list_sits_below_the_sessions() {
     assert!(out.contains("[x] ship grove"), "{out}");
 }
 
+/// The text of the row painted with the focused cursor's background.
+fn selected_row(app: &App, w: u16, h: u16) -> String {
+    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+    term.draw(|f| render(f, app, t0() + Duration::minutes(2)))
+        .unwrap();
+    let buf = term.backend().buffer().clone();
+    let bg = crate::ui::theme::pal().cursor_bg;
+    (0..h)
+        .find(|&y| (0..w).filter(|&x| buf[(x, y)].bg == bg).count() > 5)
+        .map(|y| (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect())
+        .unwrap_or_default()
+}
+
+/// The test clock's day is 2026-10-06.
+const BANDED_TODOS: &str = "## High priority\n- [ ] pay (due 2026-10-16)\n\n## Normal\n- [ ] tidy\n- [ ] sweep\n\n## Low priority\n- [ ] someday\n";
+
+#[test]
+fn todo_bands_show_headers_and_due_dates() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", BANDED_TODOS).unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 24);
+    let (high, pay, tidy, low, someday) = (
+        row_of(&out, "HIGH"),
+        row_of(&out, "[ ] pay"),
+        row_of(&out, "[ ] tidy"),
+        row_of(&out, "LOW"),
+        row_of(&out, "[ ] someday"),
+    );
+    assert!(
+        high < pay && pay + 1 == tidy && tidy < low && low < someday,
+        "{out}"
+    );
+    let row = out.lines().nth(pay).unwrap();
+    assert!(
+        row.trim_end()
+            .trim_end_matches('│')
+            .trim_end()
+            .ends_with("Oct 16"),
+        "{row}"
+    );
+    assert!(!out.contains("NORMAL"), "{out}");
+}
+
+#[test]
+fn an_overdue_todo_is_marked() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos(
+        "alpha",
+        "- [ ] late (due 2026-10-05)\n- [x] old (due 2026-10-01)\n",
+    )
+    .unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 20);
+    let late = out.lines().nth(row_of(&out, "late")).unwrap();
+    assert!(late.contains("Oct 5 !"), "{late}");
+    let old = out.lines().nth(row_of(&out, "old")).unwrap();
+    assert!(old.contains("Oct 1") && !old.contains("Oct 1 !"), "{old}");
+}
+
+#[test]
+fn at_on_a_todo_asks_for_its_due_date() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", "- [ ] pay (due 2026-10-16)\n")
+        .unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    handle_key(&mut app, ch('@'));
+    let Mode::Prompt { kind, input } = app.mode.clone() else {
+        panic!("{:?}", app.mode);
+    };
+    assert_eq!(
+        kind,
+        PromptKind::TodoDue {
+            slug: "alpha".into()
+        }
+    );
+    assert_eq!(input, "2026-10-16", "prefilled with the current date");
+    assert!(screen(&app, 100, 20).contains("Due date"));
+    // Nonsense: nothing changes, and the footer says why.
+    app.mode = Mode::Prompt {
+        kind: kind.clone(),
+        input: "bogus".into(),
+    };
+    assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), Action::None);
+    assert!(
+        app.footer.as_deref().unwrap_or("").contains("isn't a date"),
+        "{:?}",
+        app.footer
+    );
+    assert_eq!(
+        app.todos.items[0].due.map(|d| d.to_string()).as_deref(),
+        Some("2026-10-16")
+    );
+    app.mode = Mode::Prompt {
+        kind,
+        input: "2026-12-01".into(),
+    };
+    match handle_key(&mut app, key(KeyCode::Enter)) {
+        Action::SaveTodos { slug, text, .. } => {
+            assert_eq!(slug, "alpha");
+            assert_eq!(text, "- [ ] pay (due 2026-12-01)\n");
+        }
+        other => panic!("{other:?}"),
+    }
+    // Empty clears it.
+    handle_key(&mut app, ch('@'));
+    if let Mode::Prompt { kind, .. } = app.mode.clone() {
+        app.mode = Mode::Prompt {
+            kind,
+            input: String::new(),
+        };
+    }
+    match handle_key(&mut app, key(KeyCode::Enter)) {
+        Action::SaveTodos { text, .. } => assert_eq!(text, "- [ ] pay\n"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_todo_cursor_stays_on_items_across_band_headers() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", BANDED_TODOS).unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    handle_key(&mut app, ch('j'));
+    let out = screen(&app, 100, 24);
+    // The highlighted row is tidy's, not a header's.
+    assert_eq!(app.todos.items[app.todos.idx].text, "tidy");
+    let lit = selected_row(&app, 100, 24);
+    assert!(lit.contains("tidy"), "{lit}\n{out}");
+}
+
 #[test]
 fn todo_pane_shows_insert_mode_and_an_empty_hint() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);

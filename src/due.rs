@@ -42,14 +42,19 @@ fn read(s: &str, today: NaiveDate) -> Option<NaiveDate> {
         _ => {}
     }
     if let Some(n) = s.strip_prefix('+') {
-        let n: i64 = n.trim().parse().ok().filter(|n| (0..=MAX_AHEAD).contains(n))?;
+        let n: i64 = n
+            .trim()
+            .parse()
+            .ok()
+            .filter(|n| (0..=MAX_AHEAD).contains(n))?;
         return today.checked_add_signed(Duration::days(n));
     }
     if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
         return Some(d);
     }
     if let Some(w) = prefix_of(s, &WEEKDAYS) {
-        let ahead = (w as i64 - today.weekday().num_days_from_monday() as i64 - 1).rem_euclid(7) + 1;
+        let ahead =
+            (w as i64 - today.weekday().num_days_from_monday() as i64 - 1).rem_euclid(7) + 1;
         return today.checked_add_signed(Duration::days(ahead));
     }
     let (month, day) = month_day(s)?;
@@ -79,7 +84,9 @@ fn month_day(s: &str) -> Option<(u32, u32)> {
         return None;
     };
     let day = |w: &str| -> Option<u32> {
-        w.trim_end_matches(|c: char| c.is_ascii_alphabetic()).parse().ok()
+        w.trim_end_matches(|c: char| c.is_ascii_alphabetic())
+            .parse()
+            .ok()
     };
     match (prefix_of(a, &MONTHS), prefix_of(b, &MONTHS)) {
         (Some(m), None) => Some((m as u32 + 1, day(b)?)),
