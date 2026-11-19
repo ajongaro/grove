@@ -19,6 +19,15 @@ const WEEKDAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 /// How far ahead `+N` may reach, in days.
 const MAX_AHEAD: i64 = 3650;
 
+/// A date written `YYYY-MM-DD`, the year in full (chrono's `%Y` alone
+/// takes `26-12-01` as the year 26).
+pub fn iso(s: &str) -> Option<NaiveDate> {
+    let s = s.trim();
+    (s.len() == 10 && s.as_bytes()[4] == b'-')
+        .then(|| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .flatten()
+}
+
 /// What you typed as a due date; `Ok(None)` (clear it) when blank. Month
 /// and day without a year mean the next such date; a weekday the next one.
 pub fn parse(input: &str, today: NaiveDate) -> Result<Option<NaiveDate>, String> {
@@ -49,7 +58,7 @@ fn read(s: &str, today: NaiveDate) -> Option<NaiveDate> {
             .filter(|n| (0..=MAX_AHEAD).contains(n))?;
         return today.checked_add_signed(Duration::days(n));
     }
-    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+    if let Some(d) = iso(s) {
         return Some(d);
     }
     if let Some(w) = prefix_of(s, &WEEKDAYS) {
@@ -154,6 +163,10 @@ mod tests {
         assert!(parse("2/30", t).is_err());
         assert!(parse("2026-13-01", t).is_err());
         assert!(parse("+99999", t).is_err());
+        // A year needs all four digits.
+        assert!(parse("26-12-1", t).is_err());
+        assert_eq!(iso("26-12-01"), None);
+        assert_eq!(iso("2026-12-01"), Some(d(2026, 12, 1)));
     }
 
     #[test]

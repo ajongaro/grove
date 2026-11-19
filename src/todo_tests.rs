@@ -584,3 +584,16 @@ fn ops_set_priority_and_due_and_keep_bands() {
     assert_eq!(cleared[1].due, None);
     assert_eq!(cleared[1].priority, Priority::High, "untouched");
 }
+
+#[test]
+fn a_hash_line_that_isnt_a_heading_stays_an_item() {
+    let t = loaded("#42 flaky test\n##notes\n- [ ] a\n");
+    assert_eq!(texts(&t), ["#42 flaky test", "##notes", "a"]);
+}
+
+#[test]
+fn a_short_year_is_not_a_due_date() {
+    let t = loaded("- [ ] x (due 26-12-01)\n");
+    assert_eq!(t.items[0].due, None);
+    assert_eq!(t.items[0].text, "x (due 26-12-01)");
+}

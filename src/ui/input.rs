@@ -245,16 +245,24 @@ fn prompt_key(app: &mut App, kind: PromptKind, mut input: String, key: KeyEvent)
                         }
                     }
                 }
-                PromptKind::TodoDue { slug } => {
+                PromptKind::TodoDue { slug, item } => {
                     let today = chrono::Local::now().date_naive();
-                    match crate::due::parse(&text, today) {
-                        Err(e) => {
+                    // The list may have changed while the prompt was open
+                    // (Claude edits it too): find the item again.
+                    let at = (app.todo_slug.as_deref() == Some(slug.as_str()))
+                        .then(|| app.todos.items.iter().position(|i| i.text == item))
+                        .flatten();
+                    match (crate::due::parse(&text, today), at) {
+                        (Err(e), _) => {
                             app.footer = Some(e);
                             Action::None
                         }
-                        // The list moved on to another project meanwhile.
-                        Ok(_) if app.todo_slug.as_deref() != Some(slug.as_str()) => Action::None,
-                        Ok(due) => match app.todos.set_due(due) {
+                        (Ok(_), None) => {
+                            app.footer =
+                                Some(format!("\"{item}\" changed meanwhile: due date not set"));
+                            Action::None
+                        }
+                        (Ok(due), Some(at)) => match app.todos.set_due_at(at, due) {
                             Effect::Changed => Action::SaveTodos {
                                 slug,
                                 text: app.todos.serialize(),
@@ -770,20 +778,23 @@ fn todo_key(app: &mut App, key: KeyEvent) -> Action {
                 .todos
                 .take_cleared()
                 .into_iter()
-                .map(|i| i.text)
+                .map(|i| crate::todo::with_due(&i))
                 .collect(),
         },
         Effect::OpenEditor => Action::EditTodos { slug },
         Effect::AskDue => {
-            let input = app
-                .todos
-                .items
-                .get(app.todos.idx)
-                .and_then(|i| i.due)
+            let Some(item) = app.todos.items.get(app.todos.idx) else {
+                return Action::None;
+            };
+            let input = item
+                .due
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_default();
             app.mode = Mode::Prompt {
-                kind: PromptKind::TodoDue { slug },
+                kind: PromptKind::TodoDue {
+                    slug,
+                    item: item.text.clone(),
+                },
                 input,
             };
             Action::None

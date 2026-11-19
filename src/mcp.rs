@@ -581,9 +581,9 @@ impl TodoOpArg {
             .as_deref()
             .map(|d| match d.trim() {
                 "" => Ok(None),
-                d => chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                d => crate::due::iso(d)
                     .map(Some)
-                    .map_err(|_| format!("due \"{d}\" isn't a date as YYYY-MM-DD")),
+                    .ok_or_else(|| format!("due \"{d}\" isn't a date as YYYY-MM-DD")),
             })
             .transpose()?;
         let set = |n: usize| Op::Set { n, priority, due };

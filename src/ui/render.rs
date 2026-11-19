@@ -763,6 +763,26 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         if focused && t.inserting() && i == t.idx {
             text.push('█');
         }
+        let due = item.due.map(|d| {
+            let urgency = crate::due::urgency(d, today);
+            let mut s = crate::due::show(d, today);
+            if !item.done && urgency == Urgency::Overdue {
+                s.push_str(" !");
+            }
+            (s, urgency)
+        });
+        // Room for "[ ] ", two spaces and the date: a long item is cut short
+        // so its date (and an overdue `!`) still shows.
+        if let Some((s, _)) = &due {
+            let room = inner.saturating_sub(4 + 2 + s.chars().count());
+            if text.chars().count() > room {
+                text = text
+                    .chars()
+                    .take(room.saturating_sub(1))
+                    .collect::<String>()
+                    + "…";
+            }
+        }
         let mut spans = if item.done {
             vec![
                 Span::raw("[x] ").fg(pal().dim),
@@ -771,12 +791,7 @@ fn render_todos(frame: &mut Frame, app: &App, area: Rect, now: DateTime<Utc>) {
         } else {
             vec![Span::raw("[ ] ").fg(pal().accent), Span::raw(text)]
         };
-        if let Some(d) = item.due {
-            let urgency = crate::due::urgency(d, today);
-            let mut due = crate::due::show(d, today);
-            if !item.done && urgency == Urgency::Overdue {
-                due.push_str(" !");
-            }
+        if let Some((due, urgency)) = due {
             let color = match urgency {
                 _ if item.done => pal().dim,
                 Urgency::Later => pal().dim,

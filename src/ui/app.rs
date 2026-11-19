@@ -52,6 +52,8 @@ pub enum PromptKind {
     /// The due date of the TODO under the cursor (`@`) in `slug`'s list.
     TodoDue {
         slug: String,
+        /// The item's text, to find it again if the list changes meanwhile.
+        item: String,
     },
 }
 

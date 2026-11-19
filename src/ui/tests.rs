@@ -1516,7 +1516,8 @@ fn at_on_a_todo_asks_for_its_due_date() {
     assert_eq!(
         kind,
         PromptKind::TodoDue {
-            slug: "alpha".into()
+            slug: "alpha".into(),
+            item: "pay".into(),
         }
     );
     assert_eq!(input, "2026-10-16", "prefilled with the current date");
@@ -1559,6 +1560,64 @@ fn at_on_a_todo_asks_for_its_due_date() {
         Action::SaveTodos { text, .. } => assert_eq!(text, "- [ ] pay\n"),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn a_cleared_todo_keeps_its_due_date_in_the_archive() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", "- [x] pay (due 2026-10-16)\n")
+        .unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    match handle_key(&mut app, ch('c')) {
+        Action::SaveTodos { archived, .. } => assert_eq!(archived, ["pay (due 2026-10-16)"]),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_due_date_lands_on_its_item_when_the_list_changes_meanwhile() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    s.write_todos("alpha", "- [ ] a\n- [ ] b\n").unwrap();
+    app.reload(&s);
+    handle_key(&mut app, ch('t'));
+    handle_key(&mut app, ch('j'));
+    handle_key(&mut app, ch('@'));
+    // Claude adds a high item while the prompt is open.
+    s.write_todos(
+        "alpha",
+        "## High priority\n- [ ] new\n\n## Normal\n- [ ] a\n- [ ] b\n",
+    )
+    .unwrap();
+    app.reload(&s);
+    if let Mode::Prompt { kind, .. } = app.mode.clone() {
+        app.mode = Mode::Prompt {
+            kind,
+            input: "2026-12-01".into(),
+        };
+    }
+    match handle_key(&mut app, key(KeyCode::Enter)) {
+        Action::SaveTodos { text, .. } => assert_eq!(
+            text,
+            "## High priority\n- [ ] new\n\n## Normal\n- [ ] a\n- [ ] b (due 2026-12-01)\n"
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_long_todo_is_cut_short_so_its_due_date_shows() {
+    let (_d, s, mut app) = loaded(&["alpha"], &[]);
+    let long = "word ".repeat(30);
+    s.write_todos(
+        "alpha",
+        &format!("- [ ] {} (due 2026-10-05)\n", long.trim()),
+    )
+    .unwrap();
+    app.reload(&s);
+    let out = screen(&app, 100, 20);
+    let row = out.lines().nth(row_of(&out, "[ ] word")).unwrap();
+    assert!(row.contains("Oct 5 !") && row.contains('…'), "{row}");
 }
 
 #[test]

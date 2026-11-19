@@ -177,10 +177,17 @@ impl Todos {
     }
 
     /// Sets (or with None clears) the cursor item's due date.
+    #[cfg(test)]
     pub fn set_due(&mut self, due: Option<NaiveDate>) -> Effect {
+        self.set_due_at(self.idx, due)
+    }
+
+    /// Sets item `at`'s due date, moving the cursor to it.
+    pub fn set_due_at(&mut self, at: usize, due: Option<NaiveDate>) -> Effect {
         self.change(|t| {
-            if let Some(i) = t.items.get_mut(t.idx) {
+            if let Some(i) = t.items.get_mut(at) {
                 i.due = due;
+                t.idx = at;
             }
         })
     }
@@ -538,13 +545,7 @@ pub fn apply_ops(items: &[Item], ops: &[Op]) -> Result<Vec<Item>, String> {
 /// them). Headings only once some item isn't normal, so a plain list is
 /// written as it always was.
 pub fn serialize_items(items: &[Item]) -> String {
-    let line = |i: &Item| {
-        let due = i
-            .due
-            .map(|d| format!(" (due {})", d.format("%Y-%m-%d")))
-            .unwrap_or_default();
-        format!("- [{}] {}{due}\n", if i.done { 'x' } else { ' ' }, i.text)
-    };
+    let line = |i: &Item| format!("- [{}] {}\n", if i.done { 'x' } else { ' ' }, with_due(i));
     if items.iter().all(|i| i.priority == Priority::Normal) {
         return items.iter().map(line).collect();
     }
@@ -568,6 +569,14 @@ pub fn serialize_items(items: &[Item]) -> String {
     out
 }
 
+/// The item's text with its ` (due YYYY-MM-DD)` suffix, as the file has it.
+pub fn with_due(i: &Item) -> String {
+    match i.due {
+        Some(d) => format!("{} (due {})", i.text, d.format("%Y-%m-%d")),
+        None => i.text.clone(),
+    }
+}
+
 /// An item as Claude reads it: `[high] text (due 2026-12-01)`, with no
 /// tag for normal items.
 pub fn describe(i: &Item) -> String {
@@ -575,11 +584,7 @@ pub fn describe(i: &Item) -> String {
         Priority::Normal => String::new(),
         p => format!("[{}] ", p.name()),
     };
-    let due = i
-        .due
-        .map(|d| format!(" (due {})", d.format("%Y-%m-%d")))
-        .unwrap_or_default();
-    format!("{tag}{}{due}", i.text)
+    format!("{tag}{}", with_due(i))
 }
 
 /// Unchecked items in a TODO file's text.
@@ -598,7 +603,8 @@ pub fn parse(text: &str) -> Vec<Item> {
     let mut band = Priority::Normal;
     let mut items = Vec::new();
     for l in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        if l.starts_with('#') {
+        // A Markdown heading: #s then a space (`#42 flaky test` is an item).
+        if l.starts_with('#') && l.trim_start_matches('#').starts_with(' ') {
             let name = l.trim_start_matches('#').trim().to_lowercase();
             band = if name.starts_with("high") {
                 Priority::High
@@ -635,7 +641,7 @@ fn split_due(text: &str) -> (&str, Option<NaiveDate>) {
     let parsed = text
         .strip_suffix(')')
         .and_then(|t| t.rsplit_once(" (due "))
-        .and_then(|(t, d)| Some((t.trim_end(), NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?)));
+        .and_then(|(t, d)| Some((t.trim_end(), crate::due::iso(d)?)));
     match parsed {
         Some((t, d)) if !t.is_empty() => (t, Some(d)),
         _ => (text, None),
