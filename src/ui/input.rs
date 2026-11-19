@@ -929,6 +929,11 @@ fn finca_key(app: &mut App, code: KeyCode) -> Option<Action> {
                 Action::None
             }
             (None, Some(FincaItem::Shell(w))) => Action::FincaShellWindow { slug, window: w.id },
+            (None, Some(FincaItem::ProjectShell { shell, .. })) => Action::FincaJump {
+                slug,
+                via,
+                window: shell.window,
+            },
             (None, Some(FincaItem::Session { session, .. })) if session.window.is_some() => {
                 Action::FincaJump {
                     slug,
@@ -1369,6 +1374,13 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                                     Action::None
                                 }
                             })
+                        }
+                        Some(FincaItem::ProjectShell { shell, .. }) => {
+                            app.footer = Some(format!(
+                                "{} can't be pinned from here: s opens a shell on {name} you can pin",
+                                shell.name
+                            ));
+                            Some(Action::None)
                         }
                         _ => Some(Action::None),
                     }

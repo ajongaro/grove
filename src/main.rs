@@ -681,8 +681,15 @@ fn print_status(paths: &Paths, json: bool) {
     let session = load_config(paths)
         .map(|c| c.tmux_session)
         .unwrap_or_else(|_| "grove".into());
-    let windows = grove_tmux(paths).list_windows(&session).unwrap_or_default();
-    let st = status::build(&Store::new(paths.clone()), &status::hostname(), &windows);
+    let tmux = grove_tmux(paths);
+    let windows = tmux.list_windows(&session).unwrap_or_default();
+    let shells = crate::shells::list(&tmux, &session);
+    let st = status::build(
+        &Store::new(paths.clone()),
+        &status::hostname(),
+        &windows,
+        &shells,
+    );
     if json {
         println!("{}", serde_json::to_string(&st).expect("status serializes"));
         return;

@@ -32,6 +32,20 @@ pub struct ProjectStatus {
     /// resuming them from another machine. Older Groves don't send it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ended: Vec<SessionStatus>,
+    /// Shells open in the project (`S`), for jumping into from another
+    /// machine. Older Groves don't send it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shells: Vec<ShellStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShellStatus {
+    /// Its tmux window on the finca.
+    pub window: String,
+    /// `sh1`, or the name you gave it.
+    pub name: String,
+    /// What's running in it now (the shell itself, or vim, …).
+    pub command: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,8 +85,13 @@ pub enum ParseError {
 
 /// Snapshot of the local store. Only sessions whose tmux window is in
 /// `live_windows` count: session files can say needs_you long after a
-/// reboot or a dead tmux server.
-pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
+/// reboot or a dead tmux server. `shells` are the open project shells.
+pub fn build(
+    store: &Store,
+    host: &str,
+    live_windows: &[String],
+    shells: &[crate::shells::Shell],
+) -> Status {
     let cfg = crate::config::load_config(&store.paths).unwrap_or_default();
     let sessions = store.list_sessions(None);
     let projects: Vec<ProjectStatus> = store
@@ -113,6 +132,15 @@ pub fn build(store: &Store, host: &str, live_windows: &[String]) -> Status {
                     .into_iter()
                     .take(ENDED_PER_PROJECT)
                     .map(|s| report(s, false))
+                    .collect(),
+                shells: shells
+                    .iter()
+                    .filter(|sh| sh.project == slug)
+                    .map(|sh| ShellStatus {
+                        window: sh.id.clone(),
+                        name: sh.name.clone(),
+                        command: sh.command.clone(),
+                    })
                     .collect(),
                 name: p.name.clone(),
                 slug,
@@ -214,17 +242,17 @@ mod tests {
         // After a reboot or tmux-server death the session files still say
         // needs_you, but nothing is running.
         let (_d, s) = store();
-        let st = build(&s, "pi", &[]);
+        let st = build(&s, "pi", &[], &[]);
         assert_eq!((st.live, st.needs_you), (0, 0));
         assert!(st.projects.iter().all(|p| p.sessions.is_empty()));
-        let st = build(&s, "pi", &["@9".to_string()]);
+        let st = build(&s, "pi", &["@9".to_string()], &[]);
         assert_eq!(st.live, 0);
     }
 
     #[test]
     fn build_counts_and_omits_ended() {
         let (_d, s) = store();
-        let st = build(&s, "homebox", &live());
+        let st = build(&s, "homebox", &live(), &[]);
         assert_eq!(st.version, STATUS_VERSION);
         assert_eq!(st.host, "homebox");
         assert_eq!(st.needs_you, 1);
@@ -244,7 +272,7 @@ mod tests {
         dead.tmux_window = Some("@9".into());
         dead.updated_at = chrono::Utc::now();
         s.save_session(&dead).unwrap();
-        let st = build(&s, "pi", &live());
+        let st = build(&s, "pi", &live(), &[]);
         let alpha = st.projects.iter().find(|p| p.slug == "alpha").unwrap();
         let ended: Vec<_> = alpha
             .ended
@@ -270,7 +298,7 @@ mod tests {
     #[test]
     fn status_sessions_carry_their_id_and_old_status_still_parses() {
         let (_d, s) = store();
-        let v = serde_json::to_value(build(&s, "h", &live())).unwrap();
+        let v = serde_json::to_value(build(&s, "h", &live(), &[])).unwrap();
         let alpha = v["projects"]
             .as_array()
             .unwrap()
@@ -293,23 +321,59 @@ mod tests {
     }
 
     #[test]
+    fn project_shells_are_reported_with_their_window() {
+        let (_d, s) = store();
+        let shell = |id: &str, project: &str| crate::shells::Shell {
+            id: id.into(),
+            project: project.into(),
+            name: "sh1".into(),
+            command: "bash".into(),
+        };
+        let st = build(
+            &s,
+            "pi",
+            &live(),
+            &[shell("@7", "beta"), shell("@8", "gone")],
+        );
+        let beta = st.projects.iter().find(|p| p.slug == "beta").unwrap();
+        assert_eq!(
+            beta.shells,
+            [ShellStatus {
+                window: "@7".into(),
+                name: "sh1".into(),
+                command: "bash".into(),
+            }]
+        );
+        // Shells don't count as live sessions.
+        assert_eq!(st.live, 2);
+        // None open: the field stays out of the JSON, for older Groves.
+        let alpha = serde_json::to_value(&st.projects[0]).unwrap();
+        assert!(alpha.get("shells").is_none(), "{alpha}");
+    }
+
+    #[test]
     fn empty_store_is_a_valid_status() {
         let d = tempfile::tempdir().unwrap();
-        let st = build(&Store::new(Paths::new(d.path().join("nope"))), "h", &[]);
+        let st = build(
+            &Store::new(Paths::new(d.path().join("nope"))),
+            "h",
+            &[],
+            &[],
+        );
         assert_eq!((st.live, st.needs_you, st.projects.len()), (0, 0, 0));
     }
 
     #[test]
     fn round_trips_through_json() {
         let (_d, s) = store();
-        let st = build(&s, "homebox", &live());
+        let st = build(&s, "homebox", &live(), &[]);
         assert_eq!(parse(&serde_json::to_string(&st).unwrap()).unwrap(), st);
     }
 
     #[test]
     fn unknown_fields_are_tolerated() {
         let (_d, s) = store();
-        let mut v = serde_json::to_value(build(&s, "h", &live())).unwrap();
+        let mut v = serde_json::to_value(build(&s, "h", &live(), &[])).unwrap();
         v["future_field"] = serde_json::json!({"x": 1});
         v["projects"][0]["also_new"] = serde_json::json!(true);
         assert!(parse(&v.to_string()).is_ok());
@@ -318,7 +382,7 @@ mod tests {
     #[test]
     fn other_versions_are_detected() {
         let (_d, s) = store();
-        let mut v = serde_json::to_value(build(&s, "h", &live())).unwrap();
+        let mut v = serde_json::to_value(build(&s, "h", &live(), &[])).unwrap();
         v["version"] = serde_json::json!(2);
         assert_eq!(parse(&v.to_string()), Err(ParseError::WrongVersion(2)));
     }

@@ -662,6 +662,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             slug: "btt".into(),
             sessions,
             ended: vec![],
+            shells: vec![],
         }],
     }
 }
@@ -2041,6 +2042,36 @@ fn enter_on_a_finca_session_jumps_straight_into_it() {
             slug: "homebox".into(),
             via: Some("me@homebox".into()),
             window: "@20".into(),
+        }
+    );
+}
+
+#[test]
+fn a_shell_open_in_a_finca_project_is_listed_and_enter_jumps_in() {
+    let (_d, _s, mut app) = with_fincas(&[], &[], &["homebox"]);
+    let mut st = remote_status("homebox", 0, 1);
+    st.projects[0].shells.push(crate::status::ShellStatus {
+        window: "@7".into(),
+        name: "sh1".into(),
+        command: "bash".into(),
+    });
+    poll(&mut app, "homebox", Reach::Reachable(st), t0());
+    app.pane = Pane::Sessions;
+    let out = screen(&app, 120, 30);
+    let row = out.lines().find(|l| l.contains("sh1")).expect(&out);
+    assert!(
+        row.contains('$') && row.contains("shell") && row.contains("bash"),
+        "{row}"
+    );
+    // Below its project's session.
+    assert!(out.find("w0").unwrap() < out.find("sh1").unwrap(), "{out}");
+    handle_key(&mut app, ch('j'));
+    assert_eq!(
+        handle_key(&mut app, key(KeyCode::Enter)),
+        Action::FincaJump {
+            slug: "homebox".into(),
+            via: Some("me@homebox".into()),
+            window: "@7".into(),
         }
     );
 }

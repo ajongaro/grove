@@ -107,6 +107,7 @@ fn status_json(host: &str) -> String {
         &crate::store::Store::new(crate::config::Paths::new(d.path().join("h"))),
         host,
         &[],
+        &[],
     );
     serde_json::to_string(&st).unwrap()
 }

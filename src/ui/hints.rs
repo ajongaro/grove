@@ -93,6 +93,9 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                     ("s", "shell"),
                     ("n", "new session"),
                 ],
+                Some(FincaItem::ProjectShell { .. }) => {
+                    vec![("enter", "jump"), ("s", "shell"), ("n", "new session")]
+                }
                 Some(FincaItem::Session { .. }) => vec![
                     ("enter", "jump"),
                     ("n", "new"),

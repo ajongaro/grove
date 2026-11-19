@@ -509,6 +509,7 @@ fn observe_names_local_and_finca_sessions() {
                 title: None,
             }],
             ended: vec![],
+            shells: vec![],
         }],
     };
     let _ = &t;

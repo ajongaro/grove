@@ -430,6 +430,11 @@ pub enum FincaItem {
         session: crate::status::SessionStatus,
     },
     Shell(crate::finca::ShellWindow),
+    /// A shell open in one of the finca's projects (`S` there).
+    ProjectShell {
+        project: String,
+        shell: crate::status::ShellStatus,
+    },
 }
 
 impl FincaItem {
@@ -438,6 +443,7 @@ impl FincaItem {
         match self {
             FincaItem::Session { project, session } => format!("s:{project}:{}", session.name),
             FincaItem::Shell(w) => format!("w:{}", w.id),
+            FincaItem::ProjectShell { shell, .. } => format!("p:{}", shell.window),
         }
     }
 }
@@ -809,7 +815,8 @@ impl App {
     }
 
     /// The selected finca's rows: its sessions (from the last good status),
-    /// project by project, then its open shell windows.
+    /// project by project with each project's shells after its sessions,
+    /// then the shell windows opened from here.
     pub fn finca_items(&self) -> Vec<FincaItem> {
         let Some(f) = self.selected_finca() else {
             return Vec::new();
@@ -819,10 +826,15 @@ impl App {
             .iter()
             .flat_map(|st| &st.projects)
             .flat_map(|p| {
-                p.sessions.iter().map(|s| FincaItem::Session {
+                let sessions = p.sessions.iter().map(|s| FincaItem::Session {
                     project: p.name.clone(),
                     session: s.clone(),
-                })
+                });
+                let shells = p.shells.iter().map(|sh| FincaItem::ProjectShell {
+                    project: p.name.clone(),
+                    shell: sh.clone(),
+                });
+                sessions.chain(shells)
             });
         let shells = self
             .finca_shells

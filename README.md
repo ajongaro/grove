@@ -564,10 +564,12 @@ the footer counts remote sessions that need you.
   shells on the finca too.
 - **`C-q`** comes back to your local dashboard from either. The connection
   stays open, so Enter or `s` returns instantly.
-- Selecting a finca lists its sessions and the shells you've opened there.
-  `l` (or Tab) moves into the list; **Enter** on a session connects
-  straight into that session's window, Enter on a shell goes back to
-  it, and `r` on a shell names it. To kill or edit sessions, connect.
+- Selecting a finca lists its sessions, the shells open in its projects
+  (`S` on its own dashboard, shown as `$` under their project) and the
+  shells you've opened there from here. `l` (or Tab) moves into the list;
+  **Enter** on a session or a project shell connects straight into its
+  window, Enter on one of your shells goes back to it, and `r` on one of
+  your shells names it. To kill or edit sessions, connect.
 - **`C-v`** in a finca window (its Grove or a shell there) sends a file
   you copied in Finder (⌘C) or an image on the clipboard (a screenshot
   taken with ⌘⇧⌃4) to the finca's `~/.grove/inbox`, and pastes its path.

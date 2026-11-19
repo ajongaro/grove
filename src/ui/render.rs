@@ -526,6 +526,7 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
     let items = app.finca_items();
     let name_w = name_width(items.iter().filter_map(|i| match i {
         FincaItem::Session { session, .. } => Some(session.name.as_str()),
+        FincaItem::ProjectShell { shell, .. } => Some(shell.name.as_str()),
         FincaItem::Shell(_) => None,
     }));
     // The selected row, filled to the pane's width like a list highlight.
@@ -574,6 +575,22 @@ fn render_finca_detail(frame: &mut Frame, app: &App, f: &FincaRow, area: Rect, n
                 if let Some(m) = &s.message {
                     lines.push(Line::styled(format!("      {m}"), Style::new().fg(color)));
                 }
+            }
+            FincaItem::ProjectShell { project, shell } => {
+                if heading != Some(project.as_str()) {
+                    heading = Some(project);
+                    lines.push(Line::raw(project.clone()).bold());
+                }
+                lines.push(mark(
+                    Line::from(vec![
+                        // As wide as a session's glyph and space, so the columns match.
+                        Span::raw("  $  ").fg(pal().shell),
+                        Span::raw(format!("{:<w$}", shell.name, w = name_w)).bold(),
+                        Span::raw(format!("{:<10}", "shell")).fg(pal().shell),
+                        Span::raw(format!(" · {}", shell.command)).fg(pal().dim),
+                    ]),
+                    i,
+                ));
             }
             FincaItem::Shell(w) => {
                 if heading != Some("") {
