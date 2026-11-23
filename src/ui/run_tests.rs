@@ -47,6 +47,7 @@ fn sess(id: &str, project: &str, state: State, window: Option<&str>) -> Session 
         conversation: None,
         launch: None,
         reply: None,
+        background: false,
         agent: Default::default(),
         unseen: false,
         created_at: chrono::Utc::now(),

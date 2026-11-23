@@ -289,6 +289,7 @@ pub fn start_with_bin(
         conversation,
         launch: None,
         reply: None,
+        background: false,
         agent,
         unseen: false,
         created_at: now,

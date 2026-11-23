@@ -72,10 +72,18 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
-        Mode::ConfirmEndIdle { session_ids, idle } => {
+        Mode::ConfirmEndIdle {
+            session_ids,
+            idle,
+            minutes,
+        } => {
             app.mode = Mode::Normal;
             match key.code {
-                KeyCode::Char('y' | 'Y') => Action::EndIdle { session_ids, idle },
+                KeyCode::Char('y' | 'Y') => Action::EndIdle {
+                    session_ids,
+                    idle,
+                    minutes,
+                },
                 _ => Action::None,
             }
         }

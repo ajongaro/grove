@@ -118,6 +118,10 @@ pub struct Session {
     /// What it last did: the opening of Claude's last reply (reply.rs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply: Option<String>,
+    /// Its last turn left background tasks running (Stop's
+    /// `background_tasks`), so it isn't idle.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub background: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

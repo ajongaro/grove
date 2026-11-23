@@ -418,3 +418,22 @@ fn stop_keeps_the_opening_of_claudes_reply() {
     run_hook(&home(&dir), &serde_json::Value::Object(stop).to_string());
     assert_eq!(session(&dir)["reply"], "Next one.");
 }
+
+#[test]
+fn stop_notes_background_tasks_left_running() {
+    let dir = setup("working");
+    let stop: serde_json::Value = serde_json::from_str(&fixture("stop")).unwrap();
+    let mut stop = stop.as_object().unwrap().clone();
+    stop.insert(
+        "background_tasks".into(),
+        serde_json::json!([{"id": "b1", "command": "cargo build"}]),
+    );
+    run_hook(
+        &home(&dir),
+        &serde_json::Value::Object(stop.clone()).to_string(),
+    );
+    assert_eq!(session(&dir)["background"], true);
+    stop.insert("background_tasks".into(), serde_json::json!([]));
+    run_hook(&home(&dir), &serde_json::Value::Object(stop).to_string());
+    assert!(session(&dir)["background"].is_null());
+}

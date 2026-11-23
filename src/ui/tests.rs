@@ -26,6 +26,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         conversation: None,
         launch: None,
         reply: None,
+        background: false,
         agent: Default::default(),
         unseen: false,
         created_at: t0(),

@@ -183,7 +183,9 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             text.push_str("  y / n");
             wide_confirm_popup(frame, &text)
         }
-        Mode::ConfirmEndIdle { session_ids, idle } => {
+        Mode::ConfirmEndIdle {
+            session_ids, idle, ..
+        } => {
             let n = session_ids.len();
             wide_confirm_popup(
                 frame,

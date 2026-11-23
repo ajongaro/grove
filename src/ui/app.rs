@@ -115,6 +115,8 @@ pub enum Mode {
     ConfirmEndIdle {
         session_ids: Vec<String>,
         idle: String,
+        /// The idle time, to check them again on `y`.
+        minutes: i64,
     },
     /// `n` on a finca: which of its projects to start a session in.
     FincaProjects {
@@ -246,6 +248,7 @@ pub enum Action {
     EndIdle {
         session_ids: Vec<String>,
         idle: String,
+        minutes: i64,
     },
     /// Reopen an ended session's last conversation in a new window.
     Resume {

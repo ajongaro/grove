@@ -59,9 +59,14 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
         .as_deref()
         .filter(|_| ev.hook_event_name == "Stop")
         .and_then(crate::reply::summary);
-    let new_reply = reply.is_some() && reply != session.reply;
+    let mut new_reply = reply.is_some() && reply != session.reply;
     if new_reply {
         session.reply = reply;
+    }
+    if ev.hook_event_name == "Stop" {
+        let background = ev.background_tasks.as_ref().is_some_and(|t| !t.is_empty());
+        new_reply |= background != session.background;
+        session.background = background;
     }
     match state::next(session.state, &ev) {
         Some((state, message)) => {

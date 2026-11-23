@@ -193,11 +193,25 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                     "No session has been waiting on you, idle, for {idle}: nothing to end"
                 ))
             } else {
-                Outcome::Ask(Mode::ConfirmEndIdle { session_ids, idle })
+                Outcome::Ask(Mode::ConfirmEndIdle {
+                    session_ids,
+                    idle,
+                    minutes: limit.num_minutes(),
+                })
             }
         }
-        Action::EndIdle { session_ids, idle } => {
-            let n = end_idle(ctx, &session_ids, &idle)?;
+        Action::EndIdle {
+            session_ids,
+            idle,
+            minutes,
+        } => {
+            // Checked again: one may have been typed in while you decided.
+            let still: Vec<String> = idle_sessions(ctx, chrono::Duration::minutes(minutes))?
+                .into_iter()
+                .map(|s| s.id)
+                .filter(|id| session_ids.contains(id))
+                .collect();
+            let n = end_idle(ctx, &still, &idle)?;
             Outcome::Message(ended_message(n, &idle))
         }
         Action::SavePins { pins } => {
@@ -656,10 +670,10 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
 /// Sessions to end for being idle `limit`: `idle::candidates`, whose input
 /// box is on screen and empty, so no draft is lost.
 pub fn idle_sessions(ctx: &Ctx, limit: chrono::Duration) -> Result<Vec<crate::model::Session>> {
-    let windows = crate::idle::parse_windows(&ctx.tmux.list_windows_as(
-        &ctx.cfg.tmux_session,
-        "#{window_id} #{window_activity} #{@grove_session}",
-    )?);
+    let windows = crate::idle::parse_windows(
+        &ctx.tmux
+            .list_windows_as(&ctx.cfg.tmux_session, crate::idle::WINDOW_FORMAT)?,
+    );
     let sessions = ctx.store.list_sessions(None);
     let pinned: Vec<String> = crate::pins::load(&ctx.store.paths)
         .into_iter()

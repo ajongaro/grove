@@ -31,6 +31,7 @@ fn sess(id: &str, project: &str) -> Session {
         conversation: None,
         launch: None,
         reply: None,
+        background: false,
         agent: Default::default(),
         unseen: false,
         created_at: Utc::now(),

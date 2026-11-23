@@ -18,15 +18,21 @@ pub fn parse_limit(s: &str) -> Result<Option<Duration>, String> {
     let bad = || {
         format!("idle_end_after = \"{s}\" isn't a time: try \"off\", \"30m\", \"24h\" or \"2d\"")
     };
-    let (n, unit) = s.split_at(s.len() - 1);
-    let n: i64 = n.trim().parse().map_err(|_| bad())?;
-    let d = match unit {
-        "m" => Duration::minutes(n),
-        "h" => Duration::hours(n),
-        "d" => Duration::days(n),
-        _ => return Err(bad()),
+    let (n, make): (&str, fn(i64) -> Option<Duration>) = if let Some(n) = s.strip_suffix('m') {
+        (n, Duration::try_minutes)
+    } else if let Some(n) = s.strip_suffix('h') {
+        (n, Duration::try_hours)
+    } else if let Some(n) = s.strip_suffix('d') {
+        (n, Duration::try_days)
+    } else {
+        return Err(bad());
     };
-    if n < 10 && unit == "m" || n <= 0 {
+    let n: i64 = n.trim().parse().map_err(|_| bad())?;
+    if n <= 0 {
+        return Err(bad());
+    }
+    let d = make(n).ok_or_else(bad)?;
+    if d < Duration::minutes(10) {
         return Err(format!(
             "idle_end_after = \"{s}\" is too short: at least 10m"
         ));
@@ -51,24 +57,31 @@ pub fn show(d: Duration) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Window {
     pub id: String,
+    /// More than one is a side shell beside Claude, which ending would kill.
+    pub panes: usize,
     pub session: String,
     pub activity: Option<DateTime<Utc>>,
 }
 
-/// Parses `list-windows -F '#{window_id} #{window_activity} #{@grove_session}'`.
+/// `list-windows`'s format for `parse_windows`.
+pub const WINDOW_FORMAT: &str = "#{window_id} #{window_activity} #{window_panes} #{@grove_session}";
+
+/// Parses `list-windows -F WINDOW_FORMAT`.
 pub fn parse_windows(lines: &[String]) -> Vec<Window> {
     lines
         .iter()
         .filter_map(|l| {
-            let mut parts = l.splitn(3, ' ');
+            let mut parts = l.splitn(4, ' ');
             let id = parts.next()?.to_string();
             let activity = parts
                 .next()
                 .and_then(|t| t.parse::<i64>().ok())
                 .and_then(|t| DateTime::from_timestamp(t, 0));
+            let panes = parts.next().and_then(|n| n.parse().ok()).unwrap_or(1);
             let session = parts.next().unwrap_or("").trim().to_string();
             Some(Window {
                 id,
+                panes,
                 session,
                 activity,
             })
@@ -77,7 +90,8 @@ pub fn parse_windows(lines: &[String]) -> Vec<Window> {
 }
 
 /// Sessions idle for at least `limit`: Claude sessions waiting on you (or
-/// still saying starting), unpinned, in a window that's theirs, with no
+/// still saying starting), unpinned, with no background task from their last
+/// turn, alone in a window that's theirs, with no
 /// hook event and no output in the window for that long. The input box is
 /// checked separately (`input_box_empty`), on each one's screen.
 pub fn candidates<'a>(
@@ -92,12 +106,14 @@ pub fn candidates<'a>(
         .filter(|s| matches!(s.state, State::YourTurn | State::Starting))
         .filter(|s| s.agent == Agent::Claude)
         .filter(|s| !pinned.contains(&s.id))
+        // A job its last turn left running in the background.
+        .filter(|s| !s.background)
         .filter(|s| {
             let Some(w) = s
                 .tmux_window
                 .as_ref()
                 .and_then(|w| windows.iter().find(|x| &x.id == w))
-                .filter(|w| w.session == s.id)
+                .filter(|w| w.session == s.id && w.panes == 1)
             else {
                 return false;
             };
@@ -120,6 +136,20 @@ pub fn input_box_empty(screen: &str) -> bool {
     let [.., top, bottom] = rules[..] else {
         return false;
     };
+    // Under the box Claude Code counts what still runs: "1 shell",
+    // "← 2 agents", "1 background task".
+    let under = lines[bottom + 1..].join(" ").to_lowercase();
+    let words: Vec<&str> = under.split_whitespace().collect();
+    let running = under.contains("background")
+        || words.windows(2).any(|w| {
+            w[0].chars().all(|c| c.is_ascii_digit())
+                && ["shell", "agent", "task"]
+                    .iter()
+                    .any(|k| w[1].starts_with(k))
+        });
+    if running {
+        return false;
+    }
     let inside = lines[top + 1..bottom].join("\n");
     let Some(rest) = inside.trim_start().strip_prefix('❯') else {
         return false;
@@ -144,7 +174,18 @@ mod tests {
         assert_eq!(parse_limit("24h"), Ok(Some(Duration::hours(24))));
         assert_eq!(parse_limit("2d"), Ok(Some(Duration::days(2))));
         assert_eq!(parse_limit("30m"), Ok(Some(Duration::minutes(30))));
-        for bad in ["24", "h", "1w", "-2h", "0d", "5m", "soon"] {
+        for bad in [
+            "24",
+            "h",
+            "1w",
+            "-2h",
+            "0d",
+            "5m",
+            "soon",
+            "1天",
+            "24 ч",
+            "99999999999999999d",
+        ] {
             assert!(parse_limit(bad).is_err(), "{bad}");
         }
         assert_eq!(show(Duration::hours(24)), "1d");
@@ -155,11 +196,13 @@ mod tests {
     #[test]
     fn windows_parse() {
         let w = parse_windows(&[
-            "@3 1763193600 abc".to_string(),
-            "@4 1763193600 ".to_string(),
+            "@3 1763193600 1 abc".to_string(),
+            "@4 1763193600 2 ".to_string(),
         ]);
         assert_eq!(w[0].id, "@3");
         assert_eq!(w[0].session, "abc");
+        assert_eq!(w[0].panes, 1);
+        assert_eq!(w[1].panes, 2);
         assert_eq!(w[0].activity, DateTime::from_timestamp(1763193600, 0));
         assert_eq!(w[1].session, "");
     }
@@ -176,6 +219,7 @@ mod tests {
             conversation: None,
             launch: None,
             reply: None,
+            background: false,
             agent: Agent::Claude,
             unseen: false,
             created_at: t0() - Duration::days(9),
@@ -186,6 +230,7 @@ mod tests {
     fn win(id: &str, idle_h: i64) -> Window {
         Window {
             id: format!("@{id}"),
+            panes: 1,
             session: id.into(),
             activity: Some(t0() - Duration::hours(idle_h)),
         }
@@ -217,6 +262,18 @@ mod tests {
             session: "other".into(),
             ..win("9", 48)
         });
+        // A side shell open beside Claude (C-\\): its window holds more.
+        let mut sessions = sessions;
+        sessions.push(sess("10", State::YourTurn, 48));
+        windows.push(Window {
+            panes: 2,
+            ..win("10", 48)
+        });
+        // A background job from its last turn.
+        let mut bg = sess("11", State::YourTurn, 48);
+        bg.background = true;
+        sessions.push(bg);
+        windows.push(win("11", 48));
         let ids: Vec<&str> = candidates(
             &sessions,
             &windows,
@@ -237,6 +294,28 @@ mod tests {
 ────────────────────────────────────────
     status line
 ";
+
+    #[test]
+    fn a_background_task_under_the_box_isnt_idle() {
+        let busy = EMPTY.replace("    status line", "  ⏵⏵ auto mode on · 1 background task");
+        assert!(!input_box_empty(&busy));
+        let shell = EMPTY.replace("    status line", "  1 shell · ↓ to view");
+        assert!(!input_box_empty(&shell));
+        // Real ones, from Claude Code 2.1.329.
+        let shell = EMPTY.replace(
+            "    status line",
+            "  ⏵⏵ auto mode on · 1 shell · ↓ to manage",
+        );
+        assert!(!input_box_empty(&shell));
+        let agent = EMPTY.replace(
+            "    status line",
+            "  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent",
+        );
+        assert!(!input_box_empty(&agent));
+        // A word in the status line alone isn't something running.
+        let words = EMPTY.replace("    status line", "    📁 shell-scripts:main | agent notes");
+        assert!(input_box_empty(&words));
+    }
 
     #[test]
     fn the_input_box_is_read_from_the_screen() {

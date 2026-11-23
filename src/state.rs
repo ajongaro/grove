@@ -23,6 +23,9 @@ pub struct HookEvent {
     /// Stop only: the text of Claude's last reply.
     #[serde(default)]
     pub last_assistant_message: Option<String>,
+    /// Stop only: the background tasks still running.
+    #[serde(default)]
+    pub background_tasks: Option<Vec<serde_json::Value>>,
 }
 
 /// `None` means "no change". The string is the message to store.
