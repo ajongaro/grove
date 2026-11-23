@@ -28,11 +28,14 @@ pub enum Outcome {
     Nothing,
     Quit,
     Message(String),
+    /// Ask first: show this confirm.
+    Ask(Mode),
 }
 
 /// Prefix on the tmux window name of a session that needs you.
 const NEEDS_YOU_MARK: &str = "💧 ";
 const RECONCILE_EVERY: Duration = Duration::from_secs(2);
+const IDLE_CHECK_EVERY: Duration = Duration::from_secs(60);
 const FINCA_POLL_EVERY: Duration = Duration::from_secs(30);
 const FINCA_POLL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -175,6 +178,27 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 Some(_) => Outcome::Message(format!("Killed {}", name.unwrap_or_default())),
                 None => Outcome::Nothing,
             }
+        }
+        Action::FindIdle => {
+            let limit = load_config(&store.paths)?
+                .idle_limit()
+                .unwrap_or(crate::idle::MANUAL_LIMIT);
+            let idle = crate::idle::show(limit);
+            let session_ids: Vec<String> = idle_sessions(ctx, limit)?
+                .into_iter()
+                .map(|s| s.id)
+                .collect();
+            if session_ids.is_empty() {
+                Outcome::Message(format!(
+                    "No session has been waiting on you, idle, for {idle}: nothing to end"
+                ))
+            } else {
+                Outcome::Ask(Mode::ConfirmEndIdle { session_ids, idle })
+            }
+        }
+        Action::EndIdle { session_ids, idle } => {
+            let n = end_idle(ctx, &session_ids, &idle)?;
+            Outcome::Message(ended_message(n, &idle))
         }
         Action::SavePins { pins } => {
             crate::pins::save(&store.paths, &pins)?;
@@ -621,6 +645,85 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
     Ok(())
 }
 
+/// Sessions to end for being idle `limit`: `idle::candidates`, whose input
+/// box is on screen and empty, so no draft is lost.
+pub fn idle_sessions(ctx: &Ctx, limit: chrono::Duration) -> Result<Vec<crate::model::Session>> {
+    let windows = crate::idle::parse_windows(&ctx.tmux.list_windows_as(
+        &ctx.cfg.tmux_session,
+        "#{window_id} #{window_activity} #{@grove_session}",
+    )?);
+    let sessions = ctx.store.list_sessions(None);
+    let pinned: Vec<String> = crate::pins::load(&ctx.store.paths)
+        .into_iter()
+        .filter(|p| p.finca.is_none() && p.shell.is_none())
+        .map(|p| p.id)
+        .collect();
+    let now = chrono::Utc::now();
+    Ok(
+        crate::idle::candidates(&sessions, &windows, &pinned, limit, now)
+            .into_iter()
+            .filter(|s| {
+                s.tmux_window
+                    .as_ref()
+                    .and_then(|w| ctx.tmux.capture(w, 5).ok())
+                    .is_some_and(|screen| crate::idle::input_box_empty(&screen))
+            })
+            .cloned()
+            .collect(),
+    )
+}
+
+/// Ends each of these sessions still not busy, saying on its row it was
+/// idle `idle`. Returns how many it ended.
+pub fn end_idle(ctx: &Ctx, session_ids: &[String], idle: &str) -> Result<usize> {
+    let mut n = 0;
+    for id in session_ids {
+        // Read again: one could have started a turn since it was found.
+        let Some(mut s) = ctx
+            .store
+            .get_session(id)
+            .filter(|s| matches!(s.state, State::YourTurn | State::Starting))
+        else {
+            continue;
+        };
+        // Saved first, so its exiting Claude's SessionEnd finds it ended.
+        s.state = State::Ended;
+        s.message = Some(format!("ended after {idle} idle"));
+        s.unseen = false;
+        s.updated_at = chrono::Utc::now();
+        ctx.store.save_session(&s)?;
+        if let Some(w) = &s.tmux_window {
+            let _ = ctx.tmux.kill_window(w);
+        }
+        n += 1;
+    }
+    Ok(n)
+}
+
+fn ended_message(n: usize, idle: &str) -> String {
+    format!(
+        "Ended {n} session{} idle {idle}: Enter resumes one",
+        if n == 1 { "" } else { "s" }
+    )
+}
+
+/// `idle_end_after`, checked every minute from the dashboard.
+fn auto_end_idle(ctx: &Ctx) -> Result<Option<String>> {
+    let Some(limit) = load_config(&ctx.store.paths)?.idle_limit() else {
+        return Ok(None);
+    };
+    let ids: Vec<String> = idle_sessions(ctx, limit)?
+        .into_iter()
+        .map(|s| s.id)
+        .collect();
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let idle = crate::idle::show(limit);
+    let n = end_idle(ctx, &ids, &idle)?;
+    Ok((n > 0).then(|| ended_message(n, &idle)))
+}
+
 /// Clears "done" from each session whose window is on screen in a focused
 /// terminal (`on_screen`): you've seen how its turn ended. Its updated_at
 /// stays: nothing happened in the session.
@@ -936,6 +1039,7 @@ fn event_loop(
     let mut flagged = HashMap::new();
     let mut alerts = crate::alert::Alerts::default();
     let mut last_reconcile = Instant::now() - RECONCILE_EVERY;
+    let mut last_idle_check = Instant::now();
     // The grid's finca screens, fetched only while it's open.
     let mut fetcher: Option<crate::screens::Fetcher> = None;
     let mut last_capture = Instant::now() - Duration::from_secs(1);
@@ -956,6 +1060,17 @@ fn event_loop(
             refresh_shells(ctx, app);
             app.reload(&ctx.store);
             last_reconcile = Instant::now();
+        }
+        if last_idle_check.elapsed() >= IDLE_CHECK_EVERY {
+            match auto_end_idle(ctx) {
+                Ok(Some(m)) => {
+                    app.footer = Some(m);
+                    app.reload(&ctx.store);
+                }
+                Ok(None) => {}
+                Err(e) => app.footer = Some(format!("idle_end_after: {e:#}")),
+            }
+            last_idle_check = Instant::now();
         }
         refresh_grid(ctx, app, &mut fetcher, &mut last_capture);
         terminal.draw(|f| render(f, app, chrono::Utc::now()))?;
@@ -1013,6 +1128,7 @@ fn event_loop(
                     app.footer = Some(m)
                 }
                 Ok(Outcome::Nothing) => {}
+                Ok(Outcome::Ask(mode)) => app.mode = mode,
                 Err(e) => app.footer = Some(format!("{e:#}")),
             }
             // Keys typed while a send was out (a slow finca) would land on

@@ -72,6 +72,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> Action {
                 _ => Action::None,
             }
         }
+        Mode::ConfirmEndIdle { session_ids, idle } => {
+            app.mode = Mode::Normal;
+            match key.code {
+                KeyCode::Char('y' | 'Y') => Action::EndIdle { session_ids, idle },
+                _ => Action::None,
+            }
+        }
         Mode::ConfirmShell { window, label } => {
             app.mode = Mode::Normal;
             match key.code {
@@ -363,6 +370,9 @@ fn normal_key(app: &mut App, key: KeyEvent) -> Action {
     }
     if key.code == KeyCode::Char('U') {
         return restart_all(app);
+    }
+    if key.code == KeyCode::Char('X') {
+        return Action::FindIdle;
     }
     if key.code == KeyCode::Char('/') {
         app.mode = Mode::Search {

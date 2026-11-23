@@ -1023,3 +1023,52 @@ fn reconcile_leaves_a_window_reused_from_an_old_tmux_server_alone() {
     assert_eq!(s.get_session("stale").unwrap().state, State::Ended);
     assert_eq!(s.get_session("live").unwrap().state, State::Working);
 }
+
+#[test]
+fn end_idle_ends_only_sessions_still_waiting_and_says_why() {
+    let t = setup("idle-end");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:quiet", &t.root, &[], &sleeper())
+        .unwrap();
+    let busy_w = tm
+        .new_window("grove", "p:busy", &t.root, &[], &sleeper())
+        .unwrap();
+    let s = &t.ctx.store;
+    s.save_session(&sess("quiet", "p", State::YourTurn, Some(&w)))
+        .unwrap();
+    // Started a turn after `X` found it.
+    s.save_session(&sess("busy", "p", State::Working, Some(&busy_w)))
+        .unwrap();
+    let ids = vec!["quiet".to_string(), "busy".to_string()];
+    assert_eq!(end_idle(&t.ctx, &ids, "1d").unwrap(), 1);
+    let q = s.get_session("quiet").unwrap();
+    assert_eq!(q.state, State::Ended);
+    assert_eq!(q.message.as_deref(), Some("ended after 1d idle"));
+    let windows = tm.list_windows("grove").unwrap();
+    assert!(!windows.contains(&w));
+    assert!(windows.contains(&busy_w));
+    assert_eq!(s.get_session("busy").unwrap().state, State::Working);
+}
+
+#[test]
+fn x_finds_nothing_to_end_when_every_session_was_just_used() {
+    let t = setup("idle-none");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p:fresh", &t.root, &[], &sleeper())
+        .unwrap();
+    tm.set_window_option(&w, "@grove_session", "fresh").unwrap();
+    t.ctx
+        .store
+        .save_session(&sess("fresh", "p", State::YourTurn, Some(&w)))
+        .unwrap();
+    match perform(&t.ctx, Action::FindIdle).unwrap() {
+        Outcome::Message(m) => assert!(m.contains("idle, for 1h"), "{m}"),
+        other => panic!("{other:?}"),
+    }
+}

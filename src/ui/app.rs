@@ -111,6 +111,11 @@ pub enum Mode {
         fincas: Vec<FincaRestart>,
         busy: usize,
     },
+    /// `X`: end these idle sessions? y / n. `idle` says for how long, "1h".
+    ConfirmEndIdle {
+        session_ids: Vec<String>,
+        idle: String,
+    },
     /// `n` on a finca: which of its projects to start a session in.
     FincaProjects {
         slug: String,
@@ -230,6 +235,13 @@ pub enum Action {
     },
     Kill {
         session_id: String,
+    },
+    /// `X`: find the sessions idle long enough to end, and ask.
+    FindIdle,
+    /// End these idle sessions; `idle` says for how long, for their rows.
+    EndIdle {
+        session_ids: Vec<String>,
+        idle: String,
     },
     /// Reopen an ended session's last conversation in a new window.
     Resume {

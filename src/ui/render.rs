@@ -171,6 +171,16 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
             text.push_str("  y / n");
             wide_confirm_popup(frame, &text)
         }
+        Mode::ConfirmEndIdle { session_ids, idle } => {
+            let n = session_ids.len();
+            wide_confirm_popup(
+                frame,
+                &format!(
+                    "End {n} session{} waiting on you, idle for {idle} or more? Their conversations are kept: Enter resumes one.  y / n",
+                    if n == 1 { "" } else { "s" }
+                ),
+            )
+        }
         Mode::ConfirmShell { label, .. } => {
             confirm_popup(frame, &format!("Close shell {label}?  y / n"))
         }

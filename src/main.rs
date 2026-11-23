@@ -6,6 +6,7 @@ mod due;
 mod finca;
 mod hidden;
 mod hook;
+mod idle;
 mod kill;
 mod launch;
 mod log;

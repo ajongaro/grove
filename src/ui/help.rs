@@ -39,9 +39,9 @@ pub const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Sessions",
         &[
-            ("Enter", "jump to it, or resume an ended one"),
-            ("r", "rename (a shell or pin too)"),
-            ("x u U", "kill / restart / restart all"),
+            ("Enter r", "jump or resume / rename (shells too)"),
+            ("x X", "kill / end the idle ones (asks)"),
+            ("u U", "restart / restart all waiting"),
             ("p o", "pin or unpin (shells too) / order"),
         ],
     ),

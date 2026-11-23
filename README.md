@@ -170,6 +170,7 @@ wrong for you) in `~/.grove/tmux.local.conf`, which is loaded last.
 | `x` | session | kill it, or close a shell (asks first) |
 | `u` | session | restart it with the Claude installed now (keeps its conversation) |
 | `U` | dashboard | restart every session waiting on you, after a Claude update (asks first) |
+| `X` | dashboard | end the sessions idle an hour or more, to free their memory (asks first; see [Ending idle sessions](#ending-idle-sessions)) |
 | `p` | session | pin / unpin it (any account, or a finca session) |
 | `1`–`9` | dashboard | jump to that pinned session |
 | `c` | dashboard | clear the ended session under the cursor |
@@ -406,6 +407,25 @@ It keeps its name, history and stats. **`U`** does that for every session
 waiting on you (🌳), after asking. Sessions that are working or waiting on a
 permission answer are left alone, so nothing is cut off mid-turn; `u` them
 once they're done.
+
+### Ending idle sessions
+
+Each Claude session holds a few hundred MB while it waits, even untouched
+for days. Ending one costs nothing: its conversation is saved, and Enter
+on it resumes it. **`X`** ends every session that is waiting on you and has
+been idle an hour or more, after asking. To do that on its own, set
+`idle_end_after` in `config.toml`:
+
+```toml
+idle_end_after = "24h"   # or "30m", "2d"; "off" (the default) never does
+```
+
+The dashboard checks once a minute, and `X` then uses the same time. A
+session counts as idle when no turn has run and nothing has shown in its
+window for that long. Grove leaves alone a session that is working, waiting
+on a permission answer, pinned or running OpenCode, and one with anything
+typed in its input box. An ended one says why on its row ("ended after 1d
+idle").
 
 ### After a reboot
 
@@ -679,6 +699,7 @@ pin_order = "added"                    # Pinned box: added, account or recent (o
 update_check = true                    # once a day, ask GitHub whether a newer Grove is out
 claude_todos = true                    # tell new Claude sessions to keep the project's TODO list
 revive_sessions = true                 # after a reboot, reopen the sessions that were running
+idle_end_after = "off"                 # end sessions idle this long, e.g. "24h" (X does it now)
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```

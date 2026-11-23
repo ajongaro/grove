@@ -55,6 +55,10 @@ pub struct Config {
     /// `account` (by account or finca, then project) or `recent` (latest
     /// activity first). `o` in the box cycles them.
     pub pin_order: PinOrder,
+    /// End sessions waiting on you that have been idle this long (`"24h"`,
+    /// `"2d"`, `"30m"`), freeing their memory; Enter resumes them. `"off"`
+    /// (the default) never does. Pinned sessions are left alone.
+    pub idle_end_after: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -131,6 +135,7 @@ impl Default for Config {
             theme: String::new(),
             header: Header::Full,
             pin_order: PinOrder::Added,
+            idle_end_after: "off".into(),
         }
     }
 }
@@ -352,10 +357,23 @@ impl Paths {
 
 pub fn load_config(paths: &Paths) -> Result<Config> {
     let file = paths.config_file();
-    match std::fs::read_to_string(&file) {
-        Ok(text) => toml::from_str(&text).with_context(|| format!("parsing {}", file.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
-        Err(e) => Err(e).with_context(|| format!("reading {}", file.display())),
+    let cfg: Config = match std::fs::read_to_string(&file) {
+        Ok(text) => toml::from_str(&text).with_context(|| format!("parsing {}", file.display()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Config::default(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
+    };
+    if let Err(e) = crate::idle::parse_limit(&cfg.idle_end_after) {
+        bail!("{}: {e}", file.display());
+    }
+    Ok(cfg)
+}
+
+impl Config {
+    /// `idle_end_after` as a duration; None when off.
+    pub fn idle_limit(&self) -> Option<chrono::Duration> {
+        crate::idle::parse_limit(&self.idle_end_after)
+            .ok()
+            .flatten()
     }
 }
 
@@ -518,6 +536,21 @@ mod tests {
         let p = Paths::new(dir.path().to_path_buf());
         std::fs::write(p.config_file(), "tmux_session = [").unwrap();
         assert!(load_config(&p).is_err());
+    }
+
+    #[test]
+    fn idle_end_after_is_off_unless_set_and_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Paths::new(dir.path().to_path_buf());
+        assert_eq!(load_config(&p).unwrap().idle_limit(), None);
+        std::fs::write(p.config_file(), "idle_end_after = \"24h\"\n").unwrap();
+        assert_eq!(
+            load_config(&p).unwrap().idle_limit(),
+            Some(chrono::Duration::hours(24))
+        );
+        std::fs::write(p.config_file(), "idle_end_after = \"soon\"\n").unwrap();
+        let e = format!("{:#}", load_config(&p).unwrap_err());
+        assert!(e.contains("isn't a time"), "{e}");
     }
 
     #[test]
