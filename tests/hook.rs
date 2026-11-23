@@ -143,7 +143,19 @@ fn session_start_prints_project_context() {
     assert!(out.contains("Grove project: Demo (/tmp/demo)"), "{out}");
     assert!(out.contains("Summary: A demo project."), "{out}");
     assert!(!out.contains("Wiki"), "the wiki is gone: {out}");
-    assert_eq!(session(&dir)["state"], "starting");
+    // Claude is up and waiting: a session nobody has typed in yet isn't
+    // left saying "starting" for days.
+    let s = session(&dir);
+    assert_eq!(s["state"], "your_turn");
+    assert_ne!(s["unseen"], true);
+}
+
+#[test]
+fn session_start_leaves_a_running_session_alone() {
+    // /compact and /clear start again mid-run.
+    let dir = setup("working");
+    run_hook(&home(&dir), &fixture("session_start"));
+    assert_eq!(session(&dir)["state"], "working");
 }
 
 #[test]

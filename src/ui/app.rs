@@ -1160,21 +1160,29 @@ impl App {
     }
 }
 
-/// Sessions whose tmux window no longer exists, returned as `Ended` copies
-/// ready to save. Sessions without a window yet (still starting) are left alone.
-pub fn mark_missing(
-    sessions: &[Session],
-    live_windows: &[String],
-    now: DateTime<Utc>,
-) -> Vec<Session> {
+/// The windows of the Grove tmux session as `(id, @grove_session)`.
+pub type Windows = [(String, String)];
+
+/// Whether `s`'s window is still open and still its own. Window ids restart
+/// with a new tmux server, so an old record can name a window that is now
+/// another session's: Grove tags each window with its session's id (an
+/// untagged window is from before it did).
+pub fn owns_window(s: &Session, windows: &Windows) -> bool {
+    s.tmux_window.as_ref().is_some_and(|w| {
+        windows
+            .iter()
+            .any(|(id, tag)| id == w && (tag.is_empty() || *tag == s.id))
+    })
+}
+
+/// Sessions whose tmux window no longer exists (or is another session's
+/// now), returned as `Ended` copies ready to save. Sessions without a window
+/// yet (still starting) are left alone.
+pub fn mark_missing(sessions: &[Session], windows: &Windows, now: DateTime<Utc>) -> Vec<Session> {
     sessions
         .iter()
         .filter(|s| state_is_live(s.state))
-        .filter(|s| {
-            s.tmux_window
-                .as_ref()
-                .is_some_and(|w| !live_windows.contains(w))
-        })
+        .filter(|s| s.tmux_window.is_some() && !owns_window(s, windows))
         .map(|s| Session {
             state: State::Ended,
             message: None,

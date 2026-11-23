@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use ratatui::crossterm::event::{self, Event};
 
-use super::app::{Action, App, Mode, Pane, mark_missing};
+use super::app::{Action, App, Mode, Pane, mark_missing, owns_window, state_is_live};
 use super::input::handle_key;
 use super::render::render;
 use crate::config::{Config, editor, expand_tilde, load_config};
@@ -587,7 +587,15 @@ pub fn remove_project(store: &Store, tmux: &Tmux, session: &str, project: &str) 
 /// Errors (leaving sessions untouched) if the tmux session can't be listed,
 /// so a tmux hiccup never marks everything ended.
 pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
-    let windows = ctx.tmux.list_windows(&ctx.cfg.tmux_session)?;
+    let windows: Vec<(String, String)> = ctx
+        .tmux
+        .list_windows_as(&ctx.cfg.tmux_session, "#{window_id} #{@grove_session}")?
+        .iter()
+        .map(|l| {
+            let (id, tag) = l.split_once(' ').unwrap_or((l, ""));
+            (id.to_string(), tag.trim().to_string())
+        })
+        .collect();
     let sessions = ctx.store.list_sessions(None);
     for s in mark_missing(&sessions, &windows, chrono::Utc::now()) {
         ctx.store.save_session(&s)?;
@@ -597,7 +605,10 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
     }
     mark_seen(ctx, &ctx.tmux.focused_windows())?;
     for s in ctx.store.list_sessions(None) {
-        let Some(w) = s.tmux_window.as_ref().filter(|w| windows.contains(w)) else {
+        if !state_is_live(s.state) || !owns_window(&s, &windows) {
+            continue;
+        }
+        let Some(w) = s.tmux_window.as_ref() else {
             continue;
         };
         let want = s.state == State::NeedsYou;

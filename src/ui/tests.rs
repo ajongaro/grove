@@ -166,7 +166,7 @@ fn mark_missing_ends_sessions_whose_window_is_gone() {
         session("3", "p", "s3", State::Starting, None),
         session("4", "p", "s4", State::Ended, Some("@4")),
     ];
-    let ended = mark_missing(&sessions, &["@1".to_string()], t0());
+    let ended = mark_missing(&sessions, &[("@1".to_string(), String::new())], t0());
     assert_eq!(ended.len(), 1);
     assert_eq!(ended[0].id, "2");
     assert_eq!(ended[0].state, State::Ended);

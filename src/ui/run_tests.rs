@@ -991,3 +991,35 @@ fn a_done_session_is_your_turn_once_its_window_is_on_screen() {
     // Being looked at isn't something the session did.
     assert_eq!(b2.updated_at, b.updated_at);
 }
+
+#[test]
+fn reconcile_leaves_a_window_reused_from_an_old_tmux_server_alone() {
+    let t = setup("recon-reused");
+    let tm = &t.ctx.tmux;
+    tm.new_session_detached("grove", "dash", &t.root, &sleeper())
+        .unwrap();
+    let w = tm
+        .new_window("grove", "p1:s3", &t.root, &[], &sleeper())
+        .unwrap();
+    tm.set_window_option(&w, "@grove_session", "live").unwrap();
+    let s = &t.ctx.store;
+    s.save_session(&sess("live", "p1", State::Working, Some(&w)))
+        .unwrap();
+    // Ended on an earlier tmux server, whose window had the same id; and a
+    // record left live by a server that died while the dashboard was down.
+    let mut old = sess("old", "p2", State::NeedsYou, Some(&w));
+    old.state = State::Ended;
+    s.save_session(&old).unwrap();
+    s.save_session(&sess("stale", "p3", State::NeedsYou, Some(&w)))
+        .unwrap();
+    reconcile(&t.ctx, &mut HashMap::new()).unwrap();
+    let out = tm
+        .cmd()
+        .args(["display-message", "-p", "-t", &w, "#{window_name}"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "p1:live");
+    // The stale live record's window is gone: it has ended.
+    assert_eq!(s.get_session("stale").unwrap().state, State::Ended);
+    assert_eq!(s.get_session("live").unwrap().state, State::Working);
+}

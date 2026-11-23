@@ -41,7 +41,12 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
     }
 
     if ev.hook_event_name == "SessionStart" {
-        if follow {
+        // Claude is up and waiting for its first prompt.
+        let ready = session.state == crate::model::State::Starting;
+        if ready {
+            session.state = crate::model::State::YourTurn;
+        }
+        if follow || ready {
             save(store, &mut session);
         }
         return Some(session_context(store, &session.project));
