@@ -354,6 +354,14 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
             crate::config::save_pin_order(&store.paths, order)?;
             Outcome::Message(format!("Pins: {} order · o changes it", order.name()))
         }
+        Action::SavePinSummaries { on } => {
+            crate::config::save_pin_summaries(&store.paths, on)?;
+            Outcome::Message(if on {
+                "Pins: what each last did, under it · m hides it".into()
+            } else {
+                "Pins: one line each · m shows what each last did".into()
+            })
+        }
         Action::SaveTheme { name } => {
             crate::config::save_theme(&store.paths, &name)?;
             // The tmux bar changes with the dashboard.

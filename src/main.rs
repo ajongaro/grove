@@ -15,6 +15,7 @@ mod mcp_overview;
 mod model;
 mod pins;
 mod prompt;
+mod reply;
 mod runfiles;
 mod screens;
 mod setup;

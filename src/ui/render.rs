@@ -85,7 +85,19 @@ pub fn render(frame: &mut Frame, app: &App, now: DateTime<Utc>) {
     let right = if pins.is_empty() {
         right
     } else {
-        let h = pins.len().min(9) as u16 + 2;
+        let inner = right.width.saturating_sub(2) as usize;
+        let lines: usize = pins
+            .iter()
+            .take(9)
+            .map(|r| 1 + pin_summary(app, r, inner).len())
+            .sum();
+        // With summaries, at most half the column: the list scrolls.
+        let most = if app.cfg.pin_summaries {
+            (right.height / 2).max(pins.len().min(9) as u16 + 2)
+        } else {
+            u16::MAX
+        };
+        let h = (lines as u16 + 2).min(most);
         let [top, rest] =
             Layout::vertical([Constraint::Length(h), Constraint::Fill(1)]).areas(right);
         render_pinned(frame, app, &pins, top, now);
@@ -1320,6 +1332,50 @@ fn wide_confirm_popup(frame: &mut Frame, text: &str) {
     );
 }
 
+/// Where a pin's summary lines start, under its origin column.
+const SUMMARY_INDENT: usize = 6;
+
+/// What a pin last did, wrapped to `inner` columns in at most two lines,
+/// when `m` has them shown; none for shells and unreachable fincas.
+fn pin_summary(app: &App, r: &super::app::PinRow, inner: usize) -> Vec<String> {
+    let Some(text) = r
+        .reply
+        .as_deref()
+        .filter(|_| app.cfg.pin_summaries && !r.shell && !r.unreachable)
+    else {
+        return Vec::new();
+    };
+    wrap(text, inner.saturating_sub(SUMMARY_INDENT + 1).max(10), 2)
+}
+
+/// `text` in lines of at most `width` columns, at most `max` of them, the
+/// last ending in `…` when there was more.
+pub(super) fn wrap(text: &str, width: usize, max: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for w in text.split_whitespace() {
+        let fits = line.is_empty() || line.chars().count() + 1 + w.chars().count() <= width;
+        if !fits {
+            lines.push(std::mem::take(&mut line));
+            if lines.len() == max {
+                let last = lines.last_mut().expect("just pushed");
+                let keep: String = last.chars().take(width.saturating_sub(1)).collect();
+                *last = format!("{}…", keep.trim_end());
+                return lines;
+            }
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        // A word longer than the line is cut.
+        line.extend(w.chars().take(width));
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
 /// The Pinned pane: one row per pin, numbered for 1–9, each saying where
 /// its session lives (account or finca).
 fn render_pinned(
@@ -1349,6 +1405,7 @@ fn render_pinned(
     let origin_w = width(&|i| origins[i].chars().count());
     let project_w = width(&|i| rows[i].project.chars().count());
     let name_w = width(&|i| rows[i].name.chars().count());
+    let inner = area.width.saturating_sub(2) as usize;
     let items: Vec<ListItem> = rows
         .iter()
         .zip(&origins)
@@ -1399,7 +1456,11 @@ fn render_pinned(
             if let Some(m) = r.message.as_deref().filter(|_| !r.unreachable) {
                 spans.push(Span::styled(m.to_string(), Style::new().fg(color)));
             }
-            ListItem::new(Line::from(spans))
+            let mut lines = vec![Line::from(spans)];
+            for l in pin_summary(app, r, inner) {
+                lines.push(Line::raw(format!("{}{l}", " ".repeat(SUMMARY_INDENT))).fg(pal().dim));
+            }
+            ListItem::new(lines)
         })
         .collect();
     let mut state = ListState::default().with_selected(focused.then_some(app.pin_idx));

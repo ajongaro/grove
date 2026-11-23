@@ -115,6 +115,9 @@ pub struct Session {
     /// window is in a focused terminal.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unseen: bool,
+    /// What it last did: the opening of Claude's last reply (reply.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

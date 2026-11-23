@@ -25,6 +25,7 @@ fn session(id: &str, project: &str, name: &str, state: State, window: Option<&st
         message: None,
         conversation: None,
         launch: None,
+        reply: None,
         agent: Default::default(),
         unseen: false,
         created_at: t0(),
@@ -630,6 +631,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             name: format!("n{i}"),
             agent: Default::default(),
             unseen: false,
+            reply: None,
             state: State::NeedsYou,
             message: Some("Permission needed: Bash".into()),
             updated_at: t0(),
@@ -643,6 +645,7 @@ fn remote_status(host: &str, needy: usize, working: usize) -> Status {
             name: format!("w{i}"),
             agent: Default::default(),
             unseen: false,
+            reply: None,
             state: State::Working,
             message: None,
             updated_at: t0(),
@@ -3661,7 +3664,7 @@ fn help_lists_the_pin_keys() {
     let (_d, _s, mut app) = loaded(&["alpha"], &[]);
     handle_key(&mut app, ch('?'));
     let out = screen(&app, 110, 32);
-    assert!(out.contains("pin or unpin (shells too) / order"), "{out}");
+    assert!(out.contains("pin or unpin / order / last did"), "{out}");
     assert!(out.contains("jump to a pin"), "{out}");
 }
 
@@ -4412,6 +4415,7 @@ fn search_reaches_finca_sessions_live_and_ended() {
         name: "migrate".into(),
         agent: Default::default(),
         unseen: false,
+        reply: None,
         state: State::Ended,
         message: None,
         updated_at: t0(),
@@ -4984,4 +4988,43 @@ fn a_finished_turn_not_yet_seen_shows_as_done() {
         row("seen").contains("🌳 seen") && row("seen").contains("your turn"),
         "{s}"
     );
+}
+
+#[test]
+fn m_shows_what_each_pin_last_did() {
+    let (_d, s, mut app) = pinned_app();
+    let mut a2 = s.get_session("a2").unwrap();
+    a2.reply = Some("Fixed the window rename bug and released v0.1.65 to every finca.".into());
+    s.save_session(&a2).unwrap();
+    let mut st = remote_status("pi", 1, 0);
+    st.projects[0].sessions[0].reply = Some("Ran the backups.".into());
+    poll(&mut app, "pi", Reach::Reachable(st), t0());
+    let pins = vec![pin(None, "a2"), pin(Some("pi"), "pi-n0")];
+    crate::pins::save(&s.paths, &pins).unwrap();
+    app.reload(&s);
+    app.pane = Pane::Pinned;
+    // Off by default.
+    assert!(!screen(&app, 110, 32).contains("Ran the backups"));
+    let a = handle_key(&mut app, ch('m'));
+    assert_eq!(a, Action::SavePinSummaries { on: true });
+    let out = screen(&app, 110, 32);
+    assert!(out.contains("Fixed the window rename bug"), "{out}");
+    assert!(out.contains("Ran the backups."), "{out}");
+    // The cursor still moves pin by pin.
+    handle_key(&mut app, ch('j'));
+    assert_eq!(app.pin_idx, 1);
+    assert_eq!(
+        handle_key(&mut app, ch('m')),
+        Action::SavePinSummaries { on: false }
+    );
+    assert!(!screen(&app, 110, 32).contains("Ran the backups"));
+}
+
+#[test]
+fn long_summaries_wrap_to_two_lines() {
+    let lines = super::render::wrap(&"word ".repeat(40), 20, 2);
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().all(|l| l.chars().count() <= 20), "{lines:?}");
+    assert!(lines[1].ends_with('…'));
+    assert_eq!(super::render::wrap("short", 20, 2), ["short"]);
 }

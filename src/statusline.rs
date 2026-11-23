@@ -519,6 +519,7 @@ mod tests {
                 message: None,
                 conversation: None,
                 launch: None,
+                reply: None,
                 agent: Default::default(),
                 unseen: false,
                 created_at: now,

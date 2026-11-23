@@ -20,6 +20,9 @@ pub struct HookEvent {
     /// SessionEnd only: "clear", "resume", "logout", "prompt_input_exit", "other".
     #[serde(default)]
     pub reason: Option<String>,
+    /// Stop only: the text of Claude's last reply.
+    #[serde(default)]
+    pub last_assistant_message: Option<String>,
 }
 
 /// `None` means "no change". The string is the message to store.

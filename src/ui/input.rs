@@ -1326,6 +1326,12 @@ fn pin_key(app: &mut App, code: KeyCode) -> Option<Action> {
                         order: app.cfg.pin_order,
                     }
                 }
+                KeyCode::Char('m') => {
+                    app.cfg.pin_summaries = !app.cfg.pin_summaries;
+                    Action::SavePinSummaries {
+                        on: app.cfg.pin_summaries,
+                    }
+                }
                 KeyCode::Char('p') => row.map_or(Action::None, |r| {
                     let pin = r.pin.clone();
                     toggle_pin(app, pin, &r.handle)

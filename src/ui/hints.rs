@@ -78,6 +78,7 @@ pub fn for_focus(app: &App) -> (Color, Vec<Hint>) {
                 ("p", "unpin"),
                 ("r", "rename"),
                 ("o", "order"),
+                ("m", "last did"),
                 ("s", "shell"),
             ];
             h.extend(ANYWHERE);

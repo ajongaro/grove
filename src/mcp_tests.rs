@@ -530,6 +530,7 @@ fn add_session(t: &T, project: &str, name: &str, state: State, window: Option<&s
         message: None,
         conversation: None,
         launch: None,
+        reply: None,
         agent: Default::default(),
         unseen: false,
         created_at: now,

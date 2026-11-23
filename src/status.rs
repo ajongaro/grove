@@ -72,6 +72,9 @@ pub struct SessionStatus {
     /// It finished a turn nobody has looked at yet (model.rs `unseen`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unseen: bool,
+    /// What it last did (model.rs `reply`). Older Groves don't send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<String>,
 }
 
 /// Ended sessions reported per project.
@@ -110,6 +113,7 @@ pub fn build(
                 title: crate::titles::for_session(&store.paths, &cfg, &p.path, s),
                 agent: s.agent,
                 unseen: live && s.unseen,
+                reply: s.reply.clone(),
             };
             let (live, ended): (Vec<_>, Vec<_>) = sessions
                 .iter()
@@ -213,6 +217,7 @@ mod tests {
             message: msg.map(str::to_string),
             conversation: None,
             launch: None,
+            reply: None,
             agent: Default::default(),
             unseen: false,
             created_at: Utc::now(),

@@ -210,6 +210,10 @@ pub enum Action {
     SavePinOrder {
         order: crate::config::PinOrder,
     },
+    /// Write `pin_summaries = <bool>` to config.toml.
+    SavePinSummaries {
+        on: bool,
+    },
     /// Write the accounts whose boxes are hidden.
     SaveHidden {
         accounts: std::collections::BTreeSet<String>,
@@ -438,6 +442,8 @@ pub struct PinRow {
     pub shell: bool,
     /// Its session finished a turn not yet seen ("done").
     pub unseen: bool,
+    /// What it last did, for `m` (model.rs `reply`).
+    pub reply: Option<String>,
 }
 
 /// A row of the selected finca's pane: a remote session or a local shell.
@@ -1053,6 +1059,7 @@ impl App {
                         window: Some(pin.id.clone()),
                         unreachable,
                         shell: true,
+                        reply: None,
                     })
                 }
                 None => {
@@ -1076,6 +1083,7 @@ impl App {
                         window: s.tmux_window.clone(),
                         unreachable: false,
                         shell: false,
+                        reply: s.reply.clone(),
                     })
                 }
                 Some(slug) => {
@@ -1092,6 +1100,7 @@ impl App {
                         });
                     let unreachable = !matches!(f.reach, Some(crate::finca::Reach::Reachable(_)));
                     let unseen = found.as_ref().is_some_and(|(_, s)| s.unseen);
+                    let reply = found.as_ref().and_then(|(_, s)| s.reply.clone());
                     let (project, name, state, updated_at, message, window) = match found {
                         Some((project, s)) => (
                             project,
@@ -1129,6 +1138,7 @@ impl App {
                         unreachable,
                         shell: false,
                         unseen,
+                        reply,
                     })
                 }
             })

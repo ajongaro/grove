@@ -175,6 +175,7 @@ mod tests {
             message: None,
             conversation: None,
             launch: None,
+            reply: None,
             agent: Agent::Claude,
             unseen: false,
             created_at: t0() - Duration::days(9),

@@ -396,3 +396,25 @@ fn a_turn_that_ends_is_done_until_seen_and_work_clears_it() {
     run_hook(&home(&dir), &fixture("user_prompt_submit"));
     assert_eq!(session(&dir).get("unseen"), None);
 }
+
+#[test]
+fn stop_keeps_the_opening_of_claudes_reply() {
+    let dir = setup("working");
+    let stop: serde_json::Value = serde_json::from_str(&fixture("stop")).unwrap();
+    let mut stop = stop.as_object().unwrap().clone();
+    stop.insert(
+        "last_assistant_message".into(),
+        "## Done\n\nFixed the **rename** bug.\n\n- details".into(),
+    );
+    run_hook(
+        &home(&dir),
+        &serde_json::Value::Object(stop.clone()).to_string(),
+    );
+    let s = session(&dir);
+    assert_eq!(s["state"], "your_turn");
+    assert_eq!(s["reply"], "Fixed the rename bug.");
+    // A second Stop (already your turn) still updates it.
+    stop.insert("last_assistant_message".into(), "Next one.".into());
+    run_hook(&home(&dir), &serde_json::Value::Object(stop).to_string());
+    assert_eq!(session(&dir)["reply"], "Next one.");
+}

@@ -59,6 +59,9 @@ pub struct Config {
     /// `"2d"`, `"30m"`), freeing their memory; Enter resumes them. `"off"`
     /// (the default) never does. Pinned sessions are left alone.
     pub idle_end_after: String,
+    /// Under each pin, what it last did (the opening of Claude's last
+    /// reply). `m` in the box turns it on and off.
+    pub pin_summaries: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -136,6 +139,7 @@ impl Default for Config {
             header: Header::Full,
             pin_order: PinOrder::Added,
             idle_end_after: "off".into(),
+            pin_summaries: false,
         }
     }
 }
@@ -391,15 +395,28 @@ pub fn save_pin_order(paths: &Paths, order: PinOrder) -> Result<()> {
     save_setting(paths, "pin_order", order.name())
 }
 
+pub fn save_pin_summaries(paths: &Paths, on: bool) -> Result<()> {
+    save_raw(paths, "pin_summaries", if on { "true" } else { "false" })
+}
+
 /// Sets a top-level `key = "value"` in config.toml, keeping the rest.
 fn save_setting(paths: &Paths, key: &str, value: &str) -> Result<()> {
+    save_raw(
+        paths,
+        key,
+        &format!("\"{}\"", value.replace(['"', '\\'], "")),
+    )
+}
+
+/// Sets a top-level `key = <raw>` in config.toml, keeping the rest.
+fn save_raw(paths: &Paths, key: &str, raw: &str) -> Result<()> {
     let file = paths.config_file();
     let text = match std::fs::read_to_string(&file) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e).with_context(|| format!("reading {}", file.display())),
     };
-    let text = with_setting(&text, key, value);
+    let text = with_raw(&text, key, raw);
     toml::from_str::<Config>(&text).context("the new config.toml doesn't parse")?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
@@ -415,8 +432,18 @@ fn with_theme(text: &str, name: &str) -> String {
 /// `text` with its top-level `key` line set to `value`. A new line goes
 /// after the last top-level setting, before any comment that heads the
 /// first `[table]`.
+#[cfg(test)]
 fn with_setting(text: &str, key: &str, value: &str) -> String {
-    let line = format!("{key} = \"{}\"", value.replace(['"', '\\'], ""));
+    with_raw(
+        text,
+        key,
+        &format!("\"{}\"", value.replace(['"', '\\'], "")),
+    )
+}
+
+/// `with_setting` with the value as written, unquoted.
+fn with_raw(text: &str, key: &str, raw: &str) -> String {
+    let line = format!("{key} = {raw}");
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let first_table = lines
         .iter()

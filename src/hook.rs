@@ -52,13 +52,24 @@ pub fn run_hook(store: &Store, input: &str) -> Option<String> {
         return Some(session_context(store, &session.project));
     }
 
+    // What the turn did, for the Pinned box: kept even when the state
+    // doesn't change (a second Stop).
+    let reply = ev
+        .last_assistant_message
+        .as_deref()
+        .filter(|_| ev.hook_event_name == "Stop")
+        .and_then(crate::reply::summary);
+    let new_reply = reply.is_some() && reply != session.reply;
+    if new_reply {
+        session.reply = reply;
+    }
     match state::next(session.state, &ev) {
         Some((state, message)) => {
             session.unseen = state::ends_turn(session.state, state);
             session.state = state;
             session.message = message;
         }
-        None if !follow => return None,
+        None if !follow && !new_reply => return None,
         None => {}
     }
     save(store, &mut session);

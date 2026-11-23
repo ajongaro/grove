@@ -299,6 +299,12 @@ order shown. A pin goes away when its session ends; a finca
 that isn't answering keeps its pins, dimmed, until it does. Pins live in
 `~/.grove/pins.json`.
 
+`m` in the box shows, under each pin, what it last did: the opening of
+Claude's last reply, in up to two lines. `m` again hides it; the choice is
+saved as `pin_summaries`. A finca's pins show it once that finca runs this
+Grove too; shells, OpenCode sessions and sessions that haven't finished a
+turn since you updated have none.
+
 Shells pin too: `p` on a project's shell (`S`) or a finca's shell (a
 Raspberry Pi that only runs shells, say) puts it in the box as `$` and its
 name. There `Enter` opens it (reconnecting a finca's dropped ssh), `r`
@@ -700,6 +706,7 @@ update_check = true                    # once a day, ask GitHub whether a newer 
 claude_todos = true                    # tell new Claude sessions to keep the project's TODO list
 revive_sessions = true                 # after a reboot, reopen the sessions that were running
 idle_end_after = "off"                 # end sessions idle this long, e.g. "24h" (X does it now)
+pin_summaries = false                  # under each pin, what it last did (m toggles)
 # [ticker]: see "Stock ticker"
 # account_name, account_color, [accounts.*]: see "More than one Claude account"
 ```
