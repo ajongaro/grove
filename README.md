@@ -430,7 +430,7 @@ The dashboard checks once a minute, and `X` then uses the same time. A
 session counts as idle when no turn has run and nothing has shown in its
 window for that long. Grove leaves alone a session that is working, waiting
 on a permission answer, pinned or running OpenCode, one with a shell open
-beside it (`C-\\`) or a background job or agent still running, and one with
+beside it (`C-\`) or a background job or agent still running, and one with
 anything typed in its input box. An ended one says why on its row ("ended after 1d
 idle").
 
