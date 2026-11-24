@@ -391,6 +391,23 @@ impl Tmux {
         self.run(&["capture-pane", "-p", "-J", "-t", &target, "-S", &start])
     }
 
+    /// `capture`, keeping colors and styles as escape codes, so dim hint
+    /// text can be told from typed text.
+    pub fn capture_styled(&self, target: &str, lines: usize) -> Result<String> {
+        let start = format!("-{lines}");
+        let target = self.main_pane(target);
+        self.run(&[
+            "capture-pane",
+            "-p",
+            "-e",
+            "-J",
+            "-t",
+            &target,
+            "-S",
+            &start,
+        ])
+    }
+
     pub fn send_keys(&self, target: &str, keys: &[&str]) -> Result<()> {
         let target = self.main_pane(target);
         let mut args = vec!["send-keys", "-t", &target];

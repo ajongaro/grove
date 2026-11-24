@@ -184,14 +184,10 @@ pub fn perform(ctx: &Ctx, action: Action) -> Result<Outcome> {
                 .idle_limit()
                 .unwrap_or(crate::idle::MANUAL_LIMIT);
             let idle = crate::idle::show(limit);
-            let session_ids: Vec<String> = idle_sessions(ctx, limit)?
-                .into_iter()
-                .map(|s| s.id)
-                .collect();
+            let (found, kept) = idle_sessions_and_kept(ctx, limit)?;
+            let session_ids: Vec<String> = found.into_iter().map(|s| s.id).collect();
             if session_ids.is_empty() {
-                Outcome::Message(format!(
-                    "No session has been waiting on you, idle, for {idle}: nothing to end"
-                ))
+                Outcome::Message(nothing_to_end(&idle, kept))
             } else {
                 Outcome::Ask(Mode::ConfirmEndIdle {
                     session_ids,
@@ -670,6 +666,15 @@ pub fn reconcile(ctx: &Ctx, flagged: &mut HashMap<String, bool>) -> Result<()> {
 /// Sessions to end for being idle `limit`: `idle::candidates`, whose input
 /// box is on screen and empty, so no draft is lost.
 pub fn idle_sessions(ctx: &Ctx, limit: chrono::Duration) -> Result<Vec<crate::model::Session>> {
+    Ok(idle_sessions_and_kept(ctx, limit)?.0)
+}
+
+/// `idle_sessions`, and how many idle ones their screen kept: a draft in
+/// the box, a shell still running, or no box to read.
+fn idle_sessions_and_kept(
+    ctx: &Ctx,
+    limit: chrono::Duration,
+) -> Result<(Vec<crate::model::Session>, usize)> {
     let windows = crate::idle::parse_windows(
         &ctx.tmux
             .list_windows_as(&ctx.cfg.tmux_session, crate::idle::WINDOW_FORMAT)?,
@@ -681,18 +686,20 @@ pub fn idle_sessions(ctx: &Ctx, limit: chrono::Duration) -> Result<Vec<crate::mo
         .map(|p| p.id)
         .collect();
     let now = chrono::Utc::now();
-    Ok(
-        crate::idle::candidates(&sessions, &windows, &pinned, limit, now)
-            .into_iter()
-            .filter(|s| {
-                s.tmux_window
-                    .as_ref()
-                    .and_then(|w| ctx.tmux.capture(w, 5).ok())
-                    .is_some_and(|screen| crate::idle::input_box_empty(&screen))
-            })
-            .cloned()
-            .collect(),
-    )
+    let found = crate::idle::candidates(&sessions, &windows, &pinned, limit, now);
+    let n = found.len();
+    let free: Vec<crate::model::Session> = found
+        .into_iter()
+        .filter(|s| {
+            s.tmux_window
+                .as_ref()
+                .and_then(|w| ctx.tmux.capture_styled(w, 5).ok())
+                .is_some_and(|screen| crate::idle::input_box_empty(&screen))
+        })
+        .cloned()
+        .collect();
+    let kept = n - free.len();
+    Ok((free, kept))
 }
 
 /// Ends each of these sessions still not busy, saying on its row it was
@@ -720,6 +727,17 @@ pub fn end_idle(ctx: &Ctx, session_ids: &[String], idle: &str) -> Result<usize> 
         n += 1;
     }
     Ok(n)
+}
+
+/// What `X` says when it finds nothing to end.
+fn nothing_to_end(idle: &str, kept: usize) -> String {
+    match kept {
+        0 => format!("No session has been waiting on you, idle, for {idle}: nothing to end"),
+        1 => format!("Nothing to end: the one idle {idle} has a draft, or a shell still running"),
+        n => format!(
+            "Nothing to end: the {n} idle {idle} each have a draft, or a shell still running"
+        ),
+    }
 }
 
 fn ended_message(n: usize, idle: &str) -> String {

@@ -1075,3 +1075,13 @@ fn x_finds_nothing_to_end_when_every_session_was_just_used() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn x_says_when_idle_sessions_were_kept_for_their_screen() {
+    assert!(nothing_to_end("1h", 0).contains("nothing to end"));
+    assert_eq!(
+        nothing_to_end("8h", 1),
+        "Nothing to end: the one idle 8h has a draft, or a shell still running"
+    );
+    assert!(nothing_to_end("8h", 3).contains("the 3 idle 8h each have"));
+}

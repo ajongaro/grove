@@ -127,25 +127,27 @@ pub fn candidates<'a>(
 /// so ending the session loses no draft. The box is the text between the
 /// last two horizontal rules, after its `❯` prompt. No box found: false.
 pub fn input_box_empty(screen: &str) -> bool {
-    let lines: Vec<&str> = screen.lines().collect();
-    let rule = |l: &&str| {
+    // A capture with styles (`capture-pane -e`): dim text in the box is a
+    // hint ("Try …", a suggested prompt), not something typed.
+    let lines: Vec<String> = screen.lines().map(undimmed).collect();
+    let rule = |l: &str| {
+        // A named session's top rule has its name in it: "──── name ─".
         let t = l.trim();
-        t.chars().count() >= 10 && t.chars().all(|c| c == '─')
+        t.starts_with('─') && t.ends_with('─') && t.chars().filter(|&c| c == '─').count() >= 10
     };
     let rules: Vec<usize> = (0..lines.len()).filter(|&i| rule(&lines[i])).collect();
     let [.., top, bottom] = rules[..] else {
         return false;
     };
     // Under the box Claude Code counts what still runs: "1 shell",
-    // "← 2 agents", "1 background task".
+    // "1 background task". Not "← 1 agent", which stays once the agent
+    // is done: agents come from the Stop hook (`Session::background`).
     let under = lines[bottom + 1..].join(" ").to_lowercase();
     let words: Vec<&str> = under.split_whitespace().collect();
     let running = under.contains("background")
         || words.windows(2).any(|w| {
             w[0].chars().all(|c| c.is_ascii_digit())
-                && ["shell", "agent", "task"]
-                    .iter()
-                    .any(|k| w[1].starts_with(k))
+                && ["shell", "task"].iter().any(|k| w[1].starts_with(k))
         });
     if running {
         return false;
@@ -155,6 +157,59 @@ pub fn input_box_empty(screen: &str) -> bool {
         return false;
     };
     rest.trim().is_empty()
+}
+
+/// A captured line's text without its escape codes, and without the text
+/// drawn dim (SGR 2, until 0 or 22).
+fn undimmed(line: &str) -> String {
+    let mut out = String::new();
+    let mut dim = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            if !dim {
+                out.push(c);
+            }
+            continue;
+        }
+        if chars.peek() != Some(&'[') {
+            continue;
+        }
+        chars.next();
+        let mut params = String::new();
+        let mut end = None;
+        for c in chars.by_ref() {
+            if c.is_ascii_alphabetic() {
+                end = Some(c);
+                break;
+            }
+            params.push(c);
+        }
+        if end != Some('m') {
+            continue;
+        }
+        let mut ps = params.split(';');
+        while let Some(p) = ps.next() {
+            match p {
+                "" | "0" | "22" => dim = false,
+                "2" => dim = true,
+                // A color's numbers: 38;5;n or 38;2;r;g;b.
+                "38" | "48" | "58" => match ps.next() {
+                    Some("5") => {
+                        ps.next();
+                    }
+                    Some("2") => {
+                        ps.next();
+                        ps.next();
+                        ps.next();
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -307,11 +362,14 @@ mod tests {
             "  ⏵⏵ auto mode on · 1 shell · ↓ to manage",
         );
         assert!(!input_box_empty(&shell));
+        // "← 1 agent" stays after the agent is done (it shows on sessions
+        // with nothing running), so agents come from the Stop hook's
+        // background_tasks instead (`Session::background`).
         let agent = EMPTY.replace(
             "    status line",
             "  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent",
         );
-        assert!(!input_box_empty(&agent));
+        assert!(input_box_empty(&agent));
         // A word in the status line alone isn't something running.
         let words = EMPTY.replace("    status line", "    📁 shell-scripts:main | agent notes");
         assert!(input_box_empty(&words));
@@ -331,5 +389,44 @@ mod tests {
         // A dialog instead of the box, or nothing at all: can't tell.
         assert!(!input_box_empty("Do you trust this folder?\n 1. Yes\n"));
         assert!(!input_box_empty(""));
+    }
+
+    #[test]
+    fn a_named_sessions_box_has_its_name_in_the_top_rule() {
+        // Claude Code 2.1.330, a session with a name.
+        let named = EMPTY.replacen(
+            "────────────────────────────────────────",
+            "─────────────────────────── spain:trip ─",
+            1,
+        );
+        assert!(input_box_empty(&named));
+        let draft = named.replace("❯ \u{a0}", "❯ half a thought");
+        assert!(!input_box_empty(&draft));
+        // A table border in the reply isn't a rule.
+        let table = format!("  └──────────┴──────────┘\n{EMPTY}");
+        assert!(input_box_empty(&table));
+    }
+
+    #[test]
+    fn dim_hint_text_in_the_box_isnt_a_draft() {
+        // From `capture-pane -e`, Claude Code 2.1.330: a hint is drawn dim.
+        let hint = EMPTY.replace(
+            "❯ \u{a0}",
+            "\x1b[39m❯ \x1b[2mOnce fixed, resend your message\x1b[0m",
+        );
+        assert!(input_box_empty(&hint));
+        let typed = EMPTY.replace(
+            "❯ \u{a0}",
+            "\x1b[38;5;246m\x1b[48;5;237m❯ \x1b[38;5;231msay hi\x1b[39m",
+        );
+        assert!(!input_box_empty(&typed));
+        // A color's numbers aren't a style: 38;5;2 is green, not dim.
+        let green = EMPTY.replace("❯ \u{a0}", "❯ \x1b[38;5;2mdraft\x1b[39m");
+        assert!(!input_box_empty(&green));
+        let styled_rules = EMPTY.replace(
+            "────────────────────────────────────────",
+            "\x1b[38;5;244m────────────────────────────────────────\x1b[39m",
+        );
+        assert!(input_box_empty(&styled_rules));
     }
 }
