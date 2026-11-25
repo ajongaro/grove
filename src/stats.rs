@@ -45,8 +45,6 @@ pub struct Cost {
     #[serde(default, deserialize_with = "number")]
     pub total_cost_usd: Option<f64>,
     #[serde(default, deserialize_with = "count")]
-    pub total_duration_ms: Option<u64>,
-    #[serde(default, deserialize_with = "count")]
     pub total_lines_added: Option<u64>,
     #[serde(default, deserialize_with = "count")]
     pub total_lines_removed: Option<u64>,
@@ -400,12 +398,11 @@ mod tests {
     #[test]
     fn whole_numbers_sent_as_floats_still_parse() {
         let v: StatusInput = serde_json::from_value(json!({
-            "cost": { "total_cost_usd": 1, "total_duration_ms": 1000.5,
-                      "total_lines_added": 10.0, "total_lines_removed": 2 }
+            "cost": { "total_cost_usd": 1, "total_lines_added": 10.0,
+                      "total_lines_removed": 2 }
         }))
         .unwrap();
         let c = v.cost.unwrap();
-        assert_eq!(c.total_duration_ms, Some(1000));
         assert_eq!(c.total_lines_added, Some(10));
         assert_eq!(c.total_cost_usd, Some(1.0));
     }

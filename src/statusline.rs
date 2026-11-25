@@ -135,51 +135,47 @@ fn identity(input: &StatusInput, ctx: &Context, caps: (usize, usize)) -> Vec<Str
     segs
 }
 
-/// Context, cost, time, lines changed and the five-hour limit.
+/// Context and the five-hour limit as bars, and lines changed.
 fn numbers(input: &StatusInput) -> Vec<String> {
     let mut segs = Vec::new();
-    let pct = input
+    let ctx = input
         .context_window
         .as_ref()
-        .and_then(|c| c.used_percentage)
-        .unwrap_or(0.0)
-        .clamp(0.0, 100.0) as usize;
-    let color = match pct {
-        90.. => RED,
-        70.. => YELLOW,
-        _ => GREEN,
-    };
-    let filled = pct * 10 / 100;
-    segs.push(format!(
-        "🧠 {color}{}{DIM}{}{RESET} {color}{pct}%{RESET}",
-        "▓".repeat(filled),
-        "░".repeat(10 - filled)
-    ));
-    let cost = input.cost.as_ref();
-    segs.push(format!(
-        "💰 ${:.2}",
-        cost.and_then(|c| c.total_cost_usd).unwrap_or(0.0)
-    ));
-    let secs = cost.and_then(|c| c.total_duration_ms).unwrap_or(0) / 1000;
-    segs.push(if secs >= 60 {
-        format!("⏱️ {}m {}s", secs / 60, secs % 60)
-    } else {
-        format!("⏱️ {secs}s")
-    });
-    segs.push(format!(
-        "✏️ {GREEN}+{}{RESET} {RED}-{}{RESET}",
-        cost.and_then(|c| c.total_lines_added).unwrap_or(0),
-        cost.and_then(|c| c.total_lines_removed).unwrap_or(0)
-    ));
+        .and_then(|c| c.used_percentage);
+    segs.push(bar("🧠", ctx.unwrap_or(0.0)));
+    // Only on Pro and Max plans, and only once a reply has come back since
+    // the window last reset.
     if let Some(p) = input
         .rate_limits
         .as_ref()
         .and_then(|r| r.five_hour.as_ref())
         .and_then(|w| w.used_percentage)
     {
-        segs.push(format!("📊 {}%", p.round() as i64));
+        segs.push(bar("📊", p));
     }
+    let cost = input.cost.as_ref();
+    segs.push(format!(
+        "✏️ {GREEN}+{}{RESET} {RED}-{}{RESET}",
+        cost.and_then(|c| c.total_lines_added).unwrap_or(0),
+        cost.and_then(|c| c.total_lines_removed).unwrap_or(0)
+    ));
     segs
+}
+
+/// `icon ▓▓░░░░░░░░ 23%`: green, yellow from 70%, red from 90%.
+fn bar(icon: &str, pct: f64) -> String {
+    let pct = pct.round().clamp(0.0, 100.0) as usize;
+    let color = match pct {
+        90.. => RED,
+        70.. => YELLOW,
+        _ => GREEN,
+    };
+    let filled = pct * 10 / 100;
+    format!(
+        "{icon} {color}{}{DIM}{}{RESET} {color}{pct}%{RESET}",
+        "▓".repeat(filled),
+        "░".repeat(10 - filled)
+    )
 }
 
 fn rgb(hex: &str) -> Option<(u8, u8, u8)> {
@@ -399,10 +395,7 @@ mod tests {
         );
         assert!(lines[0].contains("club-keno-extras"), "{out}");
         assert!(lines[1].starts_with("🧠 ▓░░"), "{out}");
-        assert!(
-            lines[1].contains("💰 $2.78") && lines[1].ends_with("📊 4%"),
-            "{out}"
-        );
+        assert!(lines[1].contains("| 📊 ░░░░░░░░░░ 4%"), "{out}");
         assert!(lines.iter().all(|l| width(l) <= 120 - MARGIN), "{out}");
     }
 
@@ -454,7 +447,7 @@ mod tests {
         );
         assert_eq!(
             plain(&out),
-            "🤖 Opus | WORK | 📁 api:s1 | 🌿 main +1 ~2 | 🧠 ▓▓░░░░░░░░ 23% | 💰 $1.23 | ⏱️ 2m 5s | ✏️ +10 -2 | 📊 12%"
+            "🤖 Opus | WORK | 📁 api:s1 | 🌿 main +1 ~2 | 🧠 ▓▓░░░░░░░░ 23% | 📊 ▓░░░░░░░░░ 12% | ✏️ +10 -2"
         );
         assert!(out.contains("38;2;255;136;0"), "{out:?}");
     }
@@ -469,10 +462,7 @@ mod tests {
     #[test]
     fn missing_fields_drop_segments() {
         let out = render(&parse(json!({})), &ctx(None, "x", None));
-        assert_eq!(
-            plain(&out),
-            "📁 x | 🧠 ░░░░░░░░░░ 0% | 💰 $0.00 | ⏱️ 0s | ✏️ +0 -0"
-        );
+        assert_eq!(plain(&out), "📁 x | 🧠 ░░░░░░░░░░ 0% | ✏️ +0 -0");
     }
 
     #[test]
@@ -481,6 +471,20 @@ mod tests {
         assert!(with_ctx(70.0).contains("\x1b[33m70%"));
         assert!(with_ctx(95.0).contains("\x1b[31m95%"));
         assert!(plain(&with_ctx(150.0)).contains("▓▓▓▓▓▓▓▓▓▓ 100%"));
+    }
+
+    #[test]
+    fn usage_is_a_bar_coloured_like_context() {
+        let usage = |pct: f64| {
+            render(
+                &parse(json!({ "rate_limits": { "five_hour": { "used_percentage": pct } } })),
+                &ctx(None, "x", None),
+            )
+        };
+        assert!(plain(&usage(55.0)).contains("📊 ▓▓▓▓▓░░░░░ 55%"));
+        assert!(usage(69.0).contains("\x1b[32m69%"));
+        assert!(usage(75.0).contains("\x1b[33m75%"));
+        assert!(usage(92.0).contains("\x1b[31m92%"));
     }
 
     fn home() -> (tempfile::TempDir, Paths) {

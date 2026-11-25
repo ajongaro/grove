@@ -229,13 +229,14 @@ on a finca nobody sits at.
 Grove sessions get Grove's own **status line** under Claude's prompt:
 
 ```
-🤖 Opus | WORK | 📁 api:s2 | 🌿 main +1 ~2 | 🧠 ▓▓░░░░░░░░ 23% | 💰 $1.23 | ⏱️ 2m 5s | ✏️ +10 -2 | 📊 12%
+🤖 Opus | WORK | 📁 api:s2 | 🌿 main +1 ~2 | 🧠 ▓▓░░░░░░░░ 23% | 📊 ▓░░░░░░░░░ 12% | ✏️ +10 -2
 ```
 
 That's the model, the session's account in its colour (with more than one), `project:session`,
-the git branch with staged and modified file counts, context use, cost,
-time, and lines changed. The last one is your 5-hour usage, shown only on
-Pro and Max plans. In a window too narrow for one line, the numbers move
+the git branch with staged and modified file counts, context use, your
+5-hour usage limit, and lines changed. Both bars turn yellow at 70% and red
+at 90%. The usage bar shows only on Pro and Max plans, once a reply has come
+back since the limit last reset. In a window too narrow for one line, the numbers move
 to a second line and long folder and branch names shorten. Each session's row in the dashboard shows its cost and
 context use too (`$1.23 · 23%`). The cost is Claude Code's own estimate;
 on a subscription it isn't what you're billed.
